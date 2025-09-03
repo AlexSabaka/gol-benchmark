@@ -13,6 +13,7 @@ from dataclasses import dataclass
 from enum import Enum
 import ollama
 import sys
+from tabulate import tabulate
 
 class DifficultyLevel(Enum):
     EASY = "3x3"
@@ -34,7 +35,7 @@ class DifficultyLevel(Enum):
 @dataclass
 class TestConfig:
     """Configuration for the test run"""
-    model: str
+    models: List[str]
     difficulty: DifficultyLevel
     batch_size: int
     temperature: float
@@ -216,11 +217,11 @@ Next:"""
         
         return prompt
     
-    def query_model(self, prompt: str) -> str:
+    def query_model(self, model: str, prompt: str) -> str:
         """Send prompt to Ollama and get response"""
         try:
             response = self.client.generate(
-                model=self.config.model,
+                model=model,
                 prompt=prompt,
                 options={
                     'temperature': self.config.temperature,
@@ -232,7 +233,7 @@ Next:"""
             )
             return response['response']
         except Exception as e:
-            print(f"❌ Error querying model: {e}")
+            print(f"❌ Error querying model {model}: {e}")
             return ""
     
     def parse_response(self, response: str, expected_shape: Tuple[int, int]) -> Optional[List[List[int]]]:
@@ -346,7 +347,7 @@ def run_game_of_life_test(config: TestConfig):
     
     print(f"🎮 Game of Life LLM Reasoning Test")
     print(f"{'='*50}")
-    print(f"Model: {config.model}")
+    print(f"Models: {', '.join(config.models)}")
     print(f"Difficulty: {config.difficulty.value}")
     print(f"Batch size: {config.batch_size}")
     print(f"Temperature: {config.temperature}")
@@ -361,70 +362,104 @@ def run_game_of_life_test(config: TestConfig):
     evaluator = TestEvaluator()
     engine = GameOfLifeEngine()
     
-    # Generate test cases
+    # Generate test cases (same for all models)
     test_cases = generator.create_test_batch(config.difficulty, config.batch_size)
-    results = []
     
-    for i, test_case in enumerate(test_cases):
-        if config.verbose:
-            print(f"\n🧪 Test {i+1}/{config.batch_size}")
-            print("Current state:")
-            for row in test_case.grid:
-                print(" ".join(map(str, row)))
+    # Store results for each model
+    model_results = {}
+    
+    # Run tests for each model
+    for model in config.models:
+        print(f"\n🚀 Testing model: {model}")
+        results = []
         
-        # Get ground truth
-        ground_truth = engine.next_state(test_case.grid)
-        
-        if config.verbose:
-            print("Expected next state:")
-            for row in ground_truth:
-                print(" ".join(map(str, row)))
-        
-        # Query model with systematic prompting
-        prompt = ollama_interface.format_prompt(test_case.grid, "systematic")
-        response = ollama_interface.query_model(prompt)
-        
-        if config.verbose:
-            print(f"Model response: {response}")
-        
-        # Parse and evaluate
-        predicted = ollama_interface.parse_response(response, (test_case.height, test_case.width))
-        result = evaluator.compare_grids(predicted, ground_truth)
-        
-        if config.verbose:
-            if predicted:
-                print("Model predicted:")
-                for row in predicted:
+        for i, test_case in enumerate(test_cases):
+            if config.verbose:
+                print(f"\n🧪 Test {i+1}/{config.batch_size}")
+                print("Current state:")
+                for row in test_case.grid:
                     print(" ".join(map(str, row)))
-                print(f"✅ Accuracy: {result['accuracy']:.2%}")
-            else:
-                print("❌ Failed to parse model response")
+            
+            # Get ground truth
+            ground_truth = engine.next_state(test_case.grid)
+            
+            if config.verbose:
+                print("Expected next state:")
+                for row in ground_truth:
+                    print(" ".join(map(str, row)))
+            
+            # Query model with systematic prompting
+            prompt = ollama_interface.format_prompt(test_case.grid, "systematic")
+            response = ollama_interface.query_model(model, prompt)
+            
+            if config.verbose:
+                print(f"Model response: {response}")
+            
+            # Parse and evaluate
+            predicted = ollama_interface.parse_response(response, (test_case.height, test_case.width))
+            result = evaluator.compare_grids(predicted, ground_truth)
+            
+            if config.verbose:
+                if predicted:
+                    print("Model predicted:")
+                    for row in predicted:
+                        print(" ".join(map(str, row)))
+                    print(f"✅ Accuracy: {result['accuracy']:.2%}")
+                else:
+                    print("❌ Failed to parse model response")
+            
+            results.append(result)
         
-        results.append(result)
+        # Final evaluation for this model
+        batch_eval = evaluator.evaluate_batch(results)
+        model_results[model] = batch_eval
+        
+        print(f"\n📊 Results for {model}:")
+        print(f"   Average Accuracy: {batch_eval['average_accuracy']:.2%}")
+        print(f"   Valid Tests: {batch_eval['valid_tests']}/{batch_eval['total_tests']}")
+        print(f"   Parse Errors: {batch_eval['parse_errors']}")
     
-    # Final evaluation
-    batch_eval = evaluator.evaluate_batch(results)
+    # Display comparison table
+    print(f"\n{'='*80}")
+    print("🏆 MODEL COMPARISON TABLE")
+    print(f"{'='*80}")
     
-    print(f"\n{'='*60}")
-    print("🎯 FINAL RESULTS")
-    print(f"{'='*60}")
-    print(f"Average Accuracy: {batch_eval['average_accuracy']:.2%}")
-    print(f"Median Accuracy: {batch_eval['median_accuracy']:.2%}")
-    print(f"Range: {batch_eval['min_accuracy']:.2%} - {batch_eval['max_accuracy']:.2%}")
-    print(f"Perfect Scores: {batch_eval['perfect_scores']}/{batch_eval['valid_tests']}")
-    print(f"Valid Tests: {batch_eval['valid_tests']}/{batch_eval['total_tests']}")
-    print(f"Parse Errors: {batch_eval['parse_errors']}")
-    print(f"Success Rate: {batch_eval['success_rate']:.2%}")
+    # Prepare table data
+    table_data = []
+    headers = ["Model", "Avg Accuracy", "Valid Tests", "Parse Errors", "Success Rate", "Perfect Scores"]
     
-    # Reasoning analysis
-    if batch_eval['average_accuracy'] > 0.8:
-        print("\n🧠 Analysis: Strong systematic reasoning detected!")
-    elif batch_eval['average_accuracy'] > 0.5:
-        print("\n🤔 Analysis: Partial reasoning - might be pattern matching")
+    for model, results in model_results.items():
+        row = [
+            model,
+            f"{results['average_accuracy']:.2%}",
+            f"{results['valid_tests']}/{results['total_tests']}",
+            results['parse_errors'],
+            f"{results['success_rate']:.2%}",
+            results.get('perfect_scores', 0)
+        ]
+        table_data.append(row)
+    
+    # Sort by average accuracy (descending)
+    table_data.sort(key=lambda x: float(x[1].rstrip('%')), reverse=True)
+    
+    print(tabulate(table_data, headers=headers, tablefmt="grid"))
+    
+    # Detailed analysis
+    print(f"\n{'='*80}")
+    print("🧠 DETAILED ANALYSIS")
+    print(f"{'='*80}")
+    
+    best_model = max(model_results.items(), key=lambda x: x[1]['average_accuracy'])
+    print(f"🥇 Best Performing Model: {best_model[0]} ({best_model[1]['average_accuracy']:.2%})")
+    
+    if best_model[1]['average_accuracy'] > 0.8:
+        print("   Analysis: Strong systematic reasoning detected!")
+    elif best_model[1]['average_accuracy'] > 0.5:
+        print("   Analysis: Partial reasoning - might be pattern matching")
     else:
-        print("\n😅 Analysis: Likely pattern matching or random guessing")
+        print("   Analysis: Likely pattern matching or random guessing")
     
-    return batch_eval, results
+    return model_results
 
 def setup_argparser():
     """Set up command line argument parser"""
@@ -434,14 +469,14 @@ def setup_argparser():
         epilog="""
 Examples:
   python game_of_life_test.py --model qwen3:0.6b --difficulty easy --batch-size 5
-  python game_of_life_test.py --model llama3.2:3b --difficulty hard --temperature 0.1 --top-k 10
-  python game_of_life_test.py --model phi3:3.8b --batch-size 10 --seed 42 --verbose
+  python game_of_life_test.py --model llama3.2:3b phi3:3.8b --difficulty hard --temperature 0.1
+  python game_of_life_test.py --model qwen3:0.6b llama3.2:3b --batch-size 10 --seed 42 --verbose
         """
     )
     
-    # Model configuration
-    parser.add_argument('--model', '-m', type=str, default='qwen3:0.6b',
-                       help='Ollama model to test (default: qwen3:0.6b)')
+    # Model configuration (now accepts multiple models)
+    parser.add_argument('--model', '-m', type=str, nargs='+', default=['qwen3:0.6b'],
+                       help='Ollama models to test (default: qwen3:0.6b)')
     
     # Test configuration
     parser.add_argument('--difficulty', '-d', type=str, default='easy',
@@ -483,7 +518,7 @@ def main():
     
     # Create config
     config = TestConfig(
-        model=args.model,
+        models=args.model,
         difficulty=DifficultyLevel.from_string(args.difficulty),
         batch_size=args.batch_size,
         temperature=args.temperature,
@@ -495,10 +530,12 @@ def main():
     )
     
     try:
-        batch_eval, results = run_game_of_life_test(config)
+        model_results = run_game_of_life_test(config)
         
-        # Exit with non-zero if test failed completely
-        if batch_eval.get('success_rate', 0) == 0:
+        # Exit with non-zero if all models failed completely
+        all_failed = all(results.get('success_rate', 0) == 0 
+                        for results in model_results.values())
+        if all_failed:
             sys.exit(1)
             
     except KeyboardInterrupt:
