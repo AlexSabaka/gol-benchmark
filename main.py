@@ -4,16 +4,32 @@ Game of Life Test Framework for LLM Reasoning
 Tests whether models can systematically apply Conway's Game of Life rules
 """
 
+
+import logging
 import random
 import json
 import argparse
-from typing import List, Tuple, Dict, Optional
+from typing import List, Tuple, Dict, Optional, Literal, TypedDict
 import numpy as np
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 import ollama
 import sys
 from tabulate import tabulate
+from pathlib import Path
+from datetime import datetime
+
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.FileHandler('game_of_life_eval.log'),
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 class DifficultyLevel(Enum):
     EASY = "3x3"
@@ -37,7 +53,10 @@ class TestConfig:
     """Configuration for the test run"""
     models: List[str]
     difficulty: DifficultyLevel
+    prompt_style: str
+    prompt_language: str
     batch_size: int
+    ctx_len: int
     temperature: float
     top_k: int
     min_k: int
@@ -179,11 +198,11 @@ class OllamaInterface:
             print("Make sure Ollama is running: ollama serve")
             sys.exit(1)
     
-    def format_prompt(self, grid: List[List[int]], prompt_style: str = "systematic") -> str:
+    def format_prompt(self, grid: List[List[int]]) -> str:
         """Format grid into a clear prompt with different styles"""
         grid_str = "\n".join([" ".join(map(str, row)) for row in grid])
         
-        if prompt_style == "systematic":
+        if self.config.prompt_style == "systematic":
             prompt = f"""You are applying Conway's Game of Life rules. Here are the EXACT rules:
 
 1. Any live cell (1) with 2 or 3 live neighbors survives to the next generation
@@ -201,7 +220,7 @@ Respond with ONLY the grid numbers, one row per line, numbers separated by space
 
 Next state:"""
         
-        elif prompt_style == "casual":
+        elif self.config.prompt_style == "casual":
             prompt = f"""Here's a Game of Life grid. You know the rules - live cells need 2-3 neighbors to survive, dead cells need exactly 3 to come alive.
 
 Current:
@@ -223,12 +242,14 @@ Next:"""
             response = self.client.generate(
                 model=model,
                 prompt=prompt,
+                think=None,
                 options={
                     'temperature': self.config.temperature,
+                    'num_ctx': self.config.ctx_len,
                     'top_k': self.config.top_k,
                     'min_k': self.config.min_k,
                     'min_p': self.config.min_p,
-                    'num_predict': 100,  # Limit response length
+                    'num_predict': 1024,  # Limit response length
                 }
             )
             return response['response']
@@ -237,35 +258,121 @@ Next:"""
             return ""
     
     def parse_response(self, response: str, expected_shape: Tuple[int, int]) -> Optional[List[List[int]]]:
-        """Parse model response back into grid format with better error handling"""
-        try:
-            lines = [line.strip() for line in response.split('\n') if line.strip()]
-            
-            # Find lines that look like grid rows - be more flexible
-            grid_lines = []
-            for line in lines:
-                # Clean up the line - remove extra chars
-                clean_line = ''.join(c if c in '01 \t' else ' ' for c in line)
-                numbers = clean_line.split()
-                
-                # Check if this line has the right number of 0s and 1s
-                if len(numbers) == expected_shape[1] and all(n in ['0', '1'] for n in numbers):
-                    grid_lines.append(numbers)
-            
-            # Take the first valid grid we find
-            if len(grid_lines) >= expected_shape[0]:
-                grid = []
-                for i in range(expected_shape[0]):
-                    row = [int(x) for x in grid_lines[i]]
-                    grid.append(row)
-                return grid
-            
+        if not response:
+            # logger.warning("Empty response from model")
             return None
-            
+
+        try:
+            # Strategy 1: Look for grid-like patterns in the response
+            lines = [line.strip() for line in response.split('\n') if line.strip()]
+
+            # Try to find the most grid-like section
+            grid_candidates = []
+            current_candidate = []
+
+            for line in lines:
+                # Clean line - keep only digits and spaces
+                clean_line = ''.join(c for c in line if c in '01 \t')
+                if not clean_line:
+                    continue
+
+                # Split into potential numbers
+                parts = clean_line.split()
+                if not parts:
+                    continue
+
+                # Check if this looks like a grid row
+                if all(p in ('0', '1') for p in parts):
+                    if len(parts) == expected_shape[1]:
+                        current_candidate.append(parts)
+                    else:
+                        # If we were building a candidate but this line doesn't match,
+                        # save the candidate if it's not empty
+                        if current_candidate:
+                            grid_candidates.append(current_candidate)
+                            current_candidate = []
+                else:
+                    if current_candidate:
+                        grid_candidates.append(current_candidate)
+                        current_candidate = []
+
+            # Add the last candidate if it exists
+            if current_candidate:
+                grid_candidates.append(current_candidate)
+
+            # Find the best candidate (closest to expected shape)
+            best_candidate = None
+            best_score = -1
+
+            for candidate in grid_candidates:
+                if len(candidate) != expected_shape[0]:
+                    continue
+
+                # Check if all rows have correct length
+                if all(len(row) == expected_shape[1] for row in candidate):
+                    return [[int(cell) for cell in row] for row in candidate]
+
+                # If not perfect, score by how close it is
+                score = sum(1 for row in candidate if len(row) == expected_shape[1])
+                if score > best_score:
+                    best_score = score
+                    best_candidate = candidate
+
+            # If we found a partial match, try to use it
+            if best_candidate and best_score >= expected_shape[0] * 0.7:  # At least 70% match
+                # Pad or truncate rows to match expected width
+                grid = []
+                for row in best_candidate:
+                    if len(row) > expected_shape[1]:
+                        new_row = row[:expected_shape[1]]
+                    else:
+                        new_row = row + ['0'] * (expected_shape[1] - len(row))
+                    grid.append([int(cell) for cell in new_row])
+                return grid
+
+            # Strategy 2: Look for JSON-like structures
+            try:
+                # Try to parse as JSON if it looks like JSON
+                if ('{' in response and '}' in response) or ('[' in response and ']' in response):
+                    data = json.loads(response)
+                    if isinstance(data, list) and len(data) == expected_shape[0]:
+                        grid = []
+                        for row in data:
+                            if isinstance(row, list) and len(row) == expected_shape[1]:
+                                grid.append([int(cell) for cell in row])
+                            else:
+                                break
+                        else:
+                            if len(grid) == expected_shape[0]:
+                                return grid
+            except json.JSONDecodeError:
+                pass
+
+            # Strategy 3: Try to extract numbers from anywhere in the response
+            all_numbers = []
+            for c in response:
+                if c in '01':
+                    all_numbers.append(int(c))
+
+            if len(all_numbers) >= expected_shape[0] * expected_shape[1]:
+                try:
+                    grid = []
+                    for i in range(expected_shape[0]):
+                        start = i * expected_shape[1]
+                        end = start + expected_shape[1]
+                        grid.append(all_numbers[start:end])
+                    return grid
+                except IndexError:
+                    pass
+
+            # If we get here, parsing failed
+            # logger.warning(
+            #     f"Failed to parse response for {expected_shape} grid. Response: {response[:200]}..."
+            # )
+            return None
+
         except Exception as e:
-            if self.config.verbose:
-                print(f"❌ Parse error: {e}")
-                print(f"Response was: '{response}'")
+            # logger.error(f"Parse error for response: {response[:200]}...", exc_info=True)
             return None
 
 class TestEvaluator:
@@ -320,6 +427,7 @@ class TestEvaluator:
         if not valid_results:
             return {
                 "average_accuracy": 0.0,
+                "normalized_accuracy": 0.0,  # Added normalized accuracy
                 "valid_tests": 0,
                 "parse_errors": len(parse_errors),
                 "total_tests": len(results),
@@ -329,8 +437,13 @@ class TestEvaluator:
         
         accuracies = [r["accuracy"] for r in valid_results]
         
+        # Calculate normalized accuracy (accounts for parse errors)
+        total_accuracy = sum(accuracies)
+        normalized_accuracy = total_accuracy / len(results)  # Divide by total tests, not just valid ones
+        
         return {
             "average_accuracy": sum(accuracies) / len(accuracies),
+            "normalized_accuracy": normalized_accuracy,  # New metric
             "median_accuracy": sorted(accuracies)[len(accuracies) // 2],
             "min_accuracy": min(accuracies),
             "max_accuracy": max(accuracies),
@@ -388,8 +501,7 @@ def run_game_of_life_test(config: TestConfig):
                 for row in ground_truth:
                     print(" ".join(map(str, row)))
             
-            # Query model with systematic prompting
-            prompt = ollama_interface.format_prompt(test_case.grid, "systematic")
+            prompt = ollama_interface.format_prompt(test_case.grid)
             response = ollama_interface.query_model(model, prompt)
             
             if config.verbose:
@@ -416,6 +528,7 @@ def run_game_of_life_test(config: TestConfig):
         
         print(f"\n📊 Results for {model}:")
         print(f"   Average Accuracy: {batch_eval['average_accuracy']:.2%}")
+        print(f"   Normalized Accuracy: {batch_eval['normalized_accuracy']:.2%}")  # Show normalized accuracy
         print(f"   Valid Tests: {batch_eval['valid_tests']}/{batch_eval['total_tests']}")
         print(f"   Parse Errors: {batch_eval['parse_errors']}")
     
@@ -426,12 +539,13 @@ def run_game_of_life_test(config: TestConfig):
     
     # Prepare table data
     table_data = []
-    headers = ["Model", "Avg Accuracy", "Valid Tests", "Parse Errors", "Success Rate", "Perfect Scores"]
+    headers = ["Model", "Avg Accuracy", "Norm Accuracy", "Valid Tests", "Parse Errors", "Success Rate", "Perfect Scores"]
     
     for model, results in model_results.items():
         row = [
             model,
             f"{results['average_accuracy']:.2%}",
+            f"{results['normalized_accuracy']:.2%}",  # Add normalized accuracy column
             f"{results['valid_tests']}/{results['total_tests']}",
             results['parse_errors'],
             f"{results['success_rate']:.2%}",
@@ -439,8 +553,8 @@ def run_game_of_life_test(config: TestConfig):
         ]
         table_data.append(row)
     
-    # Sort by average accuracy (descending)
-    table_data.sort(key=lambda x: float(x[1].rstrip('%')), reverse=True)
+    # Sort by normalized accuracy (descending) for fair comparison
+    table_data.sort(key=lambda x: float(x[2].rstrip('%')), reverse=True)
     
     print(tabulate(table_data, headers=headers, tablefmt="grid"))
     
@@ -449,12 +563,13 @@ def run_game_of_life_test(config: TestConfig):
     print("🧠 DETAILED ANALYSIS")
     print(f"{'='*80}")
     
-    best_model = max(model_results.items(), key=lambda x: x[1]['average_accuracy'])
-    print(f"🥇 Best Performing Model: {best_model[0]} ({best_model[1]['average_accuracy']:.2%})")
+    # Find best model by normalized accuracy
+    best_model = max(model_results.items(), key=lambda x: x[1]['normalized_accuracy'])
+    print(f"🥇 Best Performing Model (by normalized accuracy): {best_model[0]} ({best_model[1]['normalized_accuracy']:.2%})")
     
-    if best_model[1]['average_accuracy'] > 0.8:
+    if best_model[1]['normalized_accuracy'] > 0.8:
         print("   Analysis: Strong systematic reasoning detected!")
-    elif best_model[1]['average_accuracy'] > 0.5:
+    elif best_model[1]['normalized_accuracy'] > 0.5:
         print("   Analysis: Partial reasoning - might be pattern matching")
     else:
         print("   Analysis: Likely pattern matching or random guessing")
@@ -483,6 +598,14 @@ Examples:
                        choices=['easy', 'medium', 'hard', 'nightmare'],
                        help='Test difficulty level (default: easy)')
     
+    parser.add_argument('--prompt-style', '-p', type=str, default='systematic',
+                        choices=['systematic', 'casual', 'minimal'],
+                        help='Test difficulty level (default: easy)')
+    
+    parser.add_argument('--prompt-language', '-l', type=str, default='en',
+                        choices=['en', 'es', 'fr', 'de', 'zh', 'ua'],
+                        help='Test difficulty level (default: easy)')
+    
     parser.add_argument('--batch-size', '-b', type=int, default=5,
                        help='Number of tests to run (default: 5)')
     
@@ -492,6 +615,9 @@ Examples:
     # Sampling parameters
     parser.add_argument('--temperature', '-t', type=float, default=0.1,
                        help='Temperature for sampling (default: 0.1)')
+    
+    parser.add_argument('--ctx-len', '-c', type=int, default=2048,
+                       help='Temperature for sampling (default: 2048)')
     
     parser.add_argument('--top-k', type=int, default=40,
                        help='Top-k for sampling (default: 40)')
@@ -520,8 +646,11 @@ def main():
     config = TestConfig(
         models=args.model,
         difficulty=DifficultyLevel.from_string(args.difficulty),
+        prompt_style=args.prompt_style,
+        prompt_language=args.prompt_language,
         batch_size=args.batch_size,
         temperature=args.temperature,
+        ctx_len=args.ctx_len,
         top_k=args.top_k,
         min_k=args.min_k,
         min_p=args.min_p,
