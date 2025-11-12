@@ -218,3 +218,9 @@ __marimo__/
 
 # Project specific ignores
 known_patterns/
+data/*
+results/*
+
+# Misc
+.DS_Store
+share/
