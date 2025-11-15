@@ -1,10 +1,12 @@
 
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import List, Tuple, Dict, Optional, Literal, TypedDict
 from pathlib import Path
 
 from src.utils.logger import logger
+from src.PromptEngine import Language, PromptStyle, SystemPromptStyle
 
 class DifficultyLevel(Enum):
     """Game difficulty levels with associated grid sizes"""
@@ -45,15 +47,10 @@ class TestResult(TypedDict):
     error_details: Optional[str]
 
 @dataclass
-class TestConfig:
-    """Configuration for the test run with validation"""
+class BaseTestConfig(ABC):
+    """Abstract base configuration for all test runs with shared fields and validation"""
     models: List[str]
-    difficulty: DifficultyLevel
     batch_size: int = 10
-    density: float = 0.3
-    iterations: int = 1
-    known_patterns_ratio: float = 0.3
-    known_patterns_dir: Optional[str] = None
     temperature: float = 0.1
     no_think: Optional[bool] = None
     ctx_len: int = 2048
@@ -63,12 +60,11 @@ class TestConfig:
     min_p: float = 0.05
     verbose: bool = False
     seed: Optional[int] = None
-    live_dead_cell_markers: Tuple[str, str] = ('1', '0')  # (live, dead)
     examples_count: int = 10
-    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples_linguistic', 'examples', 'example_rules_math', 'rules_math'] = 'linguistic'
-    system_prompt_style: Literal['analytical', 'casual', 'adversarial', 'none'] = 'analytical'
-    prompt_language: Literal["en", "fr", "es", "de", "zh", "ua"] = "en"
     interface_type: Literal["ollama", "huggingface"] = "ollama"
+    prompt_language: Language = Language.EN
+    prompt_style: str = 'linguistic'  # Will be validated by task-specific configs
+    system_prompt_style: SystemPromptStyle = SystemPromptStyle.ANALYTICAL
     results_dir: str = "results"
 
     def __post_init__(self):
@@ -79,9 +75,75 @@ class TestConfig:
             raise ValueError("Temperature must be between 0 and 2")
         if self.top_k < 1:
             raise ValueError("Top-k must be at least 1")
+        
+        # Validate system prompt style
+        if not isinstance(self.system_prompt_style, SystemPromptStyle):
+            try:
+                self.system_prompt_style = SystemPromptStyle(self.system_prompt_style)
+            except ValueError:
+                raise ValueError(f"Invalid system_prompt_style: {self.system_prompt_style}")
+        
+        # Validate language
+        if not isinstance(self.prompt_language, Language):
+            try:
+                self.prompt_language = Language(self.prompt_language)
+            except ValueError:
+                raise ValueError(f"Invalid prompt_language: {self.prompt_language}")
 
         # Create results directory if it doesn't exist
         Path(self.results_dir).mkdir(parents=True, exist_ok=True)
+
+@dataclass
+class GameOfLifeTestConfig(BaseTestConfig):
+    """Configuration for Game of Life test runs"""
+    difficulty: DifficultyLevel = DifficultyLevel.EASY
+    density: float = 0.3
+    iterations: int = 1
+    known_patterns_ratio: float = 0.3
+    known_patterns_dir: Optional[str] = None
+    live_dead_cell_markers: Tuple[str, str] = ('1', '0')  # (live, dead)
+    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples', 'rules_math'] = 'linguistic'
+    
+    def __post_init__(self):
+        """Validate Game of Life specific configuration"""
+        super().__post_init__()
+        
+        # Validate prompt_style for Game of Life
+        valid_styles = ['linguistic', 'casual', 'minimal', 'examples', 'rules_math']
+        if self.prompt_style not in valid_styles:
+            raise ValueError(f"Invalid prompt_style '{self.prompt_style}'. Must be one of: {valid_styles}")
+        
+        # Validate density
+        if not (0 <= self.density <= 1):
+            raise ValueError("Density must be between 0 and 1")
+
+@dataclass
+class AriTestConfig(BaseTestConfig):
+    """Configuration for ARI (Math Expression) test runs"""
+    difficulties: List[int] = field(default_factory=lambda: [3])
+    target_values: List[int] = field(default_factory=lambda: [3])
+    random_target: bool = False
+    variables: List[str] = field(default_factory=lambda: ['x'])
+    mode: Literal["expression", "equation"] = "expression"
+    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples', 'rules_math'] = 'linguistic'
+    prompt_language: Language = Language.EN
+    
+    def __post_init__(self):
+        """Validate ARI specific configuration"""
+        super().__post_init__()
+        
+        # Validate prompt_style for ARI
+        valid_styles = ['linguistic', 'casual', 'minimal', 'examples', 'rules_math']
+        if self.prompt_style not in valid_styles:
+            raise ValueError(f"Invalid prompt_style '{self.prompt_style}'. Must be one of: {valid_styles}")
+
+@dataclass
+class C14TestConfig(BaseTestConfig):
+    """Configuration for C14 (Cellular Automata) test runs"""
+    difficulties: List[int] = field(default_factory=lambda: [3])
+    target_values: List[int] = field(default_factory=lambda: [3])
+    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples', 'rules_math'] = 'linguistic'
+    prompt_language: Literal["en"] = "en"
 
 @dataclass
 class GameState:

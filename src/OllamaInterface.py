@@ -1,6 +1,6 @@
 from src.BaseModelInterface import BaseModelInterface
 from src.utils.logger import logger
-from src.types import TestConfig
+from src.types import BaseTestConfig
 
 import ollama
 from typing import Dict, Optional, Tuple
@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 class OllamaInterface(BaseModelInterface):
     """Enhanced interface for communicating with Ollama with better error handling"""
 
-    def __init__(self, config: TestConfig):
+    def __init__(self, config: BaseTestConfig):
         super().__init__(config)
         self.client = ollama.Client()
 
@@ -35,59 +35,62 @@ class OllamaInterface(BaseModelInterface):
 
     def query_model(self, model: str, prompt: str, system: str) -> Tuple[str, Dict[str, int]]:
         """Send prompt to Ollama with comprehensive error handling"""
-        try:
-            response = self.client.generate(
-                model=model,
-                system=system,
-                prompt=prompt,
-                think=None if self.config.no_think is None else True if self.supports_reasoning(model) and not self.config.no_think else False,
-                options={
-                    'temperature': self.config.temperature,
-                    'seed': self.config.seed,
-                    'top_k': self.config.top_k,
-                    'min_k': self.config.min_k,
-                    'min_p': self.config.min_p,
-                    'num_ctx': self.config.ctx_len,
-                    'num_predict': self.config.num_predict,
-                    "num_keep": 20,
-                    # "tfs_z": 0.5,
-                    # "typical_p": 0.7,
-                    # "repeat_last_n": 33,
-                    # "repeat_penalty": 1.2,
-                    # "presence_penalty": 1.5,
-                    # "frequency_penalty": 1.0,
-                    # "mirostat": 1,
-                    # "mirostat_tau": 0.8,
-                    # "mirostat_eta": 0.6,
-                    # "penalize_newline": true,
-                    # "num_batch": 2,
-                    # "num_gpu": 1,
-                    # "main_gpu": 0,
-                    # "low_vram": false,
-                    # "f16_kv": true,
-                    # "vocab_only": false,
-                    "use_mmap": True,
-                    # "use_mlock": false,
-                    "num_thread": 8
+        for retry in range(3):
+            try:
+                response = self.client.generate(
+                    model=model,
+                    system=system,
+                    prompt=prompt,
+                    think=None if self.config.no_think is None else True if self.supports_reasoning(model) and not self.config.no_think else False,
+                    options={
+                        'temperature': self.config.temperature,
+                        'seed': self.config.seed,
+                        'top_k': self.config.top_k,
+                        'min_k': self.config.min_k,
+                        'min_p': self.config.min_p,
+                        'num_ctx': self.config.ctx_len,
+                        'num_predict': self.config.num_predict,
+                        "num_keep": 20,
+                        # "tfs_z": 0.5,
+                        # "typical_p": 0.7,
+                        # "repeat_last_n": 33,
+                        # "repeat_penalty": 1.2,
+                        # "presence_penalty": 1.5,
+                        # "frequency_penalty": 1.0,
+                        # "mirostat": 1,
+                        # "mirostat_tau": 0.8,
+                        # "mirostat_eta": 0.6,
+                        # "penalize_newline": true,
+                        # "num_batch": 2,
+                        # "num_gpu": 1,
+                        # "main_gpu": 0,
+                        # "low_vram": false,
+                        # "f16_kv": true,
+                        # "vocab_only": false,
+                        "use_mmap": True,
+                        # "use_mlock": false,
+                        "num_thread": 8
+                    }
+                )
+                
+                stats = {
+                    'total_duration':  response['total_duration'],
+                    'load_duration': response['load_duration'],
+                    'prompt_eval_count': response['prompt_eval_count'],
+                    'prompt_eval_duration': response['prompt_eval_duration'],
+                    'eval_count': response['eval_count'],
+                    'eval_duration': response['eval_duration'],
                 }
-            )
-            
-            stats = {
-                'total_duration': response['total_duration'],
-                'load_duration': response['load_duration'],
-                'prompt_eval_count': response['prompt_eval_count'],
-                'prompt_eval_duration': response['prompt_eval_duration'],
-                'eval_count': response['eval_count'],
-                'eval_duration': response['eval_duration'],
-            }
-            
-            return response['response'].strip(), stats
+                
+                return response['response'].strip(), stats
 
-        except ollama.ResponseError as e:
-            error_msg = f"Ollama API error for model {model}: {e}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
-        except Exception as e:
-            error_msg = f"Unexpected error querying model {model}: {e}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+            except ollama.ResponseError as e:
+                error_msg = f"Ollama API error for model {model}: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
+                # continue
+            except RuntimeError as e:
+                error_msg = f"Unexpected error querying model {model}: {e}"
+                logger.error(error_msg)
+                raise RuntimeError(error_msg) from e
+                # continue

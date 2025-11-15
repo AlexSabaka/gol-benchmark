@@ -1,6 +1,6 @@
 from conways_life.parser import ConwayPatternParser
 from src.utils.logger import logger
-from src.types import DifficultyLevel, GameState, TestConfig
+from src.types import DifficultyLevel, GameState, BaseTestConfig
 
 from pathlib import Path
 
@@ -147,7 +147,7 @@ BASIC_KNOWN_PATTERNS = {
 class TestGenerator:
     """Generates diverse Game of Life test cases with better pattern handling"""
 
-    def __init__(self, config: TestConfig):
+    def __init__(self, config: BaseTestConfig):
         self.config = config
         if self.config.seed is not None:
             random.seed(self.config.seed)

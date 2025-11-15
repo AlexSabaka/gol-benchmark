@@ -21,126 +21,16 @@ import sys
 import argparse
 import random
 
-from src.PROMPT_STYLES import SYSTEM_PROMPT_STYLES_EN
 from src.BaseModelInterface import BaseModelInterface, create_interface
 from src.TestEvaluator import TestEvaluator, TestResult
-
-@dataclass
-class TestConfig:
-    """Configuration for the test run with validation"""
-    models: List[str]
-    difficulties: List[int]
-    target_values: List[int]
-    batch_size: int = 10
-    temperature: float = 0.1
-    no_think: Optional[bool] = None
-    ctx_len: int = 2048
-    num_predict: int = 1024
-    top_k: int = 40
-    min_k: int = 1
-    min_p: float = 0.05
-    verbose: bool = False
-    seed: Optional[int] = None
-    examples_count: int = 10
-    interface_type: Literal["ollama", "huggingface"] = "ollama"
-    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples', 'rules_math'] = 'linguistic'
-    system_prompt_style: Literal['analytical', 'casual', 'adversarial', 'none'] = 'analytical'
-    prompt_language: Literal["en"] = "en"
-    results_dir: str = "results"
-
-    def __post_init__(self):
-        """Validate configuration values"""
-        if self.batch_size < 1:
-            raise ValueError("Batch size must be at least 1")
-        if not (0 <= self.temperature <= 2):
-            raise ValueError("Temperature must be between 0 and 2")
-        if self.top_k < 1:
-            raise ValueError("Top-k must be at least 1")
-
-        # Create results directory if it doesn't exist
-        Path(self.results_dir).mkdir(parents=True, exist_ok=True)
-
-# Multilingual prompt templates
-PROMPT_STYLES_EN = {
-    "linguistic": """
-Given the mathematical expression: {expression}
-
-Follow these EXACT steps:
-1. Identify all operations in the expression following order of operations (PEMDAS/BODMAS)
-2. Calculate each sub-expression step by step
-3. Show your work for every intermediate calculation
-4. Provide the final numerical result
-
-Expression: {expression}
-Step-by-step solution:""",
-
-    "casual": """
-Hey! Can you solve this math expression for me? Just work through it step by step.
-{expression}
-
-Show me how you get to the answer:""",
-
-    "minimal": """
-{expression} =""",
-
-    "examples": """
-{examples}
----
-{expression} =
-""",
-
-    "rules_math": """$$
-\\text{{Expression: }} {expression} \\\\
-\\text{{Apply order of operations: }} \\\\
-P: \\text{{Parentheses first}} \\\\
-E: \\text{{Exponents}} \\\\
-MD: \\text{{Multiplication and Division (left to right)}} \\\\
-AS: \\text{{Addition and Subtraction (left to right)}} \\\\
-\\rule{{100pt}}{{0.4pt}} \\\\
-\\text{{Solution:}}
-$$"""
-}
+from src.types import C14TestConfig as TestConfig
+from src.PromptEngine import PromptEngine, Language, SystemPromptStyle, create_math_context
+from src.MathExpressionGenerator import MathExpressionGenerator
 
 @dataclass
 class Rules:
     board_size: Tuple[int, int] = (1, 8)
     pass
-
-class CellularAutomataEngine:
-    def __init__(self, seed: int = None):
-        if seed is not None:
-            random.seed(seed)
-    
-    def get_prompt_template(self, language: str = "en", style: str = "linguistic") -> str:
-        """Get prompt template for given language and style."""
-        templates = {
-            "en": PROMPT_STYLES_EN,
-        }
-        
-        if language not in templates:
-            raise ValueError()
-        if style not in templates[language]:
-            raise ValueError()
-            
-        return templates[language][style]
-    
-    def generate_test_case(self, rules: Rules, language: str = "en", style: str = "linguistic", count: int = 1) -> Dict[str, Any]:
-        """Generate a complete test case with expressions and prompts."""
-        expressions = self.generate_expressions_for_target(target, complexity, count)
-        
-        test_case = {
-            "target": target,
-            "complexity": complexity,
-            "language": language,
-            "style": style,
-            "expressions": expressions,
-            "prompts": []
-        }
-        
-        prompt_template = self.get_prompt_template(language, style)
-        
-        return test_case
-
 
 
 def run_c14_tests(test_cases, model, config: TestConfig) -> Dict[str, Dict]:
@@ -458,6 +348,27 @@ def main() -> None:
         )
 
         generator = MathExpressionGenerator(seed=config.seed)
+        prompt_engine = PromptEngine()
+        
+        # Map string system prompt style to enum
+        system_style_map = {
+            'analytical': SystemPromptStyle.ANALYTICAL,
+            'casual': SystemPromptStyle.CASUAL,
+            'adversarial': SystemPromptStyle.ADVERSARIAL,
+            'none': SystemPromptStyle.NONE,
+        }
+        system_prompt_style = system_style_map.get(config.system_prompt_style, SystemPromptStyle.ANALYTICAL)
+        
+        # Map string language to enum
+        language_map = {
+            'en': Language.EN,
+            'fr': Language.FR,
+            'es': Language.ES,
+            'de': Language.DE,
+            'zh': Language.ZH,
+            'ua': Language.UA,
+        }
+        prompt_language = language_map.get(config.prompt_language, Language.EN)
         
         # Test generating expressions for target value 2 with different complexities
         print("=== Math Expression Generator Test ===")
@@ -468,18 +379,27 @@ def main() -> None:
             for complexity in config.difficulties:
                 print(f"Complexity {complexity} expressions that equal {target}:")
                 
+                # Generate test case with expressions
                 test_case = generator.generate_test_case(target, complexity, count=config.batch_size, language=config.prompt_language, style=config.prompt_style)
-                test_cases.extend([
-                    {
+                
+                # Use PromptEngine to generate prompts for each expression
+                for expression in test_case['expressions']:
+                    context = create_math_context(
+                        language=prompt_language.value,
+                        style=config.prompt_style,
+                        expression=expression
+                    )
+                    result = prompt_engine.generate(context)
+                    
+                    test_cases.append({
                         "complexity": test_case["complexity"],
                         "language": test_case["language"],
                         "style": test_case["style"],
                         "target": test_case["target"],
-                        "expression": e,
-                        "prompt": p,
-                        "system": SYSTEM_PROMPT_STYLES_EN[config.system_prompt_style],
-                    } for e,p in zip(test_case['expressions'], test_case['prompts'])
-                ])
+                        "expression": expression,
+                        "prompt": result.user_prompt,
+                        "system": prompt_engine.get_system_prompt_by_enum(system_prompt_style, prompt_language),
+                    })
 
         model_results = {}
         for model in config.models:

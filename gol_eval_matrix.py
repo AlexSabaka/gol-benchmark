@@ -19,7 +19,7 @@ import numpy as np
 
 from src.PROMPT_STYLES import get_prompt_style
 from src.utils.logger import logger
-from src.types import DifficultyLevel, ParseError, TestConfig
+from src.types import DifficultyLevel, ParseError, BaseTestConfig, GameOfLifeTestConfig
 from src.GameOfLifeEngine import GameOfLifeEngine
 from src.BaseModelInterface import BaseModelInterface, create_interface
 from src.TestEvaluator import TestEvaluator
@@ -95,9 +95,9 @@ class MatrixTester:
         
         return test_configs
     
-    def create_test_config(self, params: Dict[str, Any]) -> TestConfig:
-        """Create a TestConfig object from parameter dictionary"""
-        return TestConfig(
+    def create_test_config(self, params: Dict[str, Any]) -> GameOfLifeTestConfig:
+        """Create a GameOfLifeTestConfig object from parameter dictionary"""
+        return GameOfLifeTestConfig(
             models=self.config.models,
             interface_type=self.config.interface_type,
             difficulty=DifficultyLevel.from_string(params['difficulty']),

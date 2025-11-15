@@ -8,58 +8,24 @@ from datetime import datetime
 from enum import Enum
 import json
 from pathlib import Path
+import random
 import re
 from tabulate import tabulate
 from typing import List, Literal, Optional, Tuple, Dict
 from itertools import product, combinations_with_replacement
 from tqdm import tqdm
 
-from src.PROMPT_STYLES import SYSTEM_PROMPT_STYLES_EN
 import numpy as np
 
 import argparse
 import sys
-import argparse
 
 from src.BaseModelInterface import BaseModelInterface, create_interface
 from src.TestEvaluator import TestEvaluator, TestResult
 from src.MathExpressionGenerator import MathExpressionGenerator
+from src.PromptEngine import PromptEngine, Language, SystemPromptStyle
 
-@dataclass
-class TestConfig:
-    """Configuration for the test run with validation"""
-    models: List[str]
-    difficulties: List[int]
-    target_values: List[int]
-    batch_size: int = 10
-    temperature: float = 0.1
-    no_think: Optional[bool] = None
-    ctx_len: int = 2048
-    num_predict: int = 1024
-    top_k: int = 40
-    min_k: int = 1
-    min_p: float = 0.05
-    verbose: bool = False
-    seed: Optional[int] = None
-    examples_count: int = 10
-    interface_type: Literal["ollama", "huggingface"] = "ollama"
-    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples', 'rules_math'] = 'linguistic'
-    system_prompt_style: Literal['analytical', 'casual', 'adversarial', 'none'] = 'analytical'
-    prompt_language: Literal["en"] = "en"
-    results_dir: str = "results"
-
-    def __post_init__(self):
-        """Validate configuration values"""
-        if self.batch_size < 1:
-            raise ValueError("Batch size must be at least 1")
-        if not (0 <= self.temperature <= 2):
-            raise ValueError("Temperature must be between 0 and 2")
-        if self.top_k < 1:
-            raise ValueError("Top-k must be at least 1")
-
-        # Create results directory if it doesn't exist
-        Path(self.results_dir).mkdir(parents=True, exist_ok=True)
-
+from src.types import AriTestConfig as TestConfig
 
 def run_ari_tests(test_cases, model, config: TestConfig) -> Dict[str, Dict]:
     # Initialize components
@@ -71,58 +37,61 @@ def run_ari_tests(test_cases, model, config: TestConfig) -> Dict[str, Dict]:
 
     results = []
     t0 = datetime.now()
-    for i, test_case in tqdm(enumerate(test_cases), desc=f"Model {model}", unit="test", total=len(test_cases), dynamic_ncols=True):
-        try:
-            response, stats = model_interface.query_model(model, test_case['prompt'], test_case['system'])
+    with tqdm(enumerate(test_cases), desc=f"Model {model}", unit="test", total=len(test_cases), dynamic_ncols=True) as pbar:
+        for i, test_case in pbar:
+            try:
+                response, stats = model_interface.query_model(model, test_case['prompt'], test_case['system'])
 
-            # Parse and evaluate
-            target = float(test_case['target'])
-            predicted = parse_response(str(test_case['target']), response)
-            
-            # print(f"Expression: {test_case['expression']}, Target: {target}, Predicted: {predicted}")
-            
-            if predicted is None:
-                print(f"Query: {test_case['expression']}")
-                print(f"Predicted: {predicted}")
-                print(f"Ground Truth: {target}")
+                # Parse and evaluate
+                target = float(test_case['target'])
+                predicted = parse_response(str(test_case['target']), response)
                 
-                print('Prompt:')
-                print(test_case['prompt'])
-                print('–'*80)
-                print('Response:')
-                print(response)
-                print('–'*80)
+                # Display on pbar running correct and incorrect predictions count
+                pbar.set_postfix_str(f"Correct {sum(1 for r in results if r['accuracy'] == 1.0)}/{len(test_cases)}")
+                
+                if predicted is None and config.verbose:
+                    print(f"Query: {test_case['expression']}")
+                    print(f"Predicted: {predicted}")
+                    print(f"Ground Truth: {target}")
+                    
+                    print('Prompt:')
+                    print(test_case['prompt'])
+                    print('–'*80)
+                    print('Response:')
+                    print(response)
+                    print('–'*80)
 
-            result: TestResult = {
-                "accuracy": 1.0 if target == predicted else 0.0,
-                "correct_cells": 1 if target == predicted else 0,
-                "total_cells": 1,
-                "parse_error": predicted is None,
-                "cell_by_cell": [],
-                "raw_response": response,
-                "error_details": None
-            }
-            result['total_duration'] = stats['total_duration']
-            result['load_duration'] = stats['load_duration']
-            result['prompt_eval_count'] = stats['prompt_eval_count']
-            result['prompt_eval_duration'] = stats['prompt_eval_duration']
-            result['eval_count'] = stats['eval_count']
-            result['eval_duration'] = stats['eval_duration']
-            
-            results.append(result)
+                result: TestResult = {
+                    "accuracy": 1.0 if target == predicted else 0.0,
+                    "correct_cells": 1 if target == predicted else 0,
+                    "total_cells": 1,
+                    "parse_error": predicted is None,
+                    "cell_by_cell": [],
+                    "raw_response": response,
+                    "error_details": None
+                }
+                result['total_duration'] = stats['total_duration']
+                result['load_duration'] = stats['load_duration']
+                result['prompt_eval_count'] = stats['prompt_eval_count']
+                result['prompt_eval_duration'] = stats['prompt_eval_duration']
+                result['eval_count'] = stats['eval_count']
+                result['eval_duration'] = stats['eval_duration']
+                
+                results.append(result)
 
-        except Exception as e:
-            print(f"Error in test {i+1} for model {model}: {e}")
-            raise e
-            results.append({
-                "accuracy": 0.0,
-                "correct_cells": 0,
-                "total_cells": 1,
-                "parse_error": True,
-                "cell_by_cell": [],
-                "raw_response": str(e),
-                "error_details": str(e)
-            })
+            except Exception as e:
+                print(f"Error in test {i+1} for model {model}: {e}")
+                raise e
+                results.append({
+                    "accuracy": 0.0,
+                    "correct_cells": 0,
+                    "total_cells": 1,
+                    "parse_error": True,
+                    "cell_by_cell": [],
+                    "raw_response": str(e),
+                    "error_details": str(e)
+                })
+
     t1 = datetime.now()
     duration = (t1 - t0).total_seconds()
 
@@ -187,8 +156,8 @@ def setup_argparser() -> argparse.ArgumentParser:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
-  python ari_eval.py --model qwen3:0.6b --difficulty easy --batch-size 5
-  python ari_eval.py --model llama3.2:3b phi3:3.8b --difficulty hard --temperature 0.1
+  python ari_eval.py --model qwen3:0.6b --difficulty 1 --batch-size 5
+  python ari_eval.py --model llama3.2:3b phi3:3.8b --difficulty 5 --temperature 0.1
   python ari_eval.py --model qwen3:0.6b llama3.2:3b --batch-size 10 --seed 42 --verbose
         """
     )
@@ -203,12 +172,27 @@ Examples:
     # Test configuration
     parser.add_argument(
         '--difficulty', '-d', type=int, nargs='+', default=[3],
-        help='Test difficulties level 1-5 (default: 3)'
+        help='Test difficulties level, sets maximum expression tree depth (default: 3)'
+    )
+    
+    parser.add_argument(
+        "--mode", type=str, default="expression", choices=["expression", "equation"],
+        help="Mode of test case generation: 'expression' for expressions, 'equation' for equations (default: expression)"
+    )
+    
+    parser.add_argument(
+        "--variables", type=str, nargs='+', default=['x'],
+        help="Variables to use in expressions (default: ['x'])"
     )
 
     parser.add_argument(
         '--target', type=int, nargs='+', default=[3],
         help='Test target values (default: 3)'
+    )
+
+    parser.add_argument(
+        '--rand-target', action='store_true',
+        help='Use random target values'
     )
 
     parser.add_argument(
@@ -350,6 +334,80 @@ def display_results(model_results: Dict[str, Dict], config: TestConfig) -> None:
 
     print(f"🥇 Best Performing Model: {best_model[0]} ({best_model[1]['normalized_accuracy']:.2%})")
 
+def generate_target_test_cases(config: TestConfig, generator: MathExpressionGenerator) -> List[Dict]:
+    prompt_engine = PromptEngine()
+    
+    # Map string system prompt style to enum
+    system_style_map = {
+        'analytical': SystemPromptStyle.ANALYTICAL,
+        'casual': SystemPromptStyle.CASUAL,
+        'adversarial': SystemPromptStyle.ADVERSARIAL,
+        'none': SystemPromptStyle.NONE,
+    }
+    system_prompt_style = system_style_map.get(config.system_prompt_style, SystemPromptStyle.ANALYTICAL)
+    
+    # Map string language to enum
+    language_map = {
+        'en': Language.EN,
+        'fr': Language.FR,
+        'es': Language.ES,
+        'de': Language.DE,
+        'zh': Language.ZH,
+        'ua': Language.UA,
+    }
+    prompt_language = language_map.get(config.prompt_language, Language.EN)
+    
+    test_cases = []
+    for target in config.target_values:
+        for complexity in config.difficulties:
+            print(f"Complexity {complexity} expressions that equal {target}:")
+            
+            test_case = generator.generate_test_case(target, complexity, count=config.batch_size, language=config.prompt_language, style=config.prompt_style)
+
+            for e, p in zip(test_case['items'], test_case['prompts']):
+                test_cases.append({
+                    "complexity": test_case["complexity"],
+                    "language": test_case["language"],
+                    "style": test_case["style"],
+                    "target": test_case["target"],
+                    "expression": e,
+                    "prompt": p,
+                    "system": prompt_engine.get_system_prompt_by_enum(system_prompt_style, prompt_language),
+                })
+    return test_cases
+
+def generate_random_target_test_cases(config: TestConfig, generator: MathExpressionGenerator) -> List[Dict]:
+    prompt_engine = PromptEngine()
+    
+    # Map string system prompt style to enum
+    system_style_map = {
+        'analytical': SystemPromptStyle.ANALYTICAL,
+        'casual': SystemPromptStyle.CASUAL,
+        'adversarial': SystemPromptStyle.ADVERSARIAL,
+        'none': SystemPromptStyle.NONE,
+    }
+    system_prompt_style = system_style_map.get(config.system_prompt_style, SystemPromptStyle.ANALYTICAL)
+    
+    test_cases = []
+    for complexity in config.difficulties:
+        target = random.randint(-100, 100)
+
+        print(f"Complexity {complexity} expressions that equal {target}:")
+        
+        test_case = generator.generate_test_case(target, complexity, count=config.batch_size, language=config.prompt_language, style=config.prompt_style)
+        
+        for e, p in zip(test_case['expressions'], test_case['prompts']):
+            test_cases.append({
+                "complexity": test_case["complexity"],
+                "language": test_case["language"],
+                "style": test_case["style"],
+                "target": test_case["target"],
+                "expression": e,
+                "prompt": p,
+                "system": prompt_engine.get_system_prompt_by_enum(system_prompt_style),
+            })
+    return test_cases
+
 def main() -> None:
     """Main entry point with enhanced error handling"""
     try:
@@ -361,6 +419,7 @@ def main() -> None:
             models=args.model,
             difficulties=args.difficulty,
             target_values=args.target,
+            random_target=args.rand_target,
             batch_size=args.batch_size,
             temperature=args.temperature,
             no_think=args.no_think,
@@ -384,23 +443,21 @@ def main() -> None:
         print("=== Math Expression Generator Test ===")
         print()
         
-        test_cases = []
-        for target in config.target_values:
-            for complexity in config.difficulties:
-                print(f"Complexity {complexity} expressions that equal {target}:")
-                
-                test_case = generator.generate_test_case(target, complexity, count=config.batch_size, language=config.prompt_language, style=config.prompt_style)
-                test_cases.extend([
-                    {
-                        "complexity": test_case["complexity"],
-                        "language": test_case["language"],
-                        "style": test_case["style"],
-                        "target": test_case["target"],
-                        "expression": e,
-                        "prompt": p,
-                        "system": SYSTEM_PROMPT_STYLES_EN[config.system_prompt_style],
-                    } for e,p in zip(test_case['expressions'], test_case['prompts'])
-                ])
+        test_cases = generate_random_target_test_cases(config, generator) if config.random_target else generate_target_test_cases(config, generator)
+
+        if config.verbose:
+            print(f"\nGenerated {len(test_cases)} test cases:")
+            # Print system prompt and user prompt generated formats
+            print("System and User Prompts:")
+            print(test_cases[0]['system'])
+            print('–'*80)
+            print(test_cases[0]['prompt'])
+            print('–'*80)
+            for i, tc in enumerate(test_cases):
+                print(f"Test Case {i+1}:")
+                print(f"  Target: {tc['target']}, Evaluates to: {eval(tc['expression'])}")
+                print(f"  Expression: {tc['expression']}")
+                print(f"{'-'*40}")
 
         model_results = {}
         for model in config.models:
@@ -418,11 +475,6 @@ def main() -> None:
         print(f"Test failed with error: {e}")
         raise e
         sys.exit(1)
- 
-def test():
-    resp = """"""
-    res = parse_response("123", resp)
-    print(res)
 
 if __name__ == "__main__":
     main()

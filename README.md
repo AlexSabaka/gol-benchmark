@@ -9,7 +9,7 @@ A procedural benchmark suite for testing multilingual LLM reasoning capabilities
 
 ## What Is This?
 
-GoL Benchmark is a **pet project evolved to experimental playground** for stress-testing how well language models handle **structured reasoning tasks** across different:
+GoL Benchmark is a **semi *vibe* coded pet project evolved to experimental playground** for stress-testing how well language models handle **structured reasoning tasks** across different:
 
 - **Languages** (English, Spanish, French, German, Chinese, Ukrainian)
 - **Prompt styles** (linguistic, casual, minimal, examples-based)
@@ -130,6 +130,8 @@ This is a **personal experiment**, but if you're curious and want to:
 
 ## Roadmap
 
+- [ ] Refactor prompts into coherent prompt engine
+- [ ] Cross-lingual/cross-cultural generation problems
 - [ ] More languages (Japanese, Arabic, Hindi)
 - [ ] Cross-lingual transfer tests
 - [ ] Add visual result dashboards
@@ -147,7 +149,8 @@ See [LICENSE](LICENSE) for details.
 
 ## 🙏 Acknowledgments
 
-- Anthropic AI team
 - Conway's Game of Life rules
 - The Ollama team for making local LLM testing accessible
-- And every model that crashed hilariously on emoji grids
+- Anthropic AI team
+- OpenSource community
+- Every model that crashed on tests

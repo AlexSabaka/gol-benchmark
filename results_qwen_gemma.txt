@@ -1,0 +1,225 @@
+python ari_eval.py --model hf.co/unsloth/gemma-3-270m-it-qat-GGUF:F16 qwen3:0.6b gemma3:1b --batch-size 12 --seed 42 --difficulty 1 2 3 --temperature 0.1 --target 0 1 2 --no-think --prompt-style minimal --system-prompt-style adversarial
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: hf.co/unsloth/gemma-3-270m-it-qat-GGUF:F16, qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: minimal
+Prompt Language: Language.EN
+================================================================================
++--------------------------------------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model                                      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============================================+================+=================+===============+================+================+==================+==============+
+| qwen3:0.6b                                 | 53.70%         | 53.70%          | 108/108       |              0 | 100.00%        |               58 |              |
++--------------------------------------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| gemma3:1b                                  | 27.78%         | 27.78%          | 108/108       |              0 | 100.00%        |               30 |              |
++--------------------------------------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| hf.co/unsloth/gemma-3-270m-it-qat-GGUF:F16 | 0.00%          | 0.00%           | 0/108         |            108 | 0.00%          |                0 |              |
++--------------------------------------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: qwen3:0.6b (53.70%)
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py --model qwen3:0.6b gemma3:1b --batch-size 12 --seed 42 --difficulty 1 2 3 --temperature 0.1 --target 0 1 2 --no-think --prompt-style minimal --system-prompt-style casual
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: minimal
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| qwen3:0.6b | 35.19%         | 35.19%          | 108/108       |              0 | 100.00%        |               38 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| gemma3:1b  | 35.05%         | 31.48%          | 97/108        |             11 | 89.81%         |               34 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: qwen3:0.6b (35.19%)
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py --model qwen3:0.6b gemma3:1b --batch-size 12 --seed 42 --difficulty 1 2 3 --temperature 0.1 --target 0 1 2 --no-think --prompt-style minimal --system-prompt-style analytical
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: minimal
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| gemma3:1b  | 57.41%         | 57.41%          | 108/108       |              0 | 100.00%        |               62 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| qwen3:0.6b | 35.19%         | 35.19%          | 108/108       |              0 | 100.00%        |               38 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: gemma3:1b (57.41%)
+
+
+
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py --model qwen3:0.6b gemma3:1b --batch-size 12 --seed 42 --difficulty 1 2 3 --temperature 0.1 --target 0 1 2 --no-think --prompt-style casual --system-prompt-style adversarial
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: casual
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| qwen3:0.6b | 43.52%         | 43.52%          | 108/108       |              0 | 100.00%        |               47 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| gemma3:1b  | 39.81%         | 39.81%          | 108/108       |              0 | 100.00%        |               43 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: qwen3:0.6b (43.52%)
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py --model qwen3:0.6b gemma3:1b --batch-size 12 --seed 42 --difficulty 1 2 3 --temperature 0.1 --target 0 1 2 --no-think --prompt-style casual --system-prompt-style casual
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: casual
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| gemma3:1b  | 36.11%         | 36.11%          | 108/108       |              0 | 100.00%        |               39 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| qwen3:0.6b | 34.26%         | 34.26%          | 108/108       |              0 | 100.00%        |               37 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: gemma3:1b (36.11%)
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py --model qwen3:0.6b gemma3:1b --batch-size 12 --seed 42 --difficulty 1 2 3 --temperature 0.1 --target 0 1 2 --no-think --prompt-style casual --system-prompt-style analytical 
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: casual
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| gemma3:1b  | 52.78%         | 52.78%          | 108/108       |              0 | 100.00%        |               57 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| qwen3:0.6b | 50.00%         | 50.00%          | 108/108       |              0 | 100.00%        |               54 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: gemma3:1b (52.78%)
+
+
+
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py \
+    --model qwen3:0.6b gemma3:1b \
+    --batch-size 12 \
+    --seed 42 \
+    --difficulty 1 2 3 \
+    --temperature 0.1 \
+    --target 0 1 2 \
+    --system-prompt-style adversarial \
+    --prompt-style linguistic \
+    --no-think
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: linguistic
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| gemma3:1b  | 79.63%         | 79.63%          | 108/108       |              0 | 100.00%        |               86 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| qwen3:0.6b | 62.96%         | 62.96%          | 108/108       |              0 | 100.00%        |               68 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: gemma3:1b (79.63%)
+
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py \
+    --model qwen3:0.6b gemma3:1b \
+    --batch-size 12 \
+    --seed 42 \
+    --difficulty 1 2 3 \
+    --temperature 0.1 \
+    --target 0 1 2 \
+    --system-prompt-style casual \
+    --prompt-style linguistic \
+    --no-think
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: linguistic
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| gemma3:1b  | 83.33%         | 83.33%          | 108/108       |              0 | 100.00%        |               90 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| qwen3:0.6b | 63.89%         | 63.89%          | 108/108       |              0 | 100.00%        |               69 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: gemma3:1b (83.33%)
+
+
+(gol_eval) ➜  gol_eval git:(master) ✗ python ari_eval.py \
+    --model qwen3:0.6b gemma3:1b \
+    --batch-size 12 \
+    --seed 42 \
+    --difficulty 1 2 3 \
+    --temperature 0.1 \
+    --target 0 1 2 \
+    --system-prompt-style analytical \
+    --prompt-style linguistic \
+    --no-think
+================================================================================
+🏁 FINAL RESULTS FOR TEST RUN CONFIGURATION
+Models: qwen3:0.6b, gemma3:1b
+Thinking: Disabled
+Target: 0, 1, 2
+Difficulty: 1, 2, 3
+Batch Size: 12
+Temperature: 0.1
+Prompt Style: linguistic
+Prompt Language: Language.EN
+================================================================================
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| Model      | Avg Accuracy   | Norm Accuracy   | Valid Tests   |   Parse Errors | Success Rate   |   Perfect Scores | Top Errors   |
++============+================+=================+===============+================+================+==================+==============+
+| gemma3:1b  | 75.00%         | 75.00%          | 108/108       |              0 | 100.00%        |               81 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+| qwen3:0.6b | 47.22%         | 47.22%          | 108/108       |              0 | 100.00%        |               51 |              |
++------------+----------------+-----------------+---------------+----------------+----------------+------------------+--------------+
+🥇 Best Performing Model: gemma3:1b (75.00%)

@@ -1,0 +1,41 @@
+python ari_eval.py \
+    --model hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:F16 \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q2_K \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q8_0 \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q4_K_M \
+            --batch-size 12 \
+            --seed 42 \
+            --difficulty 1 2 3 \
+            --temperature 0.1 \
+            --target 0 1 2 \
+            --system-prompt-style adversarial \
+            --prompt-style linguistic \
+            --no-think
+
+python ari_eval.py \
+    --model hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:F16 \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q2_K \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q8_0 \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q4_K_M \
+            --batch-size 12 \
+            --seed 42 \
+            --difficulty 1 2 3 \
+            --temperature 0.1 \
+            --target 0 1 2 \
+            --system-prompt-style casual \
+            --prompt-style linguistic \
+            --no-think
+
+python ari_eval.py \
+    --model hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:F16 \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q2_K \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q8_0 \
+            hf.co/mradermacher/AceMath-1.5B-Instruct-GGUF:Q4_K_M \
+            --batch-size 12 \
+            --seed 42 \
+            --difficulty 1 2 3 \
+            --temperature 0.1 \
+            --target 0 1 2 \
+            --system-prompt-style analytical \
+            --prompt-style linguistic \
+            --no-think

@@ -1,6 +1,6 @@
 from src.BaseModelInterface import BaseModelInterface
 from src.utils.logger import logger
-from src.types import TestConfig
+from src.types import BaseTestConfig
 
 import requests
 import torch
@@ -13,7 +13,7 @@ from typing import Dict, Tuple
 class HuggingFaceInterface(BaseModelInterface):
     """Interface for HuggingFace transformers with MPS backend support"""
 
-    def __init__(self, config: TestConfig):
+    def __init__(self, config: BaseTestConfig):
         super().__init__(config)
 
         if not TRANSFORMERS_AVAILABLE:

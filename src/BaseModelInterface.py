@@ -1,5 +1,5 @@
 from src.utils.logger import logger
-from src.types import TestConfig
+from src.types import BaseTestConfig
 
 import json
 from abc import ABC, abstractmethod
@@ -8,7 +8,7 @@ from typing import Dict, List, Optional, Tuple
 class BaseModelInterface(ABC):
     """Abstract base class for model interfaces"""
 
-    def __init__(self, config: TestConfig):
+    def __init__(self, config: BaseTestConfig):
         self.config = config
 
     @abstractmethod
@@ -26,7 +26,7 @@ class BaseModelInterface(ABC):
         """Send prompt to model"""
         pass
 
-def create_interface(config: TestConfig) -> BaseModelInterface:
+def create_interface(config: BaseTestConfig) -> BaseModelInterface:
     """Factory function to create the appropriate interface"""
 
     from src.HuggingFaceInterface import HuggingFaceInterface

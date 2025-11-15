@@ -19,9 +19,10 @@ import numpy as np
 import argparse
 import sys
 
-from src.PROMPT_STYLES import get_prompt_style, get_system_prompt_style
+from src.PromptEngine import PromptEngine, Language, SystemPromptStyle, create_gol_context
 from src.utils.logger import logger
-from src.types import DifficultyLevel, ParseError, TestConfig
+from src.types import DifficultyLevel, ParseError, GameOfLifeTestConfig as TestConfig
+
 from src.GameOfLifeEngine import GameOfLifeEngine
 from src.BaseModelInterface import BaseModelInterface, create_interface
 from src.TestEvaluator import TestEvaluator
@@ -70,16 +71,54 @@ f"""{format_grid(grid, config.live_dead_cell_markers[0], config.live_dead_cell_m
 
     return "\n---\n".join(results)
 
-def format_prompt(grid: List[List[int]], config: TestConfig, examples: str = '') -> str:
-    """Format grid into a clear prompt with validation"""
+def format_prompt(grid: List[List[int]], config: TestConfig, examples: str = '') -> Tuple[str, str]:
+    """Format grid into a clear prompt using PromptEngine"""
     grid_str = format_grid(grid, config.live_dead_cell_markers[0], config.live_dead_cell_markers[1])
-    return get_prompt_style(config.prompt_language, config.prompt_style).format(
+    
+    engine = PromptEngine()
+    
+    # Map language string to enum
+    language_map = {
+        'en': Language.EN,
+        'fr': Language.FR,
+        'es': Language.ES,
+        'de': Language.DE,
+        'zh': Language.ZH,
+        'ua': Language.UA,
+    }
+    prompt_language = language_map.get(config.prompt_language, Language.EN)
+    
+    # Map system style string to enum
+    system_style_map = {
+        'analytical': SystemPromptStyle.ANALYTICAL,
+        'casual': SystemPromptStyle.CASUAL,
+        'adversarial': SystemPromptStyle.ADVERSARIAL,
+        'none': SystemPromptStyle.NONE,
+    }
+    system_prompt_style = system_style_map.get(config.system_prompt_style, SystemPromptStyle.ANALYTICAL)
+    
+    # Create Game of Life context
+    context = create_gol_context(
         grid_str=grid_str,
+        prompt_style=config.prompt_style,
+        language=prompt_language
+    )
+    
+    # Generate prompt
+    result = engine.generate(context)
+    
+    # Replace placeholders with actual markers
+    user_prompt = result.user_prompt.format(
         l=config.live_dead_cell_markers[0],
         d=config.live_dead_cell_markers[1],
         w=len(grid[0]),
         h=len(grid),
-        examples=examples)
+        examples=examples
+    )
+    
+    system_prompt = engine.get_system_prompt(system_prompt_style)
+    
+    return user_prompt, system_prompt
 
 def find_json_key_with_shape(data: dict, expected_shape: List[List[int]]) -> Optional[List[List[int]]]:
     """Recursively search for a key in a nested dict that matches the expected grid shape"""
@@ -185,8 +224,7 @@ def run_game_of_life_test(config: TestConfig) -> Dict[str, Dict]:
                 examples = format_examples(EXAMPLE_PATTERNS, test_case.width, test_case.height, config) if "example" in config.prompt_style else ""
 
                 # Query model
-                prompt = format_prompt(test_case.grid, config, examples)
-                system = get_system_prompt_style(config.prompt_language, config.system_prompt_style)
+                prompt, system = format_prompt(test_case.grid, config, examples)
                 response, stats = model_interface.query_model(model, prompt, system)
 
                 # Parse and evaluate
