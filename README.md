@@ -80,7 +80,101 @@ python linda_eval.py --models llama3.2:3b --language es --trials 10
 
 ---
 
-## Key Findings (So Far)
+## 📊 Model Performance Leaderboard
+
+### Overall Rankings (Best to Worst)
+
+| Rank | Model | Best Config | Accuracy | Notes |
+|------|-------|-------------|----------|-------|
+| 🥇 **1** | **gemma3:1b** | linguistic + casual | **83.33%** | Peak performer, high sensitivity to prompts |
+| 🥈 **2** | **qwen3:0.6b** | linguistic + casual | **63.89%** | Pragmatist, prefers adversarial prompts |
+| 🥉 **3** | **AceMath-1.5B (Q2_K)** | minimal/linguistic + casual | **50.00%** | Surprising: extreme quantization → better performance |
+| 4 | AceMath-1.5B (Q4_K_M) | minimal + casual | 46.30% | Balanced quantization |
+| 5 | AceMath-1.5B (F16) | minimal + casual | 40.74% | Full precision baseline |
+| 6 | AceMath-1.5B (Q8_0) | minimal + casual | 40.74% | Underperformer among quantizations |
+
+### Study 1: General Purpose Models (972 evaluations)
+
+**Gemma3 vs Qwen3 Across 9 Prompt Configurations**
+
+![Performance Radar](./docs/images/original_gemma3_qwen3/radar_all_combinations.png)
+
+| Configuration | qwen3:0.6b | gemma3:1b | Winner |
+|---------------|-----------|-----------|--------|
+| Minimal + Adversarial | 53.70% | 27.78% | qwen3 ✓ |
+| Minimal + Casual | 35.19% | 35.05% | Tie |
+| Minimal + Analytical | 35.19% | 57.41% | gemma3 ✓ |
+| Casual + Adversarial | 43.52% | 39.81% | qwen3 ✓ |
+| Casual + Casual | 34.26% | 36.11% | gemma3 ✓ |
+| Casual + Analytical | 50.00% | 52.78% | gemma3 ✓ |
+| Linguistic + Adversarial | 62.96% | 79.63% | gemma3 ✓ |
+| Linguistic + Casual | 63.89% | **83.33%** | gemma3 ✓✓ |
+| Linguistic + Analytical | 47.22% | 75.00% | gemma3 ✓ |
+
+**Key Finding:** gemma3:1b peaks at **83.33%** (linguistic user + casual system)
+
+---
+
+### Study 2: AceMath-1.5B Quantization Analysis (3,888 evaluations)
+
+**Four Quantization Formats Across 9 Configurations**
+
+![AceMath Heatmap](./docs/images/acemath_quantization/01_heatmap_all_configurations.png)
+
+| Rank | Format | Average | Range | Best Config | Use Case |
+|------|--------|---------|-------|-------------|----------|
+| 🥇 | **Q2_K** | **37.76%** | 30.56-50.00% | **50.00%** | Research, edge deployment |
+| 🥈 | Q4_K_M | 33.23% | 24.07-46.30% | 46.30% | Balanced production |
+| 🥉 | F16 | 31.58% | 26.85-40.74% | 40.74% | Stable production |
+| 4 | Q8_0 | 31.17% | 25.93-40.74% | 40.74% | Stable production |
+
+**Key Finding:** Q2_K (2-bit extreme quantization) achieves **+6.18% improvement** over F16 baseline with **87.5% compression**  
+
+### Key Discoveries
+
+#### 1. System Prompts Act as Reasoning Switches 🧠
+
+System prompts don't just set tone—they **activate different reasoning strategies**:
+
+- **gemma3:1b with analytical system prompt:** +22.4 points vs casual baseline
+- **qwen3:0.6b with adversarial system prompt:** +18.5 points vs casual baseline
+- Same model, same task, different system prompt = fundamentally different reasoning approach
+
+#### 2. Models Have Opposite Personalities 🎭
+
+- **qwen3:0.6b:** "The Pragmatist" — thrives with efficiency-first (adversarial) prompts
+- **gemma3:1b:** "The Analyst" — thrives with depth-focused (analytical) prompts
+
+This reflects their architectural design: qwen optimizes for speed, gemma for accuracy.
+
+#### 3. Instruction Saturation Effect ⚠️
+
+When both user AND system prompts are highly detailed, performance can DROP:
+
+```
+gemma3:1b with detailed (linguistic) user prompts:
+  Casual system:      83.33% (BEST)
+  Analytical system:  75.00% (DROPS 8.3 points due to over-constraint!)
+```
+
+Too much guidance creates interference rather than synergy.
+
+#### 4. User Prompt Quality Matters Most 📝
+
+Improvement from minimal → linguistic user prompts:
+- qwen3:0.6b: +28.7 points
+- gemma3:1b: +48.3 points
+
+**Investment in detailed user prompt guidance has massive ROI.**
+
+#### 5. Model Robustness Differs 1.93×
+
+- **qwen3:0.6b:** 35-63% performance range = ROBUST to poor prompts
+- **gemma3:1b:** 27-83% performance range = SENSITIVE to prompt engineering
+
+---
+
+## Key Findings from Game of Life & Other Tasks
 
 ### The Emoji Catastrophe 🟩🟥
 
@@ -91,12 +185,37 @@ python linda_eval.py --models llama3.2:3b --language es --trials 10
 | qwen3:0.6b | 61.67% | **0.00%** |
 | gemma3:1b | 66.11% | **0.00%** |
 
-
 ### Prompt Style Impact
 
 - **Examples-based prompts** work best for GoL (66% accuracy)
 - **Minimal prompts** show surprising resilience (56-60% accuracy)
 - **"Thinking" mode** (chain-of-thought) often hurts performance on structured tasks
+
+---
+
+---
+
+## 🚀 AceMath-1.5B Quantization Analysis
+
+---
+
+## 📖 Documentation & Analysis
+
+All analysis reports and visualizations have been organized in the `docs/` directory:
+
+### Reports
+- **[docs/PROMPT_ANALYSIS_REPORT.md](./docs/PROMPT_ANALYSIS_REPORT.md)** — Detailed analysis of qwen3 vs gemma3 (550+ lines, 9 configurations)
+- **[docs/ACEMATH_QUANTIZATION_REPORT.md](./docs/ACEMATH_QUANTIZATION_REPORT.md)** — Comprehensive AceMath quantization study (522 lines, 4 formats)
+- **[docs/ACEMATH_QUANTIZATION_STUDY_SUMMARY.md](./docs/ACEMATH_QUANTIZATION_STUDY_SUMMARY.md)** — Quick reference summary of findings
+- **[docs/VISUALIZATIONS_GUIDE.md](./docs/VISUALIZATIONS_GUIDE.md)** — Interpretation guide for all charts
+
+### Visualizations
+- **[docs/images/original_gemma3_qwen3/](./docs/images/original_gemma3_qwen3/)** — 9 charts from qwen3/gemma3 study (300 DPI)
+- **[docs/images/acemath_quantization/](./docs/images/acemath_quantization/)** — 11 charts from AceMath quantization study (300 DPI)
+
+### Reproducible Analysis Scripts
+- **[docs/generate_prompt_analysis_visualizations.py](./docs/generate_prompt_analysis_visualizations.py)** — Generate qwen3/gemma3 visualizations
+- **[docs/generate_acemath_quantization_visualizations.py](./docs/generate_acemath_quantization_visualizations.py)** — Generate AceMath visualizations
 
 ---
 
@@ -130,14 +249,28 @@ This is a **personal experiment**, but if you're curious and want to:
 
 ## Roadmap
 
-- [ ] Refactor prompts into coherent prompt engine
+### ✅ Completed
+
+- [x] Refactor prompts into coherent prompt engine (PromptEngine v1.0)
+- [x] Add visual result dashboards (9 comprehensive visualizations)
+- [x] Systematic analysis of prompt engineering effects
+- [x] Document model personalities and reasoning patterns
+
+### 🔄 In Progress
+
 - [ ] Cross-lingual/cross-cultural generation problems
+- [ ] OpenAI API integration for testing closed models (GPT-4, Claude, Gemini)
+
+### 📋 Planned
+
+- [ ] Multi-language validation (French, Spanish, German, Chinese, Ukrainian)
 - [ ] More languages (Japanese, Arabic, Hindi)
 - [ ] Cross-lingual transfer tests
-- [ ] Add visual result dashboards
-- [ ] OpenAI API integration for testing closed models (GPT-4, Claude, Gemini)
-- [ ] Document failure modes systematically
+- [ ] Fine-grained system prompt optimization
+- [ ] Chain-of-thought impact analysis
+- [ ] Scaling studies (7B, 13B, 70B models)
 - [ ] Add statistical significance testing
+- [ ] Production recommendation framework
 
 ---
 

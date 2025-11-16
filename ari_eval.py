@@ -295,6 +295,7 @@ def display_results(model_results: Dict[str, Dict], config: TestConfig) -> None:
     print(f"Batch Size: {config.batch_size}")
     print(f"Temperature: {config.temperature}")
     print(f"Prompt Style: {config.prompt_style}")
+    print(f"System Prompt Style: {config.system_prompt_style}")
     print(f"Prompt Language: {config.prompt_language}")
     print(f"{'='*80}")
 
