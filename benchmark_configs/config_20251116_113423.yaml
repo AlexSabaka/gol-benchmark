@@ -1,0 +1,60 @@
+description: ''
+generate_charts: true
+models:
+- family: gemma
+  name: gemma3:12b
+  provider: ollama
+  quantization: null
+  size_bytes: 0
+  size_params: 0.0M
+  tags:
+  - gemma
+- family: gemma
+  name: gemma3:4b
+  provider: ollama
+  quantization: null
+  size_bytes: 0
+  size_params: 0.0M
+  tags:
+  - gemma
+- family: gemma
+  name: gemma3:1b
+  provider: ollama
+  quantization: null
+  size_bytes: 0
+  size_params: 0.0M
+  tags:
+  - gemma
+name: ARI Benchmark Gemma
+output_dir: results_run_auto_gemma
+params:
+  batch_size: 12
+  difficulties:
+  - 1
+  - 2
+  - 3
+  language: en
+  max_tests_per_model: null
+  seed: 42
+  task_types:
+  - MEG
+  temperature: 0.1
+  thinking_enabled: false
+prompts:
+  system_styles:
+  - analytical
+  - casual
+  - adversarial
+  - none
+  user_styles:
+  - minimal
+  - casual
+  - linguistic
+report_formats:
+- markdown
+- json
+save_config: true
+task_config: {}
+task_type: gol
+timestamp: '20251116_113423'
+verbosity: normal
