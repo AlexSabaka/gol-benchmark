@@ -14,16 +14,16 @@ from typing import Dict, List, Any, Optional, Tuple
 from tabulate import tabulate
 import argparse
 
-from gol_eval import format_examples, format_grid, format_prompt, parse_response
+from src.benchmarks.gol_eval import format_examples, format_grid, format_prompt, parse_response
 import numpy as np
 
-from src.PROMPT_STYLES import get_prompt_style
+from src.core.PROMPT_STYLES import get_prompt_style
 from src.utils.logger import logger
-from src.types import DifficultyLevel, ParseError, BaseTestConfig, GameOfLifeTestConfig
-from src.GameOfLifeEngine import GameOfLifeEngine
-from src.BaseModelInterface import BaseModelInterface, create_interface
-from src.TestEvaluator import TestEvaluator
-from src.TestGenerator import TestGenerator, EXAMPLE_PATTERNS
+from src.core.types import DifficultyLevel, ParseError, BaseTestConfig, GameOfLifeTestConfig
+from src.engine import GameOfLifeEngine
+from src.models.BaseModelInterface import BaseModelInterface, create_interface
+from src.evaluation.TestEvaluator import TestEvaluator
+from src.core.TestGenerator import TestGenerator, EXAMPLE_PATTERNS
 
 @dataclass
 class MatrixConfig:

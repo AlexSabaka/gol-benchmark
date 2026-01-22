@@ -19,14 +19,14 @@ import numpy as np
 import argparse
 import sys
 
-from src.PromptEngine import PromptEngine, Language, SystemPromptStyle, create_gol_context
+from src.core.PromptEngine import PromptEngine, Language, SystemPromptStyle, create_gol_context
 from src.utils.logger import logger
-from src.types import DifficultyLevel, ParseError, GameOfLifeTestConfig as TestConfig
+from src.core.types import DifficultyLevel, ParseError, GameOfLifeTestConfig as TestConfig
 
-from src.GameOfLifeEngine import GameOfLifeEngine
-from src.BaseModelInterface import BaseModelInterface, create_interface
-from src.TestEvaluator import TestEvaluator
-from src.TestGenerator import TestGenerator, EXAMPLE_PATTERNS
+from src.engine import GameOfLifeEngine
+from src.models.BaseModelInterface import BaseModelInterface, create_interface
+from src.evaluation.TestEvaluator import TestEvaluator
+from src.core.TestGenerator import TestGenerator, EXAMPLE_PATTERNS
 
 def format_examples(patterns, width, height, config: TestConfig):
     engine = GameOfLifeEngine()

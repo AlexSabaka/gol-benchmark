@@ -21,11 +21,11 @@ import sys
 import argparse
 import random
 
-from src.BaseModelInterface import BaseModelInterface, create_interface
-from src.TestEvaluator import TestEvaluator, TestResult
-from src.types import C14TestConfig as TestConfig
-from src.PromptEngine import PromptEngine, Language, SystemPromptStyle, create_math_context
-from src.MathExpressionGenerator import MathExpressionGenerator
+from src.models.BaseModelInterface import BaseModelInterface, create_interface
+from src.evaluation.TestEvaluator import TestEvaluator, TestResult
+from src.core.types import C14TestConfig as TestConfig
+from src.core.PromptEngine import PromptEngine, Language, SystemPromptStyle, create_math_context
+from src.engine import MathExpressionGenerator
 
 @dataclass
 class Rules:

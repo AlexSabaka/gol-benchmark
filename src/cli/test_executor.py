@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 from dataclasses import dataclass, asdict
 from datetime import datetime
 import re
-from benchmark_config import BenchmarkConfig, ModelSpec
+from src.cli.benchmark_config import BenchmarkConfig, ModelSpec
 
 
 @dataclass

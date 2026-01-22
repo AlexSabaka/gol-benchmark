@@ -1,4 +1,4 @@
-from conways_life.parser import ConwayPatternParser
+from data.conways_life.parser import ConwayPatternParser
 from src.utils.logger import logger
 from src.core.types import DifficultyLevel, GameState, BaseTestConfig
 

@@ -20,12 +20,12 @@ import numpy as np
 import argparse
 import sys
 
-from src.BaseModelInterface import BaseModelInterface, create_interface
-from src.TestEvaluator import TestEvaluator, TestResult
-from src.MathExpressionGenerator import MathExpressionGenerator
-from src.PromptEngine import PromptEngine, Language, SystemPromptStyle
+from src.models.BaseModelInterface import BaseModelInterface, create_interface
+from src.evaluation.TestEvaluator import TestEvaluator, TestResult
+from src.engine import MathExpressionGenerator
+from src.core.PromptEngine import PromptEngine, Language, SystemPromptStyle
 
-from src.types import AriTestConfig as TestConfig
+from src.core.types import AriTestConfig as TestConfig
 
 def run_ari_tests(test_cases, model, config: TestConfig) -> Dict[str, Dict]:
     # Initialize components

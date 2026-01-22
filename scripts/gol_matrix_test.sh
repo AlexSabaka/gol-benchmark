@@ -196,7 +196,7 @@ run_test() {
     # echo ""
     
     # Build the command
-    local cmd=(python gol_eval.py )
+    local cmd=(python -m src.benchmarks.gol_eval )
     
     [[ -n "$difficulty" ]] && cmd+=(--difficulty "$difficulty")
     [[ -n "$temperature" ]] && cmd+=(--temperature "$temperature")

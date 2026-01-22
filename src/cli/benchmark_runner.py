@@ -11,10 +11,10 @@ from datetime import datetime
 import json
 from typing import Optional
 
-from benchmark_tui import BenchmarkTUI
-from benchmark_config import BenchmarkConfig, ConfigManager
-from test_executor import TestExecutor
-from visualization_engine import VisualizationEngine
+from src.cli.benchmark_tui import BenchmarkTUI
+from src.cli.benchmark_config import BenchmarkConfig, ConfigManager
+from src.cli.test_executor import TestExecutor
+from src.visualization.visualization_engine import VisualizationEngine
 
 
 class BenchmarkRunner:

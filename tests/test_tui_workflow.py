@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Test TUI workflow - verify all screens are created and callable."""
 
-from benchmark_tui import BenchmarkTUI
-from benchmark_config import ModelSpec
+from src.cli.benchmark_tui import BenchmarkTUI
+from src.cli.benchmark_config import ModelSpec
 
 def test_tui_initialization():
     """Test that TUI initializes without errors."""
@@ -42,7 +42,7 @@ def test_create_new_benchmark_method_exists():
 
 def test_benchmark_config_has_task_fields():
     """Test that BenchmarkConfig has task_type and task_config fields."""
-    from benchmark_config import BenchmarkConfig
+    from src.cli.benchmark_config import BenchmarkConfig
     config = BenchmarkConfig(name="Test")
     assert hasattr(config, 'task_type')
     assert hasattr(config, 'task_config')
@@ -52,7 +52,7 @@ def test_benchmark_config_has_task_fields():
 
 def test_benchmark_config_task_assignment():
     """Test that task fields can be assigned."""
-    from benchmark_config import BenchmarkConfig
+    from src.cli.benchmark_config import BenchmarkConfig
     config = BenchmarkConfig(name="Test")
     config.task_type = "ari"
     config.task_config = {"difficulties": [1, 2, 3]}

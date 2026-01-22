@@ -3,8 +3,8 @@
 Quick test of model provider integration with TUI
 """
 
-from model_providers import ModelProviderManager, ModelInfo
-from benchmark_config import ModelSpec, BenchmarkConfig, PromptSpec, TestParams
+from src.utils.model_providers import ModelProviderManager, ModelInfo
+from src.cli.benchmark_config import ModelSpec, BenchmarkConfig, PromptSpec, TestParams
 
 def test_provider_integration():
     """Test model provider and config integration."""

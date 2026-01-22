@@ -63,7 +63,7 @@ for model in "${MODELS[@]}"; do
             echo "  → Config: $CONFIG_NAME" | tee -a "$LOG_FILE"
             
             # Run benchmark
-            python gol_eval.py \
+            python -m src.benchmarks.gol_eval \
                 --model "$model" \
                 --difficulty "$DIFFICULTY" \
                 --batch-size "$BATCH_SIZE" \
@@ -98,6 +98,5 @@ echo "🎉 All benchmark tests completed: $(date)" | tee -a "$LOG_FILE"
 echo "Results saved to: $RESULTS_DIR" | tee -a "$LOG_FILE"
 echo "" | tee -a "$LOG_FILE"
 echo "Next steps:" | tee -a "$LOG_FILE"
-echo "1. Run aggregation: python analyze_multi_model_results.py $RESULTS_DIR" | tee -a "$LOG_FILE"
-echo "2. Generate visualizations: python generate_multi_model_visualizations.py $RESULTS_DIR" | tee -a "$LOG_FILE"
-echo "3. Create report: python generate_multi_model_report.py $RESULTS_DIR" | tee -a "$LOG_FILE"
+echo "1. Run aggregation: python -m src.visualization.analyze_multi_model_results $RESULTS_DIR" | tee -a "$LOG_FILE"
+echo "2. Generate visualizations: python -m src.visualization.generate_prompt_benchmark_visualizations $RESULTS_DIR" | tee -a "$LOG_FILE"

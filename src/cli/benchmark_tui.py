@@ -15,11 +15,11 @@ from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
 
-from benchmark_config import (
-    BenchmarkConfig, ModelSpec, PromptSpec, TestParams, 
+from src.cli.benchmark_config import (
+    BenchmarkConfig, ModelSpec, PromptSpec, TestParams,
     ConfigManager, PRESET_CONFIGS
 )
-from model_providers import ModelProviderManager, ModelInfo
+from src.utils.model_providers import ModelProviderManager, ModelInfo
 
 # Setup Rich console
 console = Console()

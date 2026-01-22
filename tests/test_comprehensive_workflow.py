@@ -5,8 +5,8 @@ Tests all fixed components and the complete workflow integration
 """
 
 import sys
-from benchmark_tui import BenchmarkTUI
-from benchmark_config import BenchmarkConfig, ModelSpec, PromptSpec, TestParams
+from src.cli.benchmark_tui import BenchmarkTUI
+from src.cli.benchmark_config import BenchmarkConfig, ModelSpec, PromptSpec, TestParams
 
 def test_suite():
     """Run comprehensive validation tests."""
