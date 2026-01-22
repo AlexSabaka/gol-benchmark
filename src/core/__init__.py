@@ -4,7 +4,7 @@ Core Logic and Types
 Contains fundamental types, prompt engine, and test generation logic.
 """
 
-from src.core.types import (
+from .types import (
     DifficultyLevel,
     ParseError,
     TestResult,
@@ -15,7 +15,7 @@ from src.core.types import (
     GameState,
 )
 
-from src.core.PromptEngine import (
+from .PromptEngine import (
     PromptEngine,
     Language,
     PromptStyle,
@@ -27,9 +27,9 @@ from src.core.PromptEngine import (
     create_math_context,
 )
 
-from src.core.PROMPT_STYLES import get_prompt_style
+from .PROMPT_STYLES import get_prompt_style
 
-from src.core.TestGenerator import (
+from .TestGenerator import (
     TestGenerator,
     EXAMPLE_PATTERNS,
 )

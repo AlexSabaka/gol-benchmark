@@ -1,13 +1,14 @@
-"""Command-line interface tools and orchestration."""
+"""Command-line interface tools and orchestration.
 
-from . import benchmark_runner
-from . import benchmark_tui
-from . import benchmark_config
-from . import test_executor
+These modules provide CLI functionality:
+    - benchmark_runner: Orchestrates benchmark campaigns
+    - benchmark_tui: Interactive terminal UI for configuration
+    - benchmark_config: Configuration management and validation
+    - test_executor: Subprocess test execution
 
-__all__ = [
-    "benchmark_runner",
-    "benchmark_tui",
-    "benchmark_config",
-    "test_executor",
-]
+Run with:
+    python -m src.cli.benchmark_runner
+    python -m src.cli.benchmark_tui
+"""
+
+__all__ = []
