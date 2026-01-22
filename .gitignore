@@ -157,6 +157,8 @@ venv/
 ENV/
 env.bak/
 venv.bak/
+pyvenv.cfg
+include/
 
 # Spyder project settings
 .spyderproject
@@ -218,9 +220,13 @@ __marimo__/
 
 # Project specific ignores
 known_patterns/
+
+# Data directory - ignore contents but keep structure
 data/*
-results/*
+!data/conways_life/
+
+# Results directory - keep generated results but ignore by default (can override with git add -f)
+# results/*
 
 # Misc
 .DS_Store
-share/
