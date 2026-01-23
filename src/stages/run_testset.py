@@ -156,7 +156,7 @@ class HuggingFaceInterface(ModelInterface):
             with torch.no_grad():
                 outputs = self.model.generate(
                     **inputs,
-                    max_new_tokens=params.get("max_tokens", 512),
+                    max_new_tokens=params.get("max_tokens", 2048),
                     temperature=params.get("temperature", 0.1),
                     top_k=params.get("top_k", 40),
                     top_p=params.get("top_p", 0.9),

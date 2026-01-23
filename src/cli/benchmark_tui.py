@@ -975,7 +975,7 @@ class BenchmarkTUI:
             'sampling': {
                 'temperature': multi_task_config.temperature,
                 'top_k': 40,
-                'max_tokens': 512
+                'max_tokens': 2048
             },
             'execution': {
                 'no_thinking': not multi_task_config.thinking_enabled,
@@ -1237,7 +1237,7 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
             'sampling': {
                 'temperature': multi_task_config.temperature,
                 'top_k': 40,
-                'max_tokens': 512
+                'max_tokens': 2048
             },
             'execution': {
                 'no_thinking': not multi_task_config.thinking_enabled,
@@ -1345,7 +1345,7 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
         'sampling': {
             'temperature': config.params.temperature,
             'top_k': 40,
-            'max_tokens': 512
+            'max_tokens': 2048
         },
         'execution': {
             'no_thinking': not config.params.thinking_enabled,

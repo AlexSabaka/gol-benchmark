@@ -6,7 +6,7 @@ from typing import List, Tuple, Dict, Optional, Literal, TypedDict
 from pathlib import Path
 
 from src.utils.logger import logger
-from src.PromptEngine import Language, PromptStyle, SystemPromptStyle
+from src.core.PromptEngine import Language, PromptStyle, SystemPromptStyle
 
 class DifficultyLevel(Enum):
     """Game difficulty levels with associated grid sizes"""
