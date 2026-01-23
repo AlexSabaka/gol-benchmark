@@ -226,8 +226,11 @@ data/*
 !data/conways_life/
 
 # Results directory
-results
-results_*
+results/
+results_*/
+testsets/
+benchmark_configs/
+
 
 configs/**/*.yaml
 
