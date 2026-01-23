@@ -225,8 +225,9 @@ known_patterns/
 data/*
 !data/conways_life/
 
-# Results directory - keep generated results but ignore by default (can override with git add -f)
-results/*
+# Results directory
+results
+results_*
 
 configs/**/*.yaml
 

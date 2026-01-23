@@ -23,7 +23,7 @@ from src.core.PromptEngine import PromptEngine, Language, SystemPromptStyle, cre
 from src.utils.logger import logger
 from src.core.types import DifficultyLevel, ParseError, GameOfLifeTestConfig as TestConfig
 
-from src.engine.GameOfLifeEngine import GameOfLifeEngine
+from src.engine import GameOfLifeEngine
 from src.models.BaseModelInterface import BaseModelInterface, create_interface
 from src.evaluation.TestEvaluator import TestEvaluator
 from src.core.TestGenerator import TestGenerator, EXAMPLE_PATTERNS
@@ -141,134 +141,47 @@ def format_grid(g: List[List[int]], live_cell_mark: str = '1', dead_cell_mark: s
 
 def parse_response(prompt: str, response: str, expected_shape: List[List[int]], live_cell_mark: str = '1', dead_cell_mark: str = '0') -> Optional[List[List[int]]]:
     """
-    Enhanced Game of Life response parsing with multiple fallback strategies.
-    
-    Strategy 1: Original grid pattern matching (enhanced)
-    Strategy 2: Look for clearly marked grids
-    Strategy 3: Parse any rectangular pattern of 0s and 1s
+    Robust response parsing with multiple fallback strategies.
+    Returns parsed grid or None if parsing fails.
     """
     if not response:
         logger.warning("Empty response from model")
         return None
     
-    expected_rows = len(expected_shape)
-    expected_cols = len(expected_shape[0]) if expected_shape else 0
-    
     try:
+        # Starting from the end try to find a matching N by M grid pattern
         lines = response.strip().split('\n')
-        
-        # Strategy 1: Enhanced original approach - look from end
-        for start_idx in range(len(lines) - expected_rows + 1, -1, -1):
-            candidate_lines = lines[start_idx:start_idx + expected_rows]
-            if len(candidate_lines) != expected_rows:
+        for start_idx in range(len(lines) - len(expected_shape) + 1, -1, -1):
+            candidate_lines = lines[start_idx:start_idx + len(expected_shape)]
+            if len(candidate_lines) != len(expected_shape):
                 continue
 
             grid = []
             for line in candidate_lines:
-                # Clean the line - remove all non-marker characters except spaces
-                cleaned_line = ''
-                for char in line.strip():
-                    if char in (live_cell_mark, dead_cell_mark, ' ', '\t'):
-                        cleaned_line += char
-                    elif char.isdigit():  # Convert any digit to appropriate marker
-                        cleaned_line += live_cell_mark if char != '0' else dead_cell_mark
+                if line.count(live_cell_mark) + line.count(dead_cell_mark) == 0:
+                    break  # Line doesn't contain valid cell markers
                 
-                # Normalize whitespace and convert markers
-                cleaned_line = re.sub(r'\s+', ' ', cleaned_line.strip())
+                cleaned_line = ''.join([c if c in (live_cell_mark, dead_cell_mark) else ' ' for c in line.strip()])
+                cleaned_line = ' '.join(re.compile(r"\s{1,}").split(cleaned_line))
                 cleaned_line = cleaned_line.replace(live_cell_mark, '1').replace(dead_cell_mark, '0')
                 
-                # Extract row
-                row = []
-                for char in cleaned_line.split():
-                    if char in ('0', '1'):
-                        row.append(int(char))
-                
-                if len(row) != expected_cols:
+                row = [int(x) for x in cleaned_line.split() if x in ('0', '1')]
+                if len(row) != len(expected_shape[0]):
                     break
-                
+
                 grid.append(row)
-                
-                if len(grid) == expected_rows:
-                    logger.info(f"Successfully parsed grid using Strategy 1")
-                    return grid
+
+                if len(grid) == len(expected_shape):
+                    return grid  # Successfully parsed grid
         
-        # Strategy 2: Look for clearly marked grid sections
-        grid_markers = ['next:', 'result:', 'grid:', 'state:', 'generation:']
-        for marker in grid_markers:
-            marker_idx = -1
-            for i, line in enumerate(lines):
-                if marker in line.lower():
-                    marker_idx = i
-                    break
-            
-            if marker_idx >= 0:
-                # Try to parse grid starting from marker line
-                for start_idx in range(marker_idx, min(marker_idx + 3, len(lines) - expected_rows + 1)):
-                    candidate_lines = lines[start_idx:start_idx + expected_rows]
-                    
-                    grid = []
-                    for line in candidate_lines:
-                        # Extract 0s and 1s from line
-                        digits = re.findall(r'[01]', line)
-                        if len(digits) == expected_cols:
-                            grid.append([int(d) for d in digits])
-                        else:
-                            break
-                    
-                    if len(grid) == expected_rows:
-                        logger.info(f"Successfully parsed grid using Strategy 2 (marker: {marker})")
-                        return grid
-        
-        # Strategy 3: Find any rectangular pattern of 0s and 1s
-        for start_idx in range(len(lines) - expected_rows + 1):
-            candidate_lines = lines[start_idx:start_idx + expected_rows]
-            
-            grid = []
-            for line in candidate_lines:
-                # Extract all 0s and 1s
-                digits = re.findall(r'[01]', line)
-                if len(digits) >= expected_cols:
-                    # Take first expected_cols digits
-                    grid.append([int(d) for d in digits[:expected_cols]])
-                else:
-                    break
-            
-            if len(grid) == expected_rows:
-                # Verify this looks like a reasonable grid
-                total_cells = expected_rows * expected_cols
-                ones_count = sum(sum(row) for row in grid)
-                if 0 <= ones_count <= total_cells:  # Basic sanity check
-                    logger.info(f"Successfully parsed grid using Strategy 3")
-                    return grid
-        
-        # Strategy 4: Last resort - try to extract any numbers and arrange them
-        all_digits = re.findall(r'[01]', response)
-        if len(all_digits) >= expected_rows * expected_cols:
-            # Take the first or last set of digits that matches our grid size
-            start_positions = [0, len(all_digits) - expected_rows * expected_cols]
-            
-            for start_pos in start_positions:
-                try:
-                    grid_digits = all_digits[start_pos:start_pos + expected_rows * expected_cols]
-                    grid = []
-                    for i in range(expected_rows):
-                        row_start = i * expected_cols
-                        row_end = row_start + expected_cols
-                        row = [int(d) for d in grid_digits[row_start:row_end]]
-                        grid.append(row)
-                    
-                    logger.info(f"Successfully parsed grid using Strategy 4")
-                    return grid
-                except:
-                    continue
-        
+        # If we get here, parsing failed
         logger.warning(
-            f"All parsing strategies failed.\nExpected: {expected_rows}x{expected_cols}\nPrompt:\n---\n{prompt}\n---\nResponse:\n{response}\n---"
+            f"Nothing parsed.\nPrompt:\n---\n{prompt}\n---\nResponse:\n{response}\n---"
         )
         return None
 
     except Exception as e:
-        logger.error(f"Failed to parse response for {expected_rows}x{expected_cols} grid.\nPrompt:\n---\n{prompt}\n---\nResponse:\n{response}\n---", exc_info=True)
+        logger.error(f"Failed to parse response for {len(expected_shape)}, {len(expected_shape[0])} grid.\nPrompt:\n---\n{prompt}\n---\nResponse:\n{response}\n---", exc_info=True)
         return None
 
 def run_game_of_life_test(config: TestConfig) -> Dict[str, Dict]:

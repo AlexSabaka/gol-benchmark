@@ -1,7 +1,7 @@
 # GoL Benchmark - Documentation Index
 
-**Project Version:** 1.0.0  
-**Last Updated:** November 16, 2025
+**Project Version:** 2.0.0  
+**Last Updated:** January 23, 2026
 
 ---
 
@@ -10,28 +10,31 @@
 ### 📖 Getting Started
 
 1. **[README.md](../README.md)** - Project overview and quick start guide
-2. **[PROJECT_DEVELOPMENT_SUMMARY.md](./PROJECT_DEVELOPMENT_SUMMARY.md)** - Complete project documentation
-3. **[SOURCE_CODE_ORGANIZATION.md](./SOURCE_CODE_ORGANIZATION.md)** - New directory structure and imports
+2. **[3_STAGE_ARCHITECTURE_COMPLETE.md](./3_STAGE_ARCHITECTURE_COMPLETE.md)** - ⭐ **Comprehensive Implementation Guide**
+3. **[00_README.md](./00_README.md)** - Documentation overview
+
+### 🏗️ System Architecture
+
+4. **[3_STAGE_ARCHITECTURE_COMPLETE.md](./3_STAGE_ARCHITECTURE_COMPLETE.md)** - Complete 3-stage pipeline implementation
+5. **[03_ARCHITECTURE/SYSTEM_OVERVIEW.md](./03_ARCHITECTURE/SYSTEM_OVERVIEW.md)** - High-level system design
+6. **[03_ARCHITECTURE/MODEL_PROVIDERS.md](./03_ARCHITECTURE/MODEL_PROVIDERS.md)** - Provider architecture
 
 ### 📝 Development & Changes
 
-4. **[CHANGELOG.md](../CHANGELOG.md)** - Version history and release notes
-5. **[DEVELOPMENT_LOG.md](./DEVELOPMENT_LOG.md)** - Phase 5 development details
-
-### 🏗️ Architecture Documentation
-
-6. **[BENCHMARK_TUI_PLAN.md](./BENCHMARK_TUI_PLAN.md)** - TUI system architecture
-7. **[MODEL_PROVIDER_ARCHITECTURE.md](./MODEL_PROVIDER_ARCHITECTURE.md)** - Model provider system design
-8. **[PROMPT_ANALYSIS_REPORT.md](./PROMPT_ANALYSIS_REPORT.md)** - Prompt system analysis
+7. **[CHANGELOG.md](../CHANGELOG.md)** - Version 2.0.0 release notes with major architecture overhaul
+8. **[04_IMPLEMENTATION_DETAILS/](./04_IMPLEMENTATION_DETAILS/)** - Implementation details and code organization
 
 ### 📊 Research & Analysis
 
-9. **[ACEMATH_QUANTIZATION_REPORT.md](./ACEMATH_QUANTIZATION_REPORT.md)** - Quantization study results
-10. **[EXECUTIVE_SUMMARY.md](./EXECUTIVE_SUMMARY.md)** - High-level overview
+9. **[PROMPT_ANALYSIS_REPORT.md](./PROMPT_ANALYSIS_REPORT.md)** - Comprehensive prompt analysis
+10. **[ACEMATH_QUANTIZATION_REPORT.md](./ACEMATH_QUANTIZATION_REPORT.md)** - Quantization study results
 11. **[MODEL_CATALOG.md](./MODEL_CATALOG.md)** - Available models reference
+12. **[05_RESEARCH/](./05_RESEARCH/)** - Detailed research studies and analysis
 
 ### 🔍 Additional Resources
 
+- **[02_USER_GUIDES/](./02_USER_GUIDES/)** - Step-by-step user guides
+- **[06_REFERENCE/](./06_REFERENCE/)** - API documentation and references  
 - **[prompt_engine/](./prompt_engine/)** - PromptEngine documentation
 - **[images/](./images/)** - Visualization files and charts
 
@@ -39,15 +42,16 @@
 
 ## Documentation by Purpose
 
-### For Users
+### For New Users
 
-- **Want to run benchmarks?** → [README.md](../README.md) + [BENCHMARK_TUI_PLAN.md](./BENCHMARK_TUI_PLAN.md)
-- **Need configuration options?** → [PROJECT_DEVELOPMENT_SUMMARY.md](./PROJECT_DEVELOPMENT_SUMMARY.md)
-- **Looking for available models?** → [MODEL_CATALOG.md](./MODEL_CATALOG.md)
+- **Want to understand the system?** → [3_STAGE_ARCHITECTURE_COMPLETE.md](./3_STAGE_ARCHITECTURE_COMPLETE.md)
+- **Ready to run benchmarks?** → [README.md](../README.md) + [02_USER_GUIDES/](./02_USER_GUIDES/)
+- **Need model information?** → [MODEL_CATALOG.md](./MODEL_CATALOG.md)
 
 ### For Developers
 
-- **Understanding project structure?** → [SOURCE_CODE_ORGANIZATION.md](./SOURCE_CODE_ORGANIZATION.md)
+- **Understanding the architecture?** → [3_STAGE_ARCHITECTURE_COMPLETE.md](./3_STAGE_ARCHITECTURE_COMPLETE.md)
+- **Code organization?** → [04_IMPLEMENTATION_DETAILS/SOURCE_CODE_ORGANIZATION.md](./04_IMPLEMENTATION_DETAILS/SOURCE_CODE_ORGANIZATION.md)
 - **Contributing new features?** → [DEVELOPMENT_LOG.md](./DEVELOPMENT_LOG.md)
 - **Modifying model providers?** → [MODEL_PROVIDER_ARCHITECTURE.md](./MODEL_PROVIDER_ARCHITECTURE.md)
 - **Working with prompts?** → [prompt_engine/](./prompt_engine/)

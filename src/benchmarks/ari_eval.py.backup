@@ -22,7 +22,7 @@ import sys
 
 from src.models.BaseModelInterface import BaseModelInterface, create_interface
 from src.evaluation.TestEvaluator import TestEvaluator, TestResult
-from src.engine.MathExpressionGenerator import MathExpressionGenerator
+from src.engine import MathExpressionGenerator
 from src.core.PromptEngine import PromptEngine, Language, SystemPromptStyle
 
 from src.core.types import AriTestConfig as TestConfig
@@ -113,103 +113,41 @@ def run_ari_tests(test_cases, model, config: TestConfig) -> Dict[str, Dict]:
     return batch_eval
 
 def parse_response(target: str, response: str) -> float:
-    """
-    Enhanced parsing with multiple fallback strategies for arithmetic expressions.
-    
-    Strategy 1: Look for keywords + extract numbers
-    Strategy 2: Find "= number" patterns
-    Strategy 3: Extract last number in response
-    Strategy 4: Find number after specific keywords
-    Strategy 5: Regex-based number extraction
-    """
-    if not response:
-        return None
-        
-    response = str(response).strip()
-    
-    # Strategy 1: Original keyword-based approach (enhanced)
+    predicted = None
     match_words = [
-        'final result', 'result', 'final answer', 'answer', 'response', 
-        'therefore', '\\boxed', 'equals', '=', target,
-        'final result:', 'answer:', 'result:', 'solution:'
+        'final result',
+        'result',
+        'final answer',
+        'answer',
+        'response',
+        'therefore',
+        '\\boxed',
+        target
     ]
-    
-    response_lines = response.lower().splitlines()
-    response_lines.reverse()
-    
-    for i, line in enumerate(response_lines):
-        if any(word in line for word in match_words):
-            # Look for number in this line and following lines
-            for j in range(i, min(i + 3, len(response_lines))):  # Check up to 3 lines
-                current_line = response_lines[j]
-                
-                # Try to extract number from line with target
-                if target in current_line:
-                    parts = current_line.split('=')
-                    if len(parts) > 1:
-                        number_match = re.search(r'[+-]?([0-9]*[.])?[0-9]+', parts[-1].strip())
-                        if number_match:
-                            try:
-                                return float(number_match.group())
-                            except:
-                                continue
-                
-                # Extract any number from the line
-                number_match = re.search(r'[+-]?([0-9]*[.])?[0-9]+', current_line)
-                if number_match:
-                    try:
-                        return float(number_match.group())
-                    except:
-                        continue
-    
-    # Strategy 2: Look for "= number" patterns in original response
-    equals_pattern = r'=\s*([+-]?(?:[0-9]*[.])?[0-9]+)(?:\s|$)'
-    equals_matches = re.findall(equals_pattern, response)
-    if equals_matches:
-        try:
-            return float(equals_matches[-1])  # Take the last match
-        except:
-            pass
-    
-    # Strategy 3: Find the last number in the response
-    all_numbers = re.findall(r'[+-]?(?:[0-9]*[.])?[0-9]+', response)
-    if all_numbers:
-        # Try numbers from the end
-        for num_str in reversed(all_numbers):
-            try:
-                return float(num_str)
-            except:
-                continue
-    
-    # Strategy 4: Look for specific answer patterns
-    answer_patterns = [
-        r'answer[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)',
-        r'result[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)',
-        r'solution[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)',
-        r'final[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)'
-    ]
-    
-    response_lower = response.lower()
-    for pattern in answer_patterns:
-        matches = re.findall(pattern, response_lower)
-        if matches:
-            try:
-                return float(matches[-1])
-            except:
-                continue
-    
-    # Strategy 5: Extract number from mathematical expressions
-    # Look for standalone numbers that might be results
-    lines = response.strip().split('\n')
-    for line in reversed(lines):  # Start from the end
-        line = line.strip()
-        if line and re.match(r'^[+-]?(?:[0-9]*[.])?[0-9]+$', line):
-            try:
-                return float(line)
-            except:
-                continue
-    
-    return None
+    if response is not None:
+        response_lines = response.lower().splitlines()
+        response_lines.reverse()
+        for i,l in enumerate(response_lines):
+            if any(map(lambda w: w in l, match_words)):
+                answer = ''
+                for j in range(i, -1, -1):
+                    if target in response_lines[j]:
+                        answer = response_lines[j].split('=')[-1].strip()
+                        m = re.search(r'[+-]?([0-9]*[.])?[0-9]+', answer)
+                        if m is not None:
+                            answer = m.group()
+                            break
+                    else:
+                        m = re.search(r'[+-]?([0-9]*[.])?[0-9]+', response_lines[j])
+                        if m is not None:
+                            answer = m.group()
+                            break
+
+                try:
+                    predicted = float(answer)
+                except Exception as e:
+                    pass
+    return predicted
 
 def setup_argparser() -> argparse.ArgumentParser:
     """Set up command line argument parser with enhanced help"""

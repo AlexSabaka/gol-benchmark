@@ -172,15 +172,23 @@ Apply the rules systematically to EVERY cell and give me the next state.
 Respond with ONLY the grid state, one row per line, cells separated by spaces.
 Next state:""",
 
-        PromptStyle.CASUAL: """Here's a Game of Life grid. You know the rules - live ({l}) cells need 2-3 neighbors to survive,
-dead ({d}) cells need exactly 3 to come alive. You should write only the next grid state, no explanations.
-Current:
-{grid_str}
-What's next?""",
+        PromptStyle.CASUAL: """Conway's Game of Life! Here are the rules:
+- Live cell ({l}): needs 2-3 live neighbors to survive, otherwise dies
+- Dead cell ({d}): becomes alive if it has exactly 3 live neighbors
 
-        PromptStyle.MINIMAL: """Conway's Game of Life current state:
+Current grid:
 {grid_str}
-Next:""",
+
+What's the next generation? Just show the grid using {l} and {d}.""",
+
+        PromptStyle.MINIMAL: """Conway's Game of Life Rules:
+- Live cell ({l}): survives if it has 2 or 3 live neighbors, otherwise dies
+- Dead cell ({d}): becomes alive if it has exactly 3 live neighbors
+
+Current state:
+{grid_str}
+
+Next generation (format as grid of {l} and {d}):""",
 
         PromptStyle.EXAMPLES: """{examples}
 ---
@@ -370,18 +378,28 @@ Follow these EXACT steps:
 4. Provide the final numerical result
 
 Expression: {expression}
-Step-by-step solution:""",
+Step-by-step solution:
+[Show your work here]
+
+Final answer: [number only]""",
 
         PromptStyle.CASUAL: """Hey! Can you solve this math expression for me? Just work through it step by step.
 {expression}
 
-Show me how you get to the answer:""",
+Show me how you get to the answer:
+[Your work here]
 
-        PromptStyle.MINIMAL: """{expression} =""",
+Final answer: [just the number]""",
+
+        PromptStyle.MINIMAL: """{expression}
+
+Answer: """,
 
         PromptStyle.EXAMPLES: """{examples}
 ---
-{expression} =""",
+Solve: {expression}
+
+Final answer: """,
 
         PromptStyle.RULES_MATH: """$$
 \\text{{Expression: }} {expression} \\\\
@@ -392,7 +410,9 @@ MD: \\text{{Multiplication and Division (left to right)}} \\\\
 AS: \\text{{Addition and Subtraction (left to right)}} \\\\
 \\rule{{100pt}}{{0.4pt}} \\\\
 \\text{{Solution:}}
-$$""",
+$$
+
+Final result: """,
     }
 }
 

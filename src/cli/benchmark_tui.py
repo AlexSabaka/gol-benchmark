@@ -6,14 +6,51 @@ Interactive terminal interface for configuring and running benchmark tests.
 Uses questionary for simple, beautiful CLI prompts.
 """
 
-from typing import List, Optional, Dict
+from typing import List, Optional, Dict, Any
 from pathlib import Path
+import sys
 import questionary
 from questionary import Style
 from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.text import Text
+from dataclasses import dataclass, field
+
+# Add parent directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+
+@dataclass
+class TaskConfiguration:
+    """Configuration for a single task type in multi-task test set."""
+    task_type: str  # 'ari', 'gol', 'c14', 'linda'
+    task_name: str  # Display name
+    batch_size: int
+    prompts: 'PromptSpec'
+    parameters: Dict[str, Any] = field(default_factory=dict)
+    
+    @property
+    def total_tests(self) -> int:
+        """Calculate total test cases for this task."""
+        return self.batch_size * self.prompts.config_count()
+
+@dataclass 
+class MultiTaskConfig:
+    """Configuration for multi-task test set generation."""
+    name: str
+    description: str
+    tasks: List[TaskConfiguration]
+    temperature: float = 0.1
+    language: str = 'en'
+    thinking_enabled: bool = False
+    
+    @property
+    def total_tests(self) -> int:
+        return sum(task.total_tests for task in self.tasks)
+    
+    @property
+    def total_task_types(self) -> int:
+        return len(self.tasks)
 
 from src.cli.benchmark_config import (
     BenchmarkConfig, ModelSpec, PromptSpec, TestParams,
@@ -42,6 +79,8 @@ class BenchmarkTUI:
     
     def __init__(self):
         self.config: Optional[BenchmarkConfig] = None
+        self.multi_task_config: Optional[MultiTaskConfig] = None
+        self.generated_testset_path: Optional[str] = None
         self.provider_manager = ModelProviderManager()
         self.selected_provider: str = "ollama"
         self.available_providers: Dict[str, bool] = {}
@@ -115,14 +154,14 @@ class BenchmarkTUI:
         
         console.print(table)
     
-    def model_selection(self) -> List[ModelSpec]:
-        """Multi-select models to test with provider support."""
+    def model_selection_for_execution(self) -> List[ModelSpec]:
+        """Select models for executing the pre-generated test set (Step 3)."""
         provider = self._get_providers_to_use()
         if not provider:
             return []
         
         self.display_header()
-        console.print(Panel(f"Step 1: Select Models ({provider})", style="bold"))
+        console.print(Panel(f"Step 3: Select Models for Execution ({provider})", style="bold"))
         
         # Get available models
         available_models = self._get_available_models_for_provider(provider)
@@ -150,7 +189,7 @@ class BenchmarkTUI:
         
         # Multi-select from choices
         selected_models_info = questionary.checkbox(
-            'Select models (space to toggle, enter to confirm):',
+            'Select models to test (space to toggle, enter to confirm):',
             choices=choices,
             style=custom_style,
             validate=lambda x: len(x) > 0 or "Select at least one model"
@@ -332,80 +371,48 @@ class BenchmarkTUI:
         
         return selected_specs
     
-    def task_selection(self) -> str:
-        """Select which benchmark task to run."""
+    def multi_task_configuration(self) -> Optional[MultiTaskConfig]:
+        """Configure multiple tasks for test set generation."""
         self.display_header()
-        console.print(Panel("Step 2: Select Task Type", style="bold"))
+        console.print(Panel("Step 1: Multi-Task Configuration", style="bold"))
         
-        task = questionary.select(
-            'Which task would you like to benchmark?',
-            choices=[
-                questionary.Choice('ARI (Math Expressions)', value='ari'),
-                questionary.Choice('GoL (Game of Life)', value='gol'),
-                questionary.Choice('C14 (Cellular Automata)', value='c14'),
-                questionary.Choice('Linda (Pattern Recognition)', value='linda'),
-            ],
-            style=custom_style
+        # Available task types
+        available_tasks = [
+            {'id': 'ari', 'name': 'ARI (Math Expressions)', 'description': 'Arithmetic expression evaluation'},
+            {'id': 'gol', 'name': 'GoL (Game of Life)', 'description': 'Conway\'s Game of Life simulation'},
+            {'id': 'c14', 'name': 'C14 (Cellular Automata)', 'description': 'General cellular automata'},
+            {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'}
+        ]
+        
+        # Select tasks to include
+        selected_task_types = questionary.checkbox(
+            'Select task types to include in test set:',
+            choices=[questionary.Choice(
+                f"{task['name']} - {task['description']}",
+                value=task['id'],
+                checked=(task['id'] == 'ari')  # Default to ARI
+            ) for task in available_tasks],
+            style=custom_style,
+            validate=lambda x: len(x) > 0 or "Select at least one task type"
         ).ask()
         
-        return task
-    
-    def prompt_configuration(self) -> PromptSpec:
-        """Configure prompt styles."""
+        if not selected_task_types:
+            return None
+        
+        # Configure each selected task
+        task_configs = []
+        for task_id in selected_task_types:
+            task_info = next(t for t in available_tasks if t['id'] == task_id)
+            task_config = self._configure_single_task(task_id, task_info['name'])
+            if task_config:
+                task_configs.append(task_config)
+        
+        if not task_configs:
+            return None
+        
+        # Global settings
         self.display_header()
-        console.print(Panel("Step 3: Configure Prompts", style="bold"))
-        
-        # Available prompt styles
-        user_style_choices = ['minimal', 'casual', 'linguistic', 'examples', 'rules_math']
-        system_style_choices = ['analytical', 'casual', 'adversarial', 'none']
-        
-        # User prompt styles - use questionary.Choice with checked parameter
-        user_styles = questionary.checkbox(
-            'User Prompt Styles:',
-            choices=[
-                questionary.Choice(style, checked=(style in ['minimal', 'casual', 'linguistic']))
-                for style in user_style_choices
-            ],
-            style=custom_style
-        ).ask()
-        
-        # System prompt styles
-        system_styles = questionary.checkbox(
-            'System Prompt Styles:',
-            choices=[
-                questionary.Choice(style, checked=(style in ['analytical', 'casual']))
-                for style in system_style_choices
-            ],
-            style=custom_style
-        ).ask()
-        
-        # Validate selections
-        if not user_styles:
-            user_styles = ['minimal', 'casual', 'linguistic']
-        if not system_styles:
-            system_styles = ['analytical', 'casual']
-        
-        # Show matrix
-        config_count = len(user_styles) * len(system_styles)
-        console.print(f"\n✓ Total configurations: {config_count}")
-        console.print(f"  User styles: {', '.join(user_styles)}")
-        console.print(f"  System styles: {', '.join(system_styles)}")
-        
-        return PromptSpec(user_styles=user_styles, system_styles=system_styles)
-    
-    def test_parameters(self) -> TestParams:
-        """Configure test execution parameters."""
-        self.display_header()
-        console.print(Panel("Step 4: Test Parameters", style="bold"))
-        
-        # Batch size
-        batch_size = questionary.text(
-            'Batch size:',
-            default='12',
-            validate=lambda x: x.isdigit() and int(x) > 0,
-            style=custom_style
-        ).ask()
-        batch_size = int(batch_size)
+        console.print(Panel("Global Test Set Configuration", style="bold"))
         
         # Temperature
         temperature = questionary.text(
@@ -433,12 +440,255 @@ class BenchmarkTUI:
             style=custom_style
         ).ask()
         
-        return TestParams(
-            batch_size=batch_size,
+        # Test set name and description
+        name = questionary.text(
+            'Test set name:',
+            default=f"Multi-Task-{'-'.join(selected_task_types)}",
+            style=custom_style
+        ).ask()
+        
+        description = questionary.text(
+            'Test set description (optional):',
+            default=f"Multi-task test set with {len(task_configs)} task types",
+            style=custom_style
+        ).ask()
+        
+        return MultiTaskConfig(
+            name=name,
+            description=description,
+            tasks=task_configs,
             temperature=temperature,
             language=language,
-            thinking_enabled=thinking,
+            thinking_enabled=thinking
         )
+    
+    def _configure_single_task(self, task_id: str, task_name: str) -> Optional[TaskConfiguration]:
+        """Configure a single task type."""
+        self.display_header()
+        console.print(Panel(f"Configure: {task_name}", style="bold yellow"))
+        
+        # Batch size for this task
+        batch_size = questionary.text(
+            f'Number of {task_name} test cases:',
+            default='50',
+            validate=lambda x: x.isdigit() and int(x) > 0,
+            style=custom_style
+        ).ask()
+        batch_size = int(batch_size)
+        
+        # Prompt configuration for this task
+        console.print(f"\n[cyan]Prompt Configuration for {task_name}[/cyan]")
+        prompts = self._configure_task_prompts()
+        
+        # Task-specific parameters
+        parameters = self._configure_task_specific_params(task_id)
+        
+        return TaskConfiguration(
+            task_type=task_id,
+            task_name=task_name,
+            batch_size=batch_size,
+            prompts=prompts,
+            parameters=parameters
+        )
+    
+    def _configure_task_prompts(self) -> PromptSpec:
+        """Configure prompts for a single task."""
+        # Available prompt styles
+        user_style_choices = ['minimal', 'casual', 'linguistic', 'examples', 'rules_math']
+        system_style_choices = ['analytical', 'casual', 'adversarial', 'none']
+        
+        # User prompt styles
+        user_styles = questionary.checkbox(
+            'User Prompt Styles:',
+            choices=[
+                questionary.Choice(style, checked=(style in ['minimal', 'casual']))
+                for style in user_style_choices
+            ],
+            style=custom_style
+        ).ask()
+        
+        # System prompt styles
+        system_styles = questionary.checkbox(
+            'System Prompt Styles:',
+            choices=[
+                questionary.Choice(style, checked=(style in ['analytical']))
+                for style in system_style_choices
+            ],
+            style=custom_style
+        ).ask()
+        
+        # Validate selections
+        if not user_styles:
+            user_styles = ['minimal']
+        if not system_styles:
+            system_styles = ['analytical']
+        
+        console.print(f"  → {len(user_styles) * len(system_styles)} prompt combinations")
+        
+        return PromptSpec(user_styles=user_styles, system_styles=system_styles)
+    
+    def _configure_task_specific_params(self, task_type: str) -> Dict[str, Any]:
+        """Configure task-specific parameters."""
+        config = {}
+        
+        if task_type == 'ari':
+            # ARI-specific config
+            difficulties = questionary.checkbox(
+                'Difficulty Levels:',
+                choices=[
+                    questionary.Choice('1', checked=True),
+                    questionary.Choice('2'),
+                    questionary.Choice('3'),
+                ],
+                style=custom_style
+            ).ask()
+            config['difficulties'] = [int(d) for d in (difficulties or ['1'])]
+            
+            mode = questionary.select(
+                'Expression Mode:',
+                choices=['expression', 'equation'],
+                default='expression',
+                style=custom_style
+            ).ask()
+            config['mode'] = mode
+            
+        elif task_type == 'gol':
+            # GoL-specific config
+            difficulty = questionary.select(
+                'Difficulty Level:',
+                choices=[
+                    questionary.Choice('EASY (3x3 grid)', value='EASY'),
+                    questionary.Choice('MEDIUM (5x5 grid)', value='MEDIUM'),
+                    questionary.Choice('HARD (8x8 grid)', value='HARD'),
+                ],
+                default='EASY',
+                style=custom_style
+            ).ask()
+            config['difficulty'] = difficulty
+            
+            density = questionary.text(
+                'Grid density (0.0-1.0):',
+                default='0.3',
+                validate=lambda x: x.replace('.', '', 1).isdigit() and 0 <= float(x) <= 1,
+                style=custom_style
+            ).ask()
+            config['density'] = float(density)
+            
+        elif task_type in ('c14', 'linda'):
+            # C14/Linda-specific config
+            difficulties = questionary.checkbox(
+                'Difficulty Levels:',
+                choices=[
+                    questionary.Choice('1', checked=True),
+                    questionary.Choice('2'),
+                    questionary.Choice('3'),
+                ],
+                style=custom_style
+            ).ask()
+            config['difficulties'] = [int(d) for d in (difficulties or ['1'])]
+        
+        return config
+    
+    def generate_test_set(self, multi_task_config: MultiTaskConfig) -> Optional[str]:
+        """Generate multi-task test set (Stage 1)."""
+        self.display_header()
+        console.print(Panel("Step 2: Generate Test Set (Stage 1)", style="bold green"))
+        
+        # Show summary
+        summary_table = Table(title="Test Set Summary", show_header=True)
+        summary_table.add_column("Task Type", style="cyan")
+        summary_table.add_column("Test Cases", style="green")
+        summary_table.add_column("Prompt Configs", style="yellow")
+        summary_table.add_column("Total", style="magenta")
+        
+        for task in multi_task_config.tasks:
+            summary_table.add_row(
+                task.task_name,
+                str(task.batch_size),
+                str(task.prompts.config_count()),
+                str(task.total_tests)
+            )
+        
+        summary_table.add_row(
+            "[bold]TOTAL[/bold]",
+            "",
+            "",
+            f"[bold]{multi_task_config.total_tests}[/bold]"
+        )
+        
+        console.print(summary_table)
+        console.print(f"\n[cyan]Test Set: {multi_task_config.name}[/cyan]")
+        console.print(f"[dim]{multi_task_config.description}[/dim]")
+        
+        if not questionary.confirm(
+            'Generate this test set?',
+            default=True,
+            style=custom_style
+        ).ask():
+            return None
+        
+        # Create YAML config for multi-task test set
+        yaml_config_path = self._create_multi_task_yaml_config(multi_task_config)
+        console.print(f"\n[cyan]→ Generated YAML config: {yaml_config_path}[/cyan]")
+        
+        # Generate test set using Stage 1
+        console.print("[cyan]→ Generating test set...[/cyan]")
+        
+        import subprocess
+        import sys
+        
+        generate_cmd = [
+            sys.executable, "src/stages/generate_testset.py",
+            yaml_config_path,
+            "--validate"
+        ]
+        
+        result = subprocess.run(generate_cmd, capture_output=True, text=True)
+        if result.returncode != 0:
+            console.print(f"[red]✗ Test set generation failed: {result.stderr}[/red]")
+            return None
+        
+        # Extract testset path from output
+        testset_path = _extract_testset_path(result.stdout)
+        if not testset_path:
+            console.print("[red]✗ Could not find generated test set path[/red]")
+            return None
+        
+        console.print(f"[green]✓ Test set generated: {testset_path}[/green]")
+        return testset_path
+    
+    def execution_configuration(self) -> dict:
+        """Configure execution and output options (Step 4)."""
+        self.display_header()
+        console.print(Panel("Step 4: Execution Configuration", style="bold"))
+        
+        # Output directory
+        output_dir = questionary.text(
+            'Output directory:',
+            default='results_multi_task',
+            style=custom_style
+        ).ask()
+        
+        # Generate charts
+        generate_charts = questionary.confirm(
+            'Generate analysis and visualizations after execution?',
+            default=True,
+            style=custom_style
+        ).ask()
+        
+        # Verbosity
+        verbosity = questionary.select(
+            'Verbosity level:',
+            choices=['quiet', 'normal', 'verbose'],
+            default='normal',
+            style=custom_style
+        ).ask()
+        
+        return {
+            'output_dir': output_dir,
+            'generate_charts': generate_charts,
+            'verbosity': verbosity,
+        }
     
     def task_specific_config(self, task_type: str) -> Dict:
         """Configure task-specific parameters."""
@@ -598,17 +848,29 @@ class BenchmarkTUI:
             'verbosity': verbosity,
         }
     
-    def confirmation_screen(self, config: BenchmarkConfig) -> bool:
-        """Final confirmation before running tests."""
+    def execution_confirmation_screen(self, config: BenchmarkConfig, multi_task_config: MultiTaskConfig) -> bool:
+        """Final confirmation before executing tests on pre-generated test set."""
         self.display_header()
-        console.print(Panel("Review Configuration", style="bold green"))
+        console.print(Panel("Review Execution Configuration", style="bold green"))
         
         # Create detailed summary table
         table = Table(show_header=False, box=None, padding=(0, 2))
         table.add_column("Property", style="cyan", width=20)
         table.add_column("Value", style="green")
         
-        table.add_row("Name", config.name)
+        table.add_row("Test Set", multi_task_config.name)
+        table.add_row("Description", multi_task_config.description or "N/A")
+        table.add_row("Task Types", f"{multi_task_config.total_task_types} types")
+        
+        # List tasks
+        for task in multi_task_config.tasks:
+            table.add_row("  •", f"{task.task_name}: {task.total_tests} tests")
+        
+        table.add_row("Total Tests", str(multi_task_config.total_tests))
+        table.add_row("Test Set File", Path(self.generated_testset_path).name if self.generated_testset_path else "N/A")
+        table.add_row("", "")  # Spacer
+        
+        # Model information
         table.add_row("Provider", config.models[0].provider if config.models else "N/A")
         table.add_row("Models", f"{len(config.models)} selected")
         
@@ -618,22 +880,18 @@ class BenchmarkTUI:
         if len(config.models) > 3:
             table.add_row("  •", f"... and {len(config.models) - 3} more")
         
-        # Task information
-        if hasattr(config, 'task_type'):
-            table.add_row("Task Type", config.task_type.upper())
-        
-        table.add_row("Prompt Configs", str(config.prompts.config_count()))
-        table.add_row("Batch Size", str(config.params.batch_size))
-        table.add_row("Temperature", f"{config.params.temperature:.2f}")
-        table.add_row("Total Tests", str(config.total_test_count()))
-        table.add_row("Estimated Time", f"{config.estimated_duration_minutes():.0f} minutes")
         table.add_row("Output Dir", config.output_dir)
+        table.add_row("Analysis", "Enabled" if config.generate_charts else "Disabled")
+        
+        # Estimate execution time
+        estimated_minutes = len(config.models) * multi_task_config.total_tests * 0.5  # Rough estimate
+        table.add_row("Est. Runtime", f"{estimated_minutes:.0f} minutes")
         
         console.print(table)
         console.print()
         
         confirm = questionary.confirm(
-            '🚀 Ready to start testing?',
+            '⚙️  Execute tests on pre-generated test set?',
             default=True,
             style=custom_style
         ).ask()
@@ -641,74 +899,168 @@ class BenchmarkTUI:
         return confirm
     
     def create_new_benchmark(self) -> Optional[BenchmarkConfig]:
-        """Guided setup for new benchmark."""
-        # Step 1: Models
-        models = self.model_selection()
+        """Guided setup for new 3-stage benchmark workflow."""
+        
+        # Step 1: Multi-Task Configuration
+        multi_task_config = self.multi_task_configuration()
+        if not multi_task_config:
+            console.print("[red]No tasks configured. Aborting.[/red]")
+            return None
+        
+        # Step 2: Generate Test Set (Stage 1)
+        testset_path = self.generate_test_set(multi_task_config)
+        if not testset_path:
+            console.print("[red]Test set generation failed. Aborting.[/red]")
+            return None
+        
+        # Store the generated test set path
+        self.multi_task_config = multi_task_config
+        self.generated_testset_path = testset_path
+        
+        # Step 3: Model Selection  
+        models = self.model_selection_for_execution()
         if not models:
             console.print("[red]No models selected. Aborting.[/red]")
             return None
         
-        # Step 2: Task Selection
-        task_type = self.task_selection()
-        if not task_type:
-            console.print("[red]No task selected. Aborting.[/red]")
-            return None
+        # Step 4: Execution Configuration
+        exec_config = self.execution_configuration()
         
-        # Step 3: Prompts
-        prompts = self.prompt_configuration()
-        
-        # Step 4: Task-specific configuration
-        task_config = self.task_specific_config(task_type)
-        
-        # Step 5: Test parameters
-        params = self.test_parameters()
-        
-        # Step 6: Output configuration
-        output_config = self.output_configuration()
-        
-        # Create config
+        # Create a BenchmarkConfig for execution (backward compatibility)
+        # This is mainly used for the execution phase
         config = BenchmarkConfig(
-            name=questionary.text(
-                'Benchmark name:',
-                default=f'{task_type.upper()} Benchmark',
-                style=custom_style
-            ).ask(),
-            description=questionary.text(
-                'Description (optional):',
-                default='',
-                style=custom_style
-            ).ask(),
+            name=multi_task_config.name,
+            description=multi_task_config.description,
             models=models,
-            prompts=prompts,
-            params=params,
-            output_dir=output_config['output_dir'],
-            generate_charts=output_config['generate_charts'],
-            report_formats=output_config['report_formats'],
-            verbosity=output_config['verbosity'],
+            prompts=PromptSpec(user_styles=['multi'], system_styles=['task']),  # Placeholder
+            params=TestParams(
+                batch_size=multi_task_config.total_tests,
+                temperature=multi_task_config.temperature,
+                language=multi_task_config.language,
+                thinking_enabled=multi_task_config.thinking_enabled
+            ),
+            output_dir=exec_config['output_dir'],
+            generate_charts=exec_config['generate_charts'],
+            report_formats=['markdown', 'json'],
+            verbosity=exec_config['verbosity'],
         )
         
-        # Store task type in config metadata
-        config.task_type = task_type
-        config.task_config = task_config
+        # Store multi-task info in config
+        config.task_type = 'multi-task'
+        config.task_config = {'testset_path': testset_path}
         
-        # Confirmation
-        if self.confirmation_screen(config):
+        # Final confirmation
+        if self.execution_confirmation_screen(config, multi_task_config):
             self.config = config
             return config
         
         return None
 
+    def _create_multi_task_yaml_config(self, multi_task_config: MultiTaskConfig) -> str:
+        """Create YAML config for multi-task test set generation."""
+        import yaml
+        from datetime import datetime
+        
+        # Build YAML config structure for multi-task
+        yaml_config = {
+            'metadata': {
+                'name': f"multi_task_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                'version': '1.0',
+                'schema_version': '1.0.0',
+                'description': multi_task_config.description,
+                'created_by': 'benchmark_tui',
+                'task_type': 'multi-task'
+            },
+            'tasks': [],  # Multiple tasks
+            'sampling': {
+                'temperature': multi_task_config.temperature,
+                'top_k': 40,
+                'max_tokens': 512
+            },
+            'execution': {
+                'no_thinking': not multi_task_config.thinking_enabled,
+                'timeout_seconds': 30,
+                'prompt_language': multi_task_config.language
+            }
+        }
+        
+        # Map TUI task types to stage script task types
+        task_type_mapping = {
+            'ari': 'arithmetic',
+            'gol': 'game_of_life', 
+            'c14': 'c14',
+            'linda': 'linda'
+        }
+        
+        # Add each task configuration
+        for task_config in multi_task_config.tasks:
+            mapped_task_type = task_type_mapping.get(task_config.task_type, task_config.task_type)
+            
+            task_yaml = {
+                'type': mapped_task_type,
+                'generation': {
+                    'seed': 42,
+                },
+                'prompt_configs': []
+            }
+            
+            # Add task-specific generation params
+            if mapped_task_type == 'arithmetic':
+                task_yaml['generation'].update({
+                    'target_accuracies': task_config.parameters.get('difficulties', [0, 1, 2]),
+                    'expressions_per_target': task_config.batch_size,
+                    'mode': task_config.parameters.get('mode', 'expression')
+                })
+            elif mapped_task_type == 'game_of_life':
+                task_yaml['generation'].update({
+                    'difficulty_levels': [task_config.parameters.get('difficulty', 'EASY')],
+                    'grids_per_difficulty': task_config.batch_size,
+                    'density': task_config.parameters.get('density', 0.3),
+                    'known_patterns_ratio': 0.3
+                })
+                yaml_config['execution']['cell_markers'] = ['1', '0']
+            elif mapped_task_type in ('c14', 'linda'):
+                task_yaml['generation'].update({
+                    'difficulty_levels': task_config.parameters.get('difficulties', [1]),
+                    'cases_per_difficulty': task_config.batch_size
+                })
+            
+            # Add prompt configurations for this task
+            for user_style in task_config.prompts.user_styles:
+                for system_style in task_config.prompts.system_styles:
+                    prompt_config = {
+                        'name': f"{task_config.task_type}_{user_style}_{system_style}",
+                        'user_style': user_style,
+                        'system_style': system_style
+                    }
+                    if mapped_task_type == 'game_of_life':
+                        prompt_config['language'] = multi_task_config.language
+                    task_yaml['prompt_configs'].append(prompt_config)
+            
+            yaml_config['tasks'].append(task_yaml)
+        
+        # Save YAML config
+        config_dir = Path("configs/testsets")
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        config_path = config_dir / f"{yaml_config['metadata']['name']}.yaml"
+        with open(config_path, 'w') as f:
+            yaml.dump(yaml_config, f, default_flow_style=False, sort_keys=False)
+        
+        return str(config_path)
+
 
 def execute_benchmark(config: BenchmarkConfig) -> bool:
-    """Execute benchmark with the given configuration."""
+    """Execute benchmark using pre-generated test set (3-stage architecture)."""
     import subprocess
     import sys
     import json
+    import yaml
     from datetime import datetime
     
     try:
         console.print("\n" + "=" * 80)
-        console.print("[bold cyan]Starting Benchmark Execution[/bold cyan]")
+        console.print("[bold cyan]Starting Benchmark Execution on Pre-Generated Test Set[/bold cyan]")
         console.print("=" * 80)
         console.print()
         
@@ -723,158 +1075,135 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
         ConfigManager.save_to_json(config)
         console.print(f"[green]✓ Output directory created: {config.output_dir}[/green]")
         
+        # Get the pre-generated test set path
+        testset_path = config.task_config.get('testset_path') if hasattr(config, 'task_config') else None
+        if not testset_path:
+            console.print("[red]✗ No pre-generated test set found. This shouldn't happen![/red]")
+            return False
+        
+        console.print(f"[cyan]✓ Using pre-generated test set: {Path(testset_path).name}[/cyan]")
+        
         # Display execution summary
-        summary_table = Table(title="Benchmark Summary", show_header=True)
+        summary_table = Table(title="Execution Summary", show_header=True)
         summary_table.add_column("Parameter", style="cyan")
         summary_table.add_column("Value", style="green")
         
-        task_type = config.task_type.upper() if hasattr(config, 'task_type') else "N/A"
-        summary_table.add_row("Task", task_type)
+        summary_table.add_row("Test Set", Path(testset_path).name)
         summary_table.add_row("Models", str(len(config.models)))
-        summary_table.add_row("Prompt Configs", str(config.prompts.config_count()))
-        summary_table.add_row("Total Tests", str(config.total_test_count()))
-        summary_table.add_row("Estimated Time", f"{config.estimated_duration_minutes():.0f} minutes")
         summary_table.add_row("Output Directory", config.output_dir)
+        summary_table.add_row("Analysis", "Enabled" if config.generate_charts else "Disabled")
         
         console.print(summary_table)
         console.print()
         
         # Show start confirmation
         if questionary.confirm(
-            'Start execution now?',
+            'Execute tests now?',
             default=True,
             style=custom_style
         ).ask():
-            console.print("\n[cyan]Executing benchmark...[/cyan]")
-            console.print("[dim]This may take a while depending on the number of tests.[/dim]")
-            console.print()
             
-            # Map task types to scripts
-            task_script_map = {
-                'ari': 'ari_eval.py',
-                'gol': 'gol_eval.py',
-                'c14': 'c14_eval.py',
-                'linda': 'linda_eval.py',
-            }
+            # =======================================================================
+            # STAGE 2: EXECUTE TESTS ON PRE-GENERATED TEST SET
+            # =======================================================================
             
-            task_type_lower = task_type.lower() if task_type != "N/A" else None
-            script = task_script_map.get(task_type_lower)
+            console.print("\n[bold cyan]STAGE 2: Test Execution[/bold cyan]")
+            console.print("─" * 40)
             
-            if not script:
-                console.print(f"[red]✗ Unknown task type: {task_type}[/red]")
-                return False
-            
-            # Execute for each prompt combination (USER style x SYSTEM style)
-            # All models are passed together
-            prompt_combos = list(zip(config.prompts.user_styles, config.prompts.system_styles))
-            total_combos = len(prompt_combos)
             all_results = []
+            total_models = len(config.models)
             
-            for combo_idx, (user_style, system_style) in enumerate(prompt_combos, 1):
-                console.print(f"\n[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/cyan]")
-                console.print(f"[bold cyan][{combo_idx}/{total_combos}] Prompt Config: {user_style} (user) × {system_style} (system)[/bold cyan]")
-                console.print(f"[cyan]Models: {', '.join([m.display_name for m in config.models])}[/cyan]")
-                console.print(f"[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/cyan]\n")
+            for model_idx, model_spec in enumerate(config.models, 1):
+                console.print(f"\n[cyan][{model_idx}/{total_models}] Executing on {model_spec.display_name}[/cyan]")
                 
-                # Build command arguments
-                cmd = [sys.executable, script]
+                # Run test set on this model
+                run_cmd = [
+                    sys.executable, "src/stages/run_testset.py",
+                    testset_path,
+                    "--model", model_spec.name,
+                    "--provider", model_spec.provider,
+                    "--output-dir", config.output_dir
+                ]
                 
-                # Add all models at once
-                model_names = [m.name for m in config.models]
-                cmd.extend(['--model'] + model_names)
-                
-                cmd.extend(['--batch-size', str(config.params.batch_size)])
-                cmd.extend(['--temperature', str(config.params.temperature)])
-                cmd.extend(['--prompt-language', config.params.language])
-                cmd.extend(['--prompt-style', user_style])
-                cmd.extend(['--system-prompt-style', system_style])
-                cmd.extend(['--results-dir', config.output_dir])
-                
-                # Add task-specific configuration
-                if hasattr(config, 'task_config') and config.task_config:
-                    task_cfg = config.task_config
-                    
-                    if task_type_lower == 'ari':
-                        if 'target_values' in task_cfg and task_cfg['target_values']:
-                            cmd.extend(['--target'] + [str(v) for v in task_cfg['target_values']])
-                        if 'mode' in task_cfg:
-                            cmd.extend(['--mode', task_cfg['mode']])
-                        if 'difficulties' in task_cfg:
-                            cmd.extend(['--difficulty'] + [str(d) for d in task_cfg['difficulties']])
-                    
-                    elif task_type_lower == 'gol':
-                        if 'difficulties' in task_cfg:
-                            pass  # Would need GoL-specific args
-                    
-                    elif task_type_lower in ('c14', 'linda'):
-                        if 'difficulties' in task_cfg:
-                            cmd.extend(['--difficulty'] + [str(d) for d in task_cfg['difficulties']])
-                
-                # Execute the script
-                console.print(f"[dim]Command: {' '.join(cmd)}[/dim]\n")
+                if model_spec.quantization:
+                    run_cmd.extend(["--quantization", model_spec.quantization])
                 
                 try:
                     result = subprocess.run(
-                        cmd,
+                        run_cmd,
                         capture_output=True,
                         text=True,
-                        timeout=3600  # 1 hour timeout per prompt combo
+                        timeout=3600  # 1 hour timeout per model
                     )
                     
-                    # Save stdout to results file
-                    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-                    result_file = Path(config.output_dir) / f"results_{user_style}_{system_style}_{timestamp}.txt"
-                    result_file.write_text(result.stdout)
-                    
-                    # Also save stderr if there are errors
-                    if result.stderr:
-                        error_file = Path(config.output_dir) / f"errors_{user_style}_{system_style}_{timestamp}.txt"
-                        error_file.write_text(result.stderr)
-                    
-                    # Print output
-                    console.print(result.stdout)
-                    
-                    if result.returncode != 0:
-                        console.print(f"[yellow]⚠️  Prompt config {user_style}/{system_style} completed with exit code {result.returncode}[/yellow]")
-                    else:
-                        console.print(f"[green]✓ Prompt config {user_style}/{system_style} completed successfully[/green]")
+                    if result.returncode == 0:
+                        # Extract result file path
+                        result_path = _extract_result_path(result.stdout)
+                        console.print(f"[green]✓ {model_spec.display_name} completed[/green]")
                         all_results.append({
-                            'combo_idx': combo_idx,
-                            'user_style': user_style,
-                            'system_style': system_style,
-                            'models': len(config.models),
-                            'result_file': str(result_file)
+                            'model': model_spec.display_name,
+                            'result_file': result_path
                         })
+                    else:
+                        console.print(f"[yellow]⚠️  {model_spec.display_name} completed with errors[/yellow]")
+                        console.print(f"[dim]{result.stderr}[/dim]")
                 
                 except subprocess.TimeoutExpired:
-                    console.print(f"[red]✗ Prompt config {user_style}/{system_style} timed out after 1 hour[/red]")
+                    console.print(f"[red]✗ {model_spec.display_name} timed out after 1 hour[/red]")
                 except Exception as e:
-                    console.print(f"[red]✗ Error running {user_style}/{system_style}: {e}[/red]")
+                    console.print(f"[red]✗ Error running {model_spec.display_name}: {e}[/red]")
+            
+            # =======================================================================
+            # STAGE 3: ANALYSIS & REPORTING
+            # =======================================================================
+            
+            if all_results and config.generate_charts:
+                console.print("\n[bold cyan]STAGE 3: Analysis & Reporting[/bold cyan]")
+                console.print("─" * 40)
+                
+                # Collect all result files
+                result_files = [r['result_file'] for r in all_results if r['result_file']]
+                
+                if result_files:
+                    console.print("[cyan]→ Analyzing results...[/cyan]")
+                    
+                    # Generate analysis report
+                    report_path = f"{config.output_dir}/benchmark_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                    chart_dir = f"{config.output_dir}/charts"
+                    
+                    analyze_cmd = [
+                        sys.executable, "src/stages/analyze_results.py"
+                    ] + result_files + [
+                        "--output", report_path,
+                        "--visualize",
+                        "--output-dir", chart_dir
+                    ]
+                    
+                    try:
+                        result = subprocess.run(analyze_cmd, capture_output=True, text=True)
+                        if result.returncode == 0:
+                            console.print(f"[green]✓ Analysis report generated: {report_path}[/green]")
+                            console.print(f"[green]✓ Visualizations saved to: {chart_dir}[/green]")
+                        else:
+                            console.print(f"[yellow]⚠️  Analysis completed with warnings[/yellow]")
+                    except Exception as e:
+                        console.print(f"[yellow]⚠️  Could not generate analysis: {e}[/yellow]")
             
             # Save execution summary
             summary_file = Path(config.output_dir) / f"execution_summary_{datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
             summary_data = {
-                'task_type': task_type_lower,
+                'workflow': '3-stage-pre-generated',
+                'test_set_file': testset_path,
                 'models': [m.display_name for m in config.models],
-                'prompt_configs': total_combos,
-                'completed_configs': len(all_results),
+                'completed_models': len(all_results),
                 'output_directory': config.output_dir,
                 'results': all_results
             }
             summary_file.write_text(json.dumps(summary_data, indent=2))
             console.print(f"\n[green]✓ Execution summary saved to: {summary_file}[/green]")
             
-            # Generate charts if enabled
-            if config.generate_charts:
-                console.print("\n[cyan]Generating visualizations...[/cyan]")
-                try:
-                    _generate_benchmark_charts(config.output_dir, task_type_lower)
-                    console.print("[green]✓ Charts generated successfully[/green]")
-                except Exception as e:
-                    console.print(f"[yellow]⚠️  Could not generate charts: {e}[/yellow]")
-            
             console.print(f"\n[cyan]━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━[/cyan]")
-            console.print("[green]✓ Benchmark execution completed![/green]")
+            console.print("[green]✓ Multi-task benchmark execution completed![/green]")
             console.print(f"[cyan]Results saved to: {config.output_dir}[/cyan]")
             
             return True
@@ -887,6 +1216,201 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
         import traceback
         traceback.print_exc()
         return False
+
+
+    def _create_multi_task_yaml_config(self, multi_task_config: MultiTaskConfig) -> str:
+        """Create YAML config for multi-task test set generation."""
+        import yaml
+        from datetime import datetime
+        
+        # Build YAML config structure for multi-task
+        yaml_config = {
+            'metadata': {
+                'name': f"multi_task_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+                'version': '1.0',
+                'schema_version': '1.0.0',
+                'description': multi_task_config.description,
+                'created_by': 'benchmark_tui',
+                'task_type': 'multi-task'
+            },
+            'tasks': [],  # Multiple tasks
+            'sampling': {
+                'temperature': multi_task_config.temperature,
+                'top_k': 40,
+                'max_tokens': 512
+            },
+            'execution': {
+                'no_thinking': not multi_task_config.thinking_enabled,
+                'timeout_seconds': 30,
+                'prompt_language': multi_task_config.language
+            }
+        }
+        
+        # Map TUI task types to stage script task types
+        task_type_mapping = {
+            'ari': 'arithmetic',
+            'gol': 'game_of_life', 
+            'c14': 'c14',
+            'linda': 'linda'
+        }
+        
+        # Add each task configuration
+        for task_config in multi_task_config.tasks:
+            mapped_task_type = task_type_mapping.get(task_config.task_type, task_config.task_type)
+            
+            task_yaml = {
+                'type': mapped_task_type,
+                'generation': {
+                    'seed': 42,
+                },
+                'prompt_configs': []
+            }
+            
+            # Add task-specific generation params
+            if mapped_task_type == 'arithmetic':
+                task_yaml['generation'].update({
+                    'target_accuracies': task_config.parameters.get('difficulties', [0, 1, 2]),
+                    'expressions_per_target': task_config.batch_size,
+                    'mode': task_config.parameters.get('mode', 'expression')
+                })
+            elif mapped_task_type == 'game_of_life':
+                task_yaml['generation'].update({
+                    'difficulty_levels': [task_config.parameters.get('difficulty', 'EASY')],
+                    'grids_per_difficulty': task_config.batch_size,
+                    'density': task_config.parameters.get('density', 0.3),
+                    'known_patterns_ratio': 0.3
+                })
+                yaml_config['execution']['cell_markers'] = ['1', '0']
+            elif mapped_task_type in ('c14', 'linda'):
+                task_yaml['generation'].update({
+                    'difficulty_levels': task_config.parameters.get('difficulties', [1]),
+                    'cases_per_difficulty': task_config.batch_size
+                })
+            
+            # Add prompt configurations for this task
+            for user_style in task_config.prompts.user_styles:
+                for system_style in task_config.prompts.system_styles:
+                    prompt_config = {
+                        'name': f"{task_config.task_type}_{user_style}_{system_style}",
+                        'user_style': user_style,
+                        'system_style': system_style
+                    }
+                    if mapped_task_type == 'game_of_life':
+                        prompt_config['language'] = multi_task_config.language
+                    task_yaml['prompt_configs'].append(prompt_config)
+            
+            yaml_config['tasks'].append(task_yaml)
+        
+        # Save YAML config
+        config_dir = Path("configs/testsets")
+        config_dir.mkdir(parents=True, exist_ok=True)
+        
+        config_path = config_dir / f"{yaml_config['metadata']['name']}.yaml"
+        with open(config_path, 'w') as f:
+            yaml.dump(yaml_config, f, default_flow_style=False, sort_keys=False)
+        
+        return str(config_path)
+    """Create YAML config file for test set generation."""
+    import yaml
+    from datetime import datetime
+    
+    # Map TUI task types to stage script task types
+    task_type_mapping = {
+        'ari': 'arithmetic',
+        'gol': 'game_of_life', 
+        'c14': 'c14',
+        'linda': 'linda'
+    }
+    
+    raw_task_type = config.task_type.lower() if hasattr(config, 'task_type') else 'ari'
+    task_type = task_type_mapping.get(raw_task_type, raw_task_type)
+    
+    # Build YAML config structure
+    yaml_config = {
+        'metadata': {
+            'name': f"{raw_task_type}_tui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
+            'version': '1.0',
+            'schema_version': '1.0.0',
+            'description': f"{config.description or f'TUI generated {raw_task_type} benchmark'}",
+            'created_by': 'benchmark_tui',
+            'task_type': task_type  # Use mapped task type
+        },
+        'task': {
+            'type': task_type,  # Use mapped task type
+            'generation': {
+                'seed': 42,  # Fixed seed for reproducibility
+            },
+            'prompt_configs': []
+        },
+        'sampling': {
+            'temperature': config.params.temperature,
+            'top_k': 40,
+            'max_tokens': 512
+        },
+        'execution': {
+            'no_thinking': not config.params.thinking_enabled,
+            'timeout_seconds': 30,
+            'prompt_language': config.params.language
+        }
+    }
+    
+    # Add task-specific generation params
+    if task_type == 'arithmetic':
+        yaml_config['task']['generation'].update({
+            'target_accuracies': [0, 1, 2],  # Standard difficulty levels
+            'expressions_per_target': config.params.batch_size,
+            'mode': 'expression'
+        })
+    elif task_type == 'game_of_life':
+        yaml_config['task']['generation'].update({
+            'difficulty_levels': ['EASY', 'MEDIUM'],
+            'grids_per_difficulty': config.params.batch_size,
+            'density': 0.5,
+            'known_patterns_ratio': 0.3
+        })
+        yaml_config['execution']['cell_markers'] = ['1', '0']
+    
+    # Add prompt configurations
+    for user_style in config.prompts.user_styles:
+        for system_style in config.prompts.system_styles:
+            prompt_config = {
+                'name': f"{user_style}_{system_style}",
+                'user_style': user_style,
+                'system_style': system_style
+            }
+            if task_type == 'game_of_life':
+                prompt_config['language'] = config.params.language
+            yaml_config['task']['prompt_configs'].append(prompt_config)
+    
+    # Save YAML config
+    config_dir = Path("configs/testsets")
+    config_dir.mkdir(parents=True, exist_ok=True)
+    
+    config_path = config_dir / f"{yaml_config['metadata']['name']}.yaml"
+    with open(config_path, 'w') as f:
+        yaml.dump(yaml_config, f, default_flow_style=False, sort_keys=False)
+    
+    return str(config_path)
+
+
+def _extract_testset_path(output: str) -> str:
+    """Extract testset file path from generate_testset.py output."""
+    import re
+    
+    match = re.search(r'✓ Generated test set: (.+\.json\.gz)', output)
+    if match:
+        return match.group(1)
+    return None
+
+
+def _extract_result_path(output: str) -> str:
+    """Extract result file path from run_testset.py output."""
+    import re
+    
+    match = re.search(r'✓ Results saved: (.+\.json\.gz)', output)
+    if match:
+        return match.group(1)
+    return None
 
 
 def _generate_benchmark_charts(output_dir: str, task_type: str) -> None:
