@@ -230,6 +230,143 @@ def generate_gol_tests(config: Dict) -> List[Dict]:
     return tests
 
 
+def generate_linda_tests(config: Dict) -> List[Dict]:
+    """Generate Linda Conjunction Fallacy test cases with culture-language alignment."""
+    tests = []
+    gen_params = config['task']['generation']
+    
+    # Import Linda benchmark components
+    from src.benchmarks.linda_eval import LindaBenchmark, PersonaTemplate
+    
+    # Get language and ensure culture alignment
+    language = config['execution'].get('prompt_language', 'en')
+    culture_filter = gen_params.get('culture_filter', None)
+    
+    # Map language to appropriate cultures to avoid mismatch (English prompt + Chinese name)
+    language_culture_map = {
+        'en': ['western', 'african', 'european'],  # English-speaking cultures
+        'es': ['latin_american', 'european'],      # Spanish-speaking cultures
+        'fr': ['european', 'african'],             # French-speaking cultures
+        'de': ['european'],                        # German-speaking cultures
+        'zh': ['east_asian'],                      # Chinese-speaking cultures
+    }
+    
+    # Filter cultures based on language
+    if culture_filter:
+        # Validate culture is compatible with language
+        compatible_cultures = language_culture_map.get(language, ['western'])
+        if culture_filter not in compatible_cultures:
+            print(f"Warning: Culture '{culture_filter}' may not align with language '{language}'. Using compatible culture.")
+            culture_filter = compatible_cultures[0]
+    else:
+        # Use all cultures compatible with the language
+        compatible_cultures = language_culture_map.get(language, ['western'])
+        culture_filter = None  # Will use all compatible cultures
+    
+    # Initialize Linda benchmark
+    linda_benchmark = LindaBenchmark(
+        language=language,
+        num_options=gen_params.get('num_options', 8),
+        culture_filter=culture_filter
+    )
+    
+    # Filter personas by language-compatible cultures if no specific filter
+    if not culture_filter:
+        compatible_cultures = language_culture_map.get(language, ['western'])
+        linda_benchmark.persona_templates = [
+            p for p in linda_benchmark.persona_templates 
+            if p.culture in compatible_cultures
+        ]
+    
+    if not linda_benchmark.persona_templates:
+        raise ValueError(f"No personas available for language '{language}' and culture filter '{culture_filter}'")
+    
+    prompt_engine = PromptEngine()
+    test_id = 0
+    
+    for prompt_config in config['task']['prompt_configs']:
+        personas_per_config = gen_params.get('personas_per_config', 5)
+        
+        for persona_idx in range(personas_per_config):
+            # Cycle through available personas
+            persona = linda_benchmark.persona_templates[persona_idx % len(linda_benchmark.persona_templates)]
+            
+            # Generate test item using Linda's logic
+            test_item = linda_benchmark.generate_test_item(persona)
+            
+            # Create prompt context
+            context = PromptContext(
+                task_type=TaskType.LINDA_FALLACY,
+                language=Language(language),
+                style=PromptStyle(prompt_config['user_style']),
+                system_style=SystemPromptStyle(prompt_config['system_style'])
+            )
+            
+            # Format persona description
+            traits_str = ", ".join(persona.personality_traits)
+            background_str = ". ".join(persona.background)
+            activities_str = " and ".join(persona.activities)
+            persona_description = f"{persona.name} is {persona.age} years old, {traits_str}. {background_str}. As a student, {activities_str}."
+            
+            # Set Linda-specific context variables
+            context.set('persona_description', persona_description)
+            context.set('ranked_items', '\n'.join(f"{i+1}. {item}" for i, item in enumerate(test_item.all_items)))
+            context.set('num_options', len(test_item.all_items))
+            
+            # Generate prompts
+            result = prompt_engine.generate(context)
+            
+            # Create test case
+            test_case = {
+                'test_id': f"linda_{test_id:04d}",
+                'task_type': 'linda_fallacy',
+                'config_name': prompt_config['name'],
+                'prompts': {
+                    'system': result.system_prompt,
+                    'user': result.user_prompt,
+                    'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                },
+                'task_params': {
+                    'persona': {
+                        'name': persona.name,
+                        'age': persona.age,
+                        'personality_traits': persona.personality_traits,
+                        'background': persona.background,
+                        'activities': persona.activities,
+                        'culture': persona.culture
+                    },
+                    'test_item': {
+                        'description': test_item.description,
+                        'conjunction_item': test_item.conjunction_item,
+                        'component_a': test_item.component_a,
+                        'component_b': test_item.component_b,
+                        'distractors': test_item.distractors,
+                        'all_items': test_item.all_items
+                    },
+                    'expected_fallacy': True,  # We expect models to fall into conjunction fallacy
+                    'num_options': len(test_item.all_items)
+                },
+                'prompt_metadata': {
+                    'user_style': prompt_config['user_style'],
+                    'system_style': prompt_config['system_style'],
+                    'language': language,
+                    'culture': persona.culture
+                },
+                'generation_metadata': {
+                    'seed': gen_params['seed'],
+                    'generator_version': "1.0.0",
+                    'created_at': datetime.now().isoformat(),
+                    'culture_filter': culture_filter,
+                    'language_culture_aligned': True
+                }
+            }
+            
+            tests.append(test_case)
+            test_id += 1
+    
+    return tests
+
+
 def generate_testset(config_path: str, output_dir: str = "testsets") -> str:
     """Generate test set from config file (supports both single-task and multi-task configs)."""
     print(f"Loading config: {config_path}")
@@ -296,6 +433,8 @@ def generate_multi_task_testset(config: Dict, config_path: str, output_dir: str)
             task_test_cases = generate_arithmetic_tests(single_task_config)
         elif task_type == "game_of_life":
             task_test_cases = generate_gol_tests(single_task_config)
+        elif task_type == "linda_fallacy":
+            task_test_cases = generate_linda_tests(single_task_config)
         else:
             raise ValueError(f"Unknown task type: {task_type}")
         

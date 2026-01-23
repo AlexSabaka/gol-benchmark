@@ -146,6 +146,40 @@ class C14TestConfig(BaseTestConfig):
     prompt_language: Literal["en"] = "en"
 
 @dataclass
+class LindaFallacyTestConfig(BaseTestConfig):
+    """Configuration for Linda Conjunction Fallacy test runs"""
+    num_options: int = 8  # Number of ranking options
+    culture_filter: Optional[str] = None  # Filter personas by culture
+    personas_per_config: int = 5  # Number of personas per prompt configuration
+    prompt_style: Literal['linguistic', 'casual', 'minimal'] = 'linguistic'
+    
+    def __post_init__(self):
+        """Validate Linda Fallacy specific configuration"""
+        super().__post_init__()
+        
+        # Validate prompt_style for Linda Fallacy
+        valid_styles = ['linguistic', 'casual', 'minimal']
+        if self.prompt_style not in valid_styles:
+            raise ValueError(f"Invalid prompt_style '{self.prompt_style}'. Must be one of: {valid_styles}")
+        
+        # Validate num_options
+        if not (3 <= self.num_options <= 20):
+            raise ValueError("Number of options must be between 3 and 20")
+        
+        # Validate personas_per_config
+        if self.personas_per_config < 1:
+            raise ValueError("personas_per_config must be at least 1")
+        
+        # Validate culture filter
+        if self.culture_filter:
+            valid_cultures = [
+                "western", "east_asian", "south_asian", "african", 
+                "middle_eastern", "latin_american", "european"
+            ]
+            if self.culture_filter not in valid_cultures:
+                raise ValueError(f"Invalid culture_filter '{self.culture_filter}'. Must be one of: {valid_cultures}")
+
+@dataclass
 class GameState:
     """Represents a Game of Life grid state with validation"""
     grid: List[List[int]]

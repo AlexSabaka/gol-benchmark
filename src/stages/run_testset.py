@@ -270,6 +270,10 @@ def parse_answer(response: str, task_type: str) -> Any:
         
         return None
     
+    elif task_type == "linda_fallacy":
+        # Linda Conjunction Fallacy ranking parsing with multi-strategy approach
+        return parse_linda_response(response)
+    
     return None
 
 
@@ -402,6 +406,173 @@ def parse_arithmetic_response(target: str, response: str) -> float:
     return None
 
 
+def clean_markdown_text(text: str) -> str:
+    """Remove markdown formatting from text."""
+    # Remove markdown bold/italic
+    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **text**
+    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *text*
+    text = re.sub(r'_([^_]+)_', r'\1', text)        # _text_
+    
+    # Remove markdown headers
+    text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+    
+    # Remove bullet points
+    text = re.sub(r'^[*-]\s+', '', text, flags=re.MULTILINE)
+    
+    return text.strip()
+
+
+def parse_linda_response(response: str) -> Dict[str, Any]:
+    """
+    Parse Linda Conjunction Fallacy response to extract rankings.
+    Uses multi-strategy parsing approach based on proven logic from linda_eval.py.
+    
+    Returns:
+        Dict with parsed_rankings, raw_response, and parsing metadata
+    """
+    if not response:
+        return {
+            'rankings': [],
+            'raw_response': response,
+            'parse_strategy': 'failed',
+            'parse_error': 'Empty response'
+        }
+    
+    # Strategy 1: Look for explicit ranking sections with multi-language support
+    ranking_keywords = ['RANKING', 'CLASIFICACIÓN', 'CLASSEMENT', 'RANKING:', 'CLASIFICACIÓN:', 'CLASSEMENT:']
+    reasoning_keywords = ['REASONING', 'RAZONAMIENTO', 'RAISONNEMENT']
+    
+    # Build regex pattern for ranking section
+    ranking_pattern = f"(?:{'|'.join(ranking_keywords)})\\s*(.*?)(?=(?:{'|'.join(reasoning_keywords)}):|$)"
+    ranking_match = re.search(ranking_pattern, response, re.DOTALL | re.IGNORECASE)
+    
+    parsed_rankings = []
+    parse_strategy = 'failed'
+    
+    if ranking_match:
+        ranking_text = ranking_match.group(1).strip()
+        lines = ranking_text.split('\n')
+        
+        for line in lines:
+            line = line.strip()
+            if re.match(r'^\d+\.', line):
+                # Extract the text after the number
+                item_text = re.sub(r'^\d+\.\s*', '', line).strip()
+                
+                # Clean up explanations and markdown
+                item_text = clean_markdown_text(item_text)
+                
+                # Extract just the profession/description part before explanations
+                # Look for pattern: "Person does X" or "Person is Y" before explanations
+                profession_match = re.match(r'^([^:–—-]*?)(?:[:\s]*(?:This is|This makes|It\'s|He\'s|She\'s|Given|While|\s*–|\s*—|\s*\([^)]*\)|\s*\.|$))', item_text)
+                if profession_match:
+                    item_text = profession_match.group(1).strip()
+                
+                # Also handle dash-separated explanations like "Linda is a teacher - Most likely"
+                item_text = re.sub(r'\s*[-–—]\s*.*$', '', item_text)
+                
+                # Remove trailing explanations in parentheses
+                item_text = re.sub(r'\s*\([^)]*\)\s*$', '', item_text)
+                
+                if item_text and len(item_text) > 3:  # Avoid too-short items
+                    parsed_rankings.append(item_text)
+        
+        if parsed_rankings:
+            parse_strategy = 'explicit_ranking_section'
+    
+    # Strategy 2: Fallback - Find numbered list anywhere in response
+    if not parsed_rankings:
+        lines = response.split('\n')
+        for line in lines:
+            line = line.strip()
+            if re.match(r'^\d+\.', line):
+                item_text = re.sub(r'^\d+\.\s*', '', line).strip()
+                
+                # Clean up explanations and markdown
+                item_text = clean_markdown_text(item_text)
+                
+                # Extract just the profession/description part before explanations
+                profession_match = re.match(r'^([^:–—-]*?)(?:[:\s]*(?:This is|This makes|It\'s|He\'s|She\'s|Given|While|\s*–|\s*—|\s*\([^)]*\)|\s*\.|$))', item_text)
+                if profession_match:
+                    item_text = profession_match.group(1).strip()
+                
+                # Also handle dash-separated explanations
+                item_text = re.sub(r'\s*[-–—]\s*.*$', '', item_text)
+                
+                # Remove trailing explanations
+                item_text = re.sub(r'\s*\([^)]*\)\s*$', '', item_text)
+                
+                if item_text and len(item_text) > 3:  # Avoid too-short items
+                    parsed_rankings.append(item_text)
+        
+        if parsed_rankings:
+            parse_strategy = 'numbered_list_fallback'
+    
+    # Strategy 3: Extract lines with ranking-like patterns (most/least probable mentions)
+    if not parsed_rankings:
+        lines = response.split('\n')
+        ranking_pattern_lines = []
+        
+        for line in lines:
+            line = line.strip()
+            # Look for lines that might indicate rankings
+            if any(keyword in line.lower() for keyword in ['most probable', 'least probable', 'más probable', 'menos probable', 'plus probable', 'moins probable']):
+                ranking_pattern_lines.append(line)
+        
+        if ranking_pattern_lines:
+            parsed_rankings = ranking_pattern_lines
+            parse_strategy = 'probability_keyword_extraction'
+    
+    # Strategy 4: Extract any sentence/phrase that looks like a ranking statement
+    if not parsed_rankings:
+        sentences = re.split(r'[.!?]', response)
+        potential_rankings = []
+        seen_items = set()  # Track to avoid duplicates
+        
+        for sentence in sentences:
+            sentence = sentence.strip()
+            # Look for sentences with person names or profession mentions
+            if len(sentence) > 10 and any(keyword in sentence.lower() for keyword in ['is a', 'works', 'trabaja', 'es ', 'est ', 'travaille']):
+                # Clean markdown formatting
+                clean_sentence = clean_markdown_text(sentence)
+                
+                # Avoid obvious duplicates by checking if we already have similar content
+                sentence_key = re.sub(r'[^a-zA-Z0-9]', '', clean_sentence.lower())
+                if sentence_key not in seen_items and len(clean_sentence) > 5:
+                    potential_rankings.append(clean_sentence)
+                    seen_items.add(sentence_key)
+        
+        if potential_rankings and len(potential_rankings) >= 2:
+            parsed_rankings = potential_rankings[:10]  # Limit to reasonable number
+            parse_strategy = 'sentence_extraction'
+    
+    # Final deduplication step - remove exact duplicates and very similar items
+    final_rankings = []
+    seen_exact = set()
+    seen_normalized = set()
+    
+    for ranking in parsed_rankings:
+        # Remove exact duplicates
+        if ranking in seen_exact:
+            continue
+        
+        # Remove items that are very similar (same normalized form)
+        normalized = re.sub(r'[^a-zA-Z0-9]', '', ranking.lower())
+        if normalized in seen_normalized or len(normalized) < 5:
+            continue
+            
+        final_rankings.append(ranking)
+        seen_exact.add(ranking)
+        seen_normalized.add(normalized)
+    
+    return {
+        'rankings': final_rankings,
+        'raw_response': response,
+        'parse_strategy': parse_strategy,
+        'parse_error': None if final_rankings else 'No rankings found'
+    }
+
+
 def evaluate_result(parsed_answer: Any, expected_answer: Any, task_type: str) -> Dict:
     """Evaluate if answer is correct."""
     if parsed_answer is None:
@@ -483,7 +654,142 @@ def evaluate_result(parsed_answer: Any, expected_answer: Any, task_type: str) ->
             "total_cells": total_cells
         }
     
+    elif task_type == "linda_fallacy":
+        # Linda Conjunction Fallacy evaluation
+        return evaluate_linda_result(parsed_answer, expected_answer)
+    
     return {"correct": False, "match_type": "unknown", "accuracy": 0.0}
+
+
+def evaluate_linda_result(parsed_answer: Dict[str, Any], expected_answer: Dict[str, Any]) -> Dict:
+    """
+    Evaluate Linda Conjunction Fallacy results.
+    
+    Args:
+        parsed_answer: Dict with 'rankings' list and parsing metadata
+        expected_answer: Dict with test_item and persona information (from task_params)
+    
+    Returns:
+        Dict with evaluation metrics including fallacy detection
+    """
+    if not isinstance(parsed_answer, dict) or not parsed_answer.get('rankings'):
+        return {
+            "correct": False,
+            "match_type": "parse_error",
+            "accuracy": 0.0,
+            "fallacy_detected": False,
+            "confidence_score": 0.0,
+            "parse_error": parsed_answer.get('parse_error', 'No rankings parsed') if isinstance(parsed_answer, dict) else 'Invalid parsed answer format'
+        }
+    
+    rankings = parsed_answer['rankings']
+    
+    # Extract expected components from test parameters
+    test_item = expected_answer.get('test_item', {})
+    conjunction_item = test_item.get('conjunction_item', '')
+    component_a = test_item.get('component_a', '')
+    component_b = test_item.get('component_b', '')
+    num_options = expected_answer.get('num_options', len(test_item.get('all_items', [])))
+    
+    if not conjunction_item or not component_a or not component_b:
+        return {
+            "correct": False,
+            "match_type": "missing_expected_data",
+            "accuracy": 0.0,
+            "fallacy_detected": False,
+            "confidence_score": 0.0,
+            "parse_error": "Missing expected test item data"
+        }
+    
+    # Find ranks of key items using fuzzy matching
+    conjunction_rank = -1
+    component_a_rank = -1
+    component_b_rank = -1
+    
+    for i, ranked_item in enumerate(rankings):
+        if _items_match(ranked_item, conjunction_item):
+            conjunction_rank = i + 1
+        elif _items_match(ranked_item, component_a):
+            component_a_rank = i + 1
+        elif _items_match(ranked_item, component_b):
+            component_b_rank = i + 1
+    
+    # Detect conjunction fallacy
+    # Fallacy occurs when conjunction is ranked higher (lower number) than individual components
+    fallacy_detected = False
+    confidence_score = 0.0
+    
+    if conjunction_rank > 0:
+        # Check if conjunction is ranked higher than both components (if both found)
+        if component_a_rank > 0 and component_b_rank > 0:
+            if conjunction_rank < component_a_rank and conjunction_rank < component_b_rank:
+                fallacy_detected = True
+                # Calculate confidence based on rank difference
+                avg_component_rank = (component_a_rank + component_b_rank) / 2
+                confidence_score = min(1.0, (avg_component_rank - conjunction_rank) / num_options)
+        # Or if conjunction is ranked higher than at least one found component
+        elif component_a_rank > 0:
+            if conjunction_rank < component_a_rank:
+                fallacy_detected = True
+                confidence_score = min(1.0, (component_a_rank - conjunction_rank) / num_options)
+        elif component_b_rank > 0:
+            if conjunction_rank < component_b_rank:
+                fallacy_detected = True
+                confidence_score = min(1.0, (component_b_rank - conjunction_rank) / num_options)
+    
+    # Calculate ranking quality (how many items were successfully parsed vs expected)
+    expected_items_count = num_options
+    parsed_items_count = len(rankings)
+    ranking_quality = min(1.0, parsed_items_count / expected_items_count) if expected_items_count > 0 else 0.0
+    
+    # Overall success metric - considers both parsing success and expected behavior
+    # For Linda, we expect fallacy to be detected (it's the typical human behavior)
+    success = fallacy_detected and ranking_quality > 0.5
+    
+    return {
+        "correct": success,  # Whether the model exhibited expected behavior
+        "match_type": "fallacy_detected" if fallacy_detected else "no_fallacy",
+        "accuracy": ranking_quality,  # How well the ranking was parsed
+        "fallacy_detected": fallacy_detected,
+        "confidence_score": confidence_score,
+        "conjunction_rank": conjunction_rank,
+        "component_a_rank": component_a_rank,
+        "component_b_rank": component_b_rank,
+        "ranking_quality": ranking_quality,
+        "parsed_items_count": parsed_items_count,
+        "expected_items_count": expected_items_count,
+        "parse_strategy": parsed_answer.get('parse_strategy', 'unknown'),
+        "parse_error": None
+    }
+
+
+def _items_match(item1: str, item2: str, threshold: float = 0.7) -> bool:
+    """
+    Check if two items match allowing for minor formatting differences.
+    Used for fuzzy matching of ranking items.
+    """
+    if not item1 or not item2:
+        return False
+    
+    # Normalize strings for comparison
+    norm1 = re.sub(r'[^\w\s]', '', item1.lower()).strip()
+    norm2 = re.sub(r'[^\w\s]', '', item2.lower()).strip()
+    
+    # Check for exact match first
+    if norm1 == norm2:
+        return True
+    
+    # Check for substantial overlap using word-based comparison
+    words1 = set(norm1.split())
+    words2 = set(norm2.split())
+    
+    if len(words1) == 0 or len(words2) == 0:
+        return False
+    
+    intersection = len(words1.intersection(words2))
+    union = len(words1.union(words2))
+    
+    return intersection / union >= threshold
 
 
 def run_testset(
@@ -599,7 +905,14 @@ def run_testset(
             individual_task_type = test_case.get('task_type', task_type)
             
             parsed_answer = parse_answer(raw_response, individual_task_type)
-            expected_answer = test_case['task_params'].get('expected_answer') or test_case['task_params'].get('expected_next_state')
+            
+            # Get expected answer based on task type
+            if individual_task_type == "linda_fallacy":
+                # For Linda, pass the full task_params as expected_answer
+                expected_answer = test_case['task_params']
+            else:
+                # For other tasks, use existing logic
+                expected_answer = test_case['task_params'].get('expected_answer') or test_case['task_params'].get('expected_next_state')
             
             evaluation = evaluate_result(parsed_answer, expected_answer, individual_task_type)
             

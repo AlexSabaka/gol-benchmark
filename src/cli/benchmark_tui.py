@@ -574,8 +574,8 @@ class BenchmarkTUI:
             ).ask()
             config['density'] = float(density)
             
-        elif task_type in ('c14', 'linda'):
-            # C14/Linda-specific config
+        elif task_type in ('c14'):
+            # C14-specific config
             difficulties = questionary.checkbox(
                 'Difficulty Levels:',
                 choices=[
@@ -586,6 +586,52 @@ class BenchmarkTUI:
                 style=custom_style
             ).ask()
             config['difficulties'] = [int(d) for d in (difficulties or ['1'])]
+            
+        elif task_type == 'linda':
+            # Linda Conjunction Fallacy specific configuration
+            console.print("\n🧠 [bold blue]Configuring Linda Conjunction Fallacy Task[/bold blue]")
+            
+            # Number of ranking options
+            num_options = questionary.select(
+                'Number of ranking options:',
+                choices=[
+                    questionary.Choice(title='Six options', value='6'),
+                    questionary.Choice(title='Eight options (recommended)', value='8'),
+                    questionary.Choice(title='Ten options', value='10'),
+                    questionary.Choice(title='Twelve options', value='12'),
+                ],
+                default='8',
+                style=custom_style
+            ).ask()
+            config['num_options'] = int(num_options)
+            
+            # Culture filter
+            culture_filter = questionary.select(
+                'Cultural focus (personas will be filtered by language compatibility):',
+                choices=[
+                    questionary.Choice(title='All compatible cultures (recommended)', value=None),
+                    questionary.Choice(title='Western cultures', value='western'),
+                    questionary.Choice(title='East Asian cultures', value='east_asian'),
+                    questionary.Choice(title='South Asian cultures', value='south_asian'),
+                    questionary.Choice(title='African cultures', value='african'),
+                    questionary.Choice(title='Middle Eastern cultures', value='middle_eastern'),
+                    questionary.Choice(title='Latin American cultures', value='latin_american'),
+                    questionary.Choice(title='European cultures', value='european'),
+                ],
+                default=None,
+                style=custom_style
+            ).ask()
+            if culture_filter:
+                config['culture_filter'] = culture_filter
+            
+            # Personas per prompt configuration
+            personas_per_config = questionary.text(
+                'Number of personas per prompt configuration:',
+                default='5',
+                validate=lambda x: x.isdigit() and int(x) > 0,
+                style=custom_style
+            ).ask()
+            config['personas_per_config'] = int(personas_per_config)
         
         return config
     
@@ -785,17 +831,50 @@ class BenchmarkTUI:
             config['difficulties'] = [int(d) for d in (difficulties or ['1'])]
         
         elif task_type == 'linda':
-            # Linda-specific config
-            difficulties = questionary.checkbox(
-                'Difficulty Levels:',
+            # Linda Conjunction Fallacy configuration
+            console.print("\n🧠 [bold blue]Configuring Linda Conjunction Fallacy Task[/bold blue]")
+            
+            # Number of ranking options
+            num_options = questionary.select(
+                'Number of ranking options:',
                 choices=[
-                    questionary.Choice('1', checked=True),
-                    questionary.Choice('2'),
-                    questionary.Choice('3'),
+                    questionary.Choice(title='Six options', value=6),
+                    questionary.Choice(title='Eight options (recommended)', value=8),
+                    questionary.Choice(title='Ten options', value=10),
+                    questionary.Choice(title='Twelve options', value=12),
                 ],
+                default=8,
                 style=custom_style
             ).ask()
-            config['difficulties'] = [int(d) for d in (difficulties or ['1'])]
+            config['num_options'] = num_options
+            
+            # Culture filter
+            culture_filter = questionary.select(
+                'Cultural focus:',
+                choices=[
+                    questionary.Choice(title='All compatible cultures (recommended)', value=None),
+                    questionary.Choice(title='Western cultures', value='western'),
+                    questionary.Choice(title='East Asian cultures', value='east_asian'),
+                    questionary.Choice(title='South Asian cultures', value='south_asian'),
+                    questionary.Choice(title='African cultures', value='african'),
+                    questionary.Choice(title='Middle Eastern cultures', value='middle_eastern'),
+                    questionary.Choice(title='Latin American cultures', value='latin_american'),
+                    questionary.Choice(title='European cultures', value='european'),
+                ],
+                default=None,
+                style=custom_style
+            ).ask()
+            if culture_filter:
+                config['culture_filter'] = culture_filter
+            
+            # Personas per prompt configuration
+            personas_per_config = questionary.text(
+                'Number of personas per prompt configuration:',
+                default='5',
+                validate=lambda x: x.isdigit() and int(x) > 0,
+                style=custom_style
+            ).ask()
+            config['personas_per_config'] = int(personas_per_config)
         
         return config
     
@@ -989,7 +1068,7 @@ class BenchmarkTUI:
             'ari': 'arithmetic',
             'gol': 'game_of_life', 
             'c14': 'c14',
-            'linda': 'linda'
+            'linda': 'linda_fallacy'
         }
         
         # Add each task configuration
@@ -1019,10 +1098,17 @@ class BenchmarkTUI:
                     'known_patterns_ratio': 0.3
                 })
                 yaml_config['execution']['cell_markers'] = ['1', '0']
-            elif mapped_task_type in ('c14', 'linda'):
+            elif mapped_task_type == 'c14':
                 task_yaml['generation'].update({
                     'difficulty_levels': task_config.parameters.get('difficulties', [1]),
                     'cases_per_difficulty': task_config.batch_size
+                })
+            elif mapped_task_type == 'linda_fallacy':
+                task_yaml['generation'].update({
+                    'num_options': task_config.parameters.get('num_options', 8),
+                    'personas_per_config': task_config.batch_size,
+                    'culture_filter': task_config.parameters.get('culture_filter', []),
+                    'ranking_mode': task_config.parameters.get('ranking_mode', 'probability')
                 })
             
             # Add prompt configurations for this task
@@ -1217,180 +1303,6 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
         traceback.print_exc()
         return False
 
-
-    def _create_multi_task_yaml_config(self, multi_task_config: MultiTaskConfig) -> str:
-        """Create YAML config for multi-task test set generation."""
-        import yaml
-        from datetime import datetime
-        
-        # Build YAML config structure for multi-task
-        yaml_config = {
-            'metadata': {
-                'name': f"multi_task_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-                'version': '1.0',
-                'schema_version': '1.0.0',
-                'description': multi_task_config.description,
-                'created_by': 'benchmark_tui',
-                'task_type': 'multi-task'
-            },
-            'tasks': [],  # Multiple tasks
-            'sampling': {
-                'temperature': multi_task_config.temperature,
-                'top_k': 40,
-                'max_tokens': 2048
-            },
-            'execution': {
-                'no_thinking': not multi_task_config.thinking_enabled,
-                'timeout_seconds': 30,
-                'prompt_language': multi_task_config.language
-            }
-        }
-        
-        # Map TUI task types to stage script task types
-        task_type_mapping = {
-            'ari': 'arithmetic',
-            'gol': 'game_of_life', 
-            'c14': 'c14',
-            'linda': 'linda'
-        }
-        
-        # Add each task configuration
-        for task_config in multi_task_config.tasks:
-            mapped_task_type = task_type_mapping.get(task_config.task_type, task_config.task_type)
-            
-            task_yaml = {
-                'type': mapped_task_type,
-                'generation': {
-                    'seed': 42,
-                },
-                'prompt_configs': []
-            }
-            
-            # Add task-specific generation params
-            if mapped_task_type == 'arithmetic':
-                task_yaml['generation'].update({
-                    'target_accuracies': task_config.parameters.get('difficulties', [0, 1, 2]),
-                    'expressions_per_target': task_config.batch_size,
-                    'mode': task_config.parameters.get('mode', 'expression')
-                })
-            elif mapped_task_type == 'game_of_life':
-                task_yaml['generation'].update({
-                    'difficulty_levels': [task_config.parameters.get('difficulty', 'EASY')],
-                    'grids_per_difficulty': task_config.batch_size,
-                    'density': task_config.parameters.get('density', 0.3),
-                    'known_patterns_ratio': 0.3
-                })
-                yaml_config['execution']['cell_markers'] = ['1', '0']
-            elif mapped_task_type in ('c14', 'linda'):
-                task_yaml['generation'].update({
-                    'difficulty_levels': task_config.parameters.get('difficulties', [1]),
-                    'cases_per_difficulty': task_config.batch_size
-                })
-            
-            # Add prompt configurations for this task
-            for user_style in task_config.prompts.user_styles:
-                for system_style in task_config.prompts.system_styles:
-                    prompt_config = {
-                        'name': f"{task_config.task_type}_{user_style}_{system_style}",
-                        'user_style': user_style,
-                        'system_style': system_style
-                    }
-                    if mapped_task_type == 'game_of_life':
-                        prompt_config['language'] = multi_task_config.language
-                    task_yaml['prompt_configs'].append(prompt_config)
-            
-            yaml_config['tasks'].append(task_yaml)
-        
-        # Save YAML config
-        config_dir = Path("configs/testsets")
-        config_dir.mkdir(parents=True, exist_ok=True)
-        
-        config_path = config_dir / f"{yaml_config['metadata']['name']}.yaml"
-        with open(config_path, 'w') as f:
-            yaml.dump(yaml_config, f, default_flow_style=False, sort_keys=False)
-        
-        return str(config_path)
-    """Create YAML config file for test set generation."""
-    import yaml
-    from datetime import datetime
-    
-    # Map TUI task types to stage script task types
-    task_type_mapping = {
-        'ari': 'arithmetic',
-        'gol': 'game_of_life', 
-        'c14': 'c14',
-        'linda': 'linda'
-    }
-    
-    raw_task_type = config.task_type.lower() if hasattr(config, 'task_type') else 'ari'
-    task_type = task_type_mapping.get(raw_task_type, raw_task_type)
-    
-    # Build YAML config structure
-    yaml_config = {
-        'metadata': {
-            'name': f"{raw_task_type}_tui_{datetime.now().strftime('%Y%m%d_%H%M%S')}",
-            'version': '1.0',
-            'schema_version': '1.0.0',
-            'description': f"{config.description or f'TUI generated {raw_task_type} benchmark'}",
-            'created_by': 'benchmark_tui',
-            'task_type': task_type  # Use mapped task type
-        },
-        'task': {
-            'type': task_type,  # Use mapped task type
-            'generation': {
-                'seed': 42,  # Fixed seed for reproducibility
-            },
-            'prompt_configs': []
-        },
-        'sampling': {
-            'temperature': config.params.temperature,
-            'top_k': 40,
-            'max_tokens': 2048
-        },
-        'execution': {
-            'no_thinking': not config.params.thinking_enabled,
-            'timeout_seconds': 30,
-            'prompt_language': config.params.language
-        }
-    }
-    
-    # Add task-specific generation params
-    if task_type == 'arithmetic':
-        yaml_config['task']['generation'].update({
-            'target_accuracies': [0, 1, 2],  # Standard difficulty levels
-            'expressions_per_target': config.params.batch_size,
-            'mode': 'expression'
-        })
-    elif task_type == 'game_of_life':
-        yaml_config['task']['generation'].update({
-            'difficulty_levels': ['EASY', 'MEDIUM'],
-            'grids_per_difficulty': config.params.batch_size,
-            'density': 0.5,
-            'known_patterns_ratio': 0.3
-        })
-        yaml_config['execution']['cell_markers'] = ['1', '0']
-    
-    # Add prompt configurations
-    for user_style in config.prompts.user_styles:
-        for system_style in config.prompts.system_styles:
-            prompt_config = {
-                'name': f"{user_style}_{system_style}",
-                'user_style': user_style,
-                'system_style': system_style
-            }
-            if task_type == 'game_of_life':
-                prompt_config['language'] = config.params.language
-            yaml_config['task']['prompt_configs'].append(prompt_config)
-    
-    # Save YAML config
-    config_dir = Path("configs/testsets")
-    config_dir.mkdir(parents=True, exist_ok=True)
-    
-    config_path = config_dir / f"{yaml_config['metadata']['name']}.yaml"
-    with open(config_path, 'w') as f:
-        yaml.dump(yaml_config, f, default_flow_style=False, sort_keys=False)
-    
-    return str(config_path)
 
 
 def _extract_testset_path(output: str) -> str:

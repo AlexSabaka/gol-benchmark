@@ -51,6 +51,7 @@ class TaskType(str, Enum):
     """Supported task types."""
     GAME_OF_LIFE = "game_of_life"
     MATH_EXPRESSION = "math_expression"
+    LINDA_FALLACY = "linda_fallacy"
 
 
 # ==================== DATA CLASSES ====================
@@ -417,6 +418,109 @@ Final result: """,
 }
 
 
+# Linda Conjunction Fallacy Prompts
+LINDA_FALLACY_PROMPTS = {
+    Language.EN: {
+        PromptStyle.LINGUISTIC: """Consider the following description:
+
+{persona_description}
+
+Based on this description, please rank the following statements from MOST probable (1) to LEAST probable ({num_options}):
+
+{ranked_items}
+
+Please provide your ranking as a numbered list, starting with the most probable option. Also, briefly explain your reasoning for the top 3 rankings.
+
+RANKING:""",
+
+        PromptStyle.CASUAL: """Check out this person:
+
+{persona_description}
+
+Which of these is more likely? Rank them 1-{num_options} (most to least likely):
+
+{ranked_items}
+
+Give me your ranking and explain your top 3 picks!
+
+RANKING:""",
+
+        PromptStyle.MINIMAL: """{persona_description}
+
+Rank (1=most likely, {num_options}=least likely):
+{ranked_items}
+
+RANKING:""",
+    },
+    
+    Language.ES: {
+        PromptStyle.LINGUISTIC: """Considere la siguiente descripción:
+
+{persona_description}
+
+Basándose en esta descripción, por favor ordene las siguientes afirmaciones de MÁS probable (1) a MENOS probable ({num_options}):
+
+{ranked_items}
+
+Por favor, proporcione su clasificación como una lista numerada, comenzando con la opción más probable. Explique brevemente su razonamiento para las 3 primeras clasificaciones.
+
+CLASIFICACIÓN:""",
+
+        PromptStyle.CASUAL: """Mira esta persona:
+
+{persona_description}
+
+¿Cuál de estas es más probable? Ordénalas del 1-{num_options} (más a menos probable):
+
+{ranked_items}
+
+¡Dame tu clasificación y explica tus 3 primeras opciones!
+
+CLASIFICACIÓN:""",
+
+        PromptStyle.MINIMAL: """{persona_description}
+
+Ordena (1=más probable, {num_options}=menos probable):
+{ranked_items}
+
+CLASIFICACIÓN:""",
+    },
+    
+    Language.FR: {
+        PromptStyle.LINGUISTIC: """Considérez la description suivante :
+
+{persona_description}
+
+Sur la base de cette description, veuillez classer les affirmations suivantes de la PLUS probable (1) à la MOINS probable ({num_options}) :
+
+{ranked_items}
+
+Veuillez fournir votre classement sous forme de liste numérotée, en commençant par l'option la plus probable. Expliquez brièvement votre raisonnement pour les 3 premiers classements.
+
+CLASSEMENT :""",
+
+        PromptStyle.CASUAL: """Regardez cette personne :
+
+{persona_description}
+
+Laquelle de ces options est la plus probable ? Classez-les de 1-{num_options} (plus au moins probable) :
+
+{ranked_items}
+
+Donnez-moi votre classement et expliquez vos 3 premiers choix !
+
+CLASSEMENT :""",
+
+        PromptStyle.MINIMAL: """{persona_description}
+
+Classez (1=plus probable, {num_options}=moins probable) :
+{ranked_items}
+
+CLASSEMENT :""",
+    }
+}
+
+
 # ==================== PROMPT ENGINE ====================
 
 class PromptEngine:
@@ -431,6 +535,7 @@ class PromptEngine:
         self.task_prompts = {
             TaskType.GAME_OF_LIFE: GAME_OF_LIFE_PROMPTS,
             TaskType.MATH_EXPRESSION: MATH_EXPRESSION_PROMPTS,
+            TaskType.LINDA_FALLACY: LINDA_FALLACY_PROMPTS,
         }
         self.system_prompts = SYSTEM_PROMPTS
     

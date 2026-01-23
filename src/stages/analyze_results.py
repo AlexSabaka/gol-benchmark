@@ -119,7 +119,16 @@ def extract_summary_stats(result: Dict) -> Dict:
 
 def extract_task_breakdown(results: List[Dict]) -> Dict:
     """Extract task-specific performance breakdown from results."""
-    task_stats = defaultdict(lambda: {'total': 0, 'correct': 0, 'parse_errors': 0})
+    task_stats = defaultdict(lambda: {
+        'total': 0, 
+        'correct': 0, 
+        'parse_errors': 0,
+        # Linda-specific metrics
+        'fallacies_detected': 0,
+        'confidence_scores': [],
+        'ranking_qualities': [],
+        'cultural_breakdown': defaultdict(int)
+    })
     
     for r in results:
         # Extract task type from test_id (e.g., 'multi_0000_arithmetic' -> 'arithmetic')
@@ -130,25 +139,56 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
         elif '_game_of_life' in test_id or '_gol' in test_id:
             task_type = 'game_of_life'
         elif '_linda' in test_id:
-            task_type = 'linda'
+            task_type = 'linda_fallacy'
         
         task_stats[task_type]['total'] += 1
         
-        if r.get('evaluation', {}).get('correct'):
+        evaluation = r.get('evaluation', {})
+        
+        if evaluation.get('correct'):
             task_stats[task_type]['correct'] += 1
         
-        if r.get('evaluation', {}).get('match_type') == 'parse_error':
+        if evaluation.get('match_type') == 'parse_error':
             task_stats[task_type]['parse_errors'] += 1
+            
+        # Linda-specific metrics
+        if task_type == 'linda_fallacy':
+            if evaluation.get('fallacy_detected'):
+                task_stats[task_type]['fallacies_detected'] += 1
+            
+            # Collect confidence scores
+            confidence = evaluation.get('confidence_score', 0)
+            if confidence > 0:
+                task_stats[task_type]['confidence_scores'].append(confidence)
+            
+            # Collect ranking quality scores
+            ranking_quality = evaluation.get('ranking_quality', 0)
+            if ranking_quality > 0:
+                task_stats[task_type]['ranking_qualities'].append(ranking_quality)
+            
+            # Track cultural breakdown
+            culture = r.get('input', {}).get('task_params', {}).get('persona', {}).get('culture', 'unknown')
+            task_stats[task_type]['cultural_breakdown'][culture] += 1
     
-    # Calculate percentages
+    # Calculate percentages and averages
     for task, stats in task_stats.items():
         total = stats['total']
         if total > 0:
             stats['accuracy'] = stats['correct'] / total
             stats['parse_error_rate'] = stats['parse_errors'] / total
+            
+            # Linda-specific calculations
+            if task == 'linda_fallacy':
+                stats['fallacy_detection_rate'] = stats['fallacies_detected'] / total
+                stats['avg_confidence'] = sum(stats['confidence_scores']) / len(stats['confidence_scores']) if stats['confidence_scores'] else 0
+                stats['avg_ranking_quality'] = sum(stats['ranking_qualities']) / len(stats['ranking_qualities']) if stats['ranking_qualities'] else 0
         else:
             stats['accuracy'] = 0
             stats['parse_error_rate'] = 0
+            if task == 'linda_fallacy':
+                stats['fallacy_detection_rate'] = 0
+                stats['avg_confidence'] = 0
+                stats['avg_ranking_quality'] = 0
     
     return dict(task_stats)
 
@@ -184,10 +224,19 @@ def generate_markdown_report(results: List[Dict], output_path: str):
             if stat['task_breakdown']:
                 report.append(f"**{stat['model_name']}** Task Breakdown:\n\n")
                 for task_type, task_stats in stat['task_breakdown'].items():
-                    report.append(f"- **{task_type.replace('_', ' ').title()}**: "
-                                 f"{task_stats['accuracy']:.1%} accuracy "
-                                 f"({task_stats['correct']}/{task_stats['total']} correct), "
-                                 f"{task_stats['parse_error_rate']:.1%} parse errors\n")
+                    base_info = (f"- **{task_type.replace('_', ' ').title()}**: "
+                                f"{task_stats['accuracy']:.1%} accuracy "
+                                f"({task_stats['correct']}/{task_stats['total']} correct), "
+                                f"{task_stats['parse_error_rate']:.1%} parse errors")
+                    
+                    # Add Linda-specific metrics
+                    if task_type == 'linda_fallacy':
+                        linda_info = (f", {task_stats.get('fallacy_detection_rate', 0):.1%} fallacy detection, "
+                                     f"avg confidence: {task_stats.get('avg_confidence', 0):.2f}, "
+                                     f"avg ranking quality: {task_stats.get('avg_ranking_quality', 0):.2f}")
+                        base_info += linda_info
+                    
+                    report.append(base_info + "\n")
                 report.append("\n")
     
     # Standard summary table
