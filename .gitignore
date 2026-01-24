@@ -3,6 +3,9 @@ __pycache__/
 *.py[codz]
 *$py.class
 
+# Benchmark metadata (run tracking - not needed in git)
+.benchmark_metadata/
+
 # C extensions
 *.so
 

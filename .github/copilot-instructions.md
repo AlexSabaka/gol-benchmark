@@ -255,6 +255,12 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 3. **Task Type Detection**: Fixed multi-task execution routing issues
 4. **Report Generation**: Harmonized HTML/Markdown reports with embedded visualizations
 5. **Import Path Issues**: Fixed module loading from subdirectories in TUI system
+6. **C14 TUI Integration (2026-01-24)**: Fixed 4 critical bugs preventing 1D cellular automata test generation:
+   - ✅ Task type mapping: `'c14': 'c14'` → `'c14': 'cellular_automata_1d'` (critical dispatcher fix)
+   - ✅ Quick Start parameters: arithmetic-style → proper CA fields (rule_numbers, width, steps, boundary_condition)
+   - ✅ Task configuration UI: placeholder checkboxes → full CA configuration (rule selection, width, steps, boundaries, patterns, density)
+   - ✅ YAML generation: arithmetic fields (difficulty_levels) → proper CA fields (rule_numbers, cases_per_rule)
+   - See `docs/C14_TUI_BUGFIXES_SUMMARY.md` for detailed analysis
 
 ### ⚠️ **Known Limitations**
 - **Emoji cell markers** (`🟩/🟥`) cause model failures—always use `1/0` markers  
@@ -265,6 +271,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 ### 🎯 **Performance Expectations (Post-Fix)**
 - **Arithmetic Tasks**: 60-90% accuracy with enhanced parsing
 - **Game of Life**: 40-70% accuracy (dramatically improved from 0% after grid_str fix)
+- **Cellular Automata 1D**: Expected 50-80% accuracy (Stage 1 complete, Stage 2 pending)
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
