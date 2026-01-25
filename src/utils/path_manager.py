@@ -2,18 +2,15 @@
 Centralized Path and File Management for GoL Benchmark Suite.
 
 This module provides a unified interface for all file and directory operations,
-ensuring consistent naming conventions, organized directory structure, and 
-better traceability of test runs.
+ensuring consistent naming conventions.
 
-Directory Structure:
-    workspace/
-    ├── configs/
-    │   └── testsets/           # YAML configs for test generation
-    ├── testsets/              # Generated test sets (compressed JSON)
-    ├── results/               # Test execution results
-    │   ├── runs/              # Individual test runs
-    │   └── reports/           # Analysis reports and visualizations
-    └── .benchmark_metadata/   # Internal metadata for tracking runs
+All benchmark artifacts are saved to a single user-specified output directory:
+    output_dir/
+    ├── config_*.yaml          # YAML configs for test generation
+    ├── testset_*.json.gz       # Generated test sets (compressed JSON)
+    ├── results_*.json.gz       # Test execution results
+    ├── report_*.md             # Analysis reports
+    └── charts_*/               # Visualization directories
 """
 
 from pathlib import Path
@@ -43,44 +40,19 @@ class PathManager:
     """
     Centralized manager for all file paths and directory operations.
     
-    Provides consistent naming, automatic directory creation, and metadata tracking.
+    All files are saved to a single output directory specified by the user.
+    No subdirectories are created - all artifacts go to the root output directory.
     """
     
-    # Root directories (relative to project root)
-    CONFIGS_DIR = Path("configs")
-    TESTSETS_DIR = Path("testsets")
-    RESULTS_DIR = Path("results")
-    METADATA_DIR = Path(".benchmark_metadata")
-    
-    # Subdirectories
-    CONFIG_TESTSETS_DIR = CONFIGS_DIR / "testsets"
-    RESULTS_RUNS_DIR = RESULTS_DIR / "runs"
-    RESULTS_REPORTS_DIR = RESULTS_DIR / "reports"
-    
-    def __init__(self, workspace_root: Optional[Path] = None):
+    def __init__(self, output_dir: Optional[Path] = None):
         """
         Initialize PathManager.
         
         Args:
-            workspace_root: Root directory of the workspace. If None, uses current directory.
+            output_dir: Directory where all output files will be saved.
+                       If None, uses current directory.
         """
-        self.root = Path(workspace_root) if workspace_root else Path.cwd()
-        self._ensure_directory_structure()
-    
-    def _ensure_directory_structure(self):
-        """Create the standard directory structure if it doesn't exist."""
-        directories = [
-            self.CONFIGS_DIR,
-            self.CONFIG_TESTSETS_DIR,
-            self.TESTSETS_DIR,
-            self.RESULTS_DIR,
-            self.RESULTS_RUNS_DIR,
-            self.RESULTS_REPORTS_DIR,
-            self.METADATA_DIR,
-        ]
-        
-        for directory in directories:
-            (self.root / directory).mkdir(parents=True, exist_ok=True)
+        self.output_dir = Path(output_dir) if output_dir else Path.cwd()
     
     def get_testset_config_path(
         self,
@@ -107,14 +79,16 @@ class PathManager:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
         # Build descriptive filename
-        parts = [name]
+        parts = ["config", name]
         if task_types:
             tasks_str = "-".join(sorted(task_types))
             parts.append(tasks_str)
         parts.append(timestamp)
         
         filename = "_".join(parts) + ".yaml"
-        return self.root / self.CONFIG_TESTSETS_DIR / filename
+        filepath = self.output_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        return filepath
     
     def get_testset_path(
         self,
@@ -151,7 +125,9 @@ class PathManager:
         parts.append(timestamp)
         
         filename = "_".join(parts) + ".json.gz"
-        return self.root / self.TESTSETS_DIR / filename
+        filepath = self.output_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        return filepath
     
     def get_results_path(
         self,
@@ -184,10 +160,12 @@ class PathManager:
         # Simplified model names
         model_str = "-".join([self._simplify_model_name(m) for m in models])
         
-        parts = [testset_name, model_str, f"run_{run_id}", timestamp]
+        parts = ["results", testset_name, model_str, timestamp]
         filename = "_".join(parts) + ".json.gz"
         
-        return self.root / self.RESULTS_RUNS_DIR / filename
+        filepath = self.output_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        return filepath
     
     def get_report_path(
         self,
@@ -204,17 +182,15 @@ class PathManager:
             timestamp: Optional timestamp
         
         Returns:
-            Path to report file
-        
-        Example:
-            get_report_path("multi_model_comparison")
-            -> results/reports/multi_model_comparison_20260123_143000.md
+            Path to report file in output directory
         """
         if timestamp is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        filename = f"{report_name}_{timestamp}.{format}"
-        return self.root / self.RESULTS_REPORTS_DIR / filename
+        filename = f"report_{report_name}_{timestamp}.{format}"
+        filepath = self.output_dir / filename
+        filepath.parent.mkdir(parents=True, exist_ok=True)
+        return filepath
     
     def get_visualization_dir(
         self,
@@ -229,64 +205,33 @@ class PathManager:
             timestamp: Optional timestamp
         
         Returns:
-            Path to visualization directory
-        
-        Example:
-            get_visualization_dir("multi_model_comparison")
-            -> results/reports/multi_model_comparison_20260123_143000_charts/
+            Path to visualization directory in output directory
         """
         if timestamp is None:
             timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
         
-        dirname = f"{report_name}_{timestamp}_charts"
-        path = self.root / self.RESULTS_REPORTS_DIR / dirname
+        dirname = f"charts_{report_name}_{timestamp}"
+        path = self.output_dir / dirname
         path.mkdir(parents=True, exist_ok=True)
         return path
     
     def save_run_metadata(self, metadata: RunMetadata) -> Path:
         """
-        Save metadata for a benchmark run.
+        Save metadata for a benchmark run (disabled - no longer used).
         
-        Args:
-            metadata: Run metadata to save
-        
-        Returns:
-            Path to saved metadata file
+        Returns path but doesn't save anything.
         """
-        filename = f"run_{metadata.run_id}.json"
-        filepath = self.root / self.METADATA_DIR / filename
-        
-        with open(filepath, 'w') as f:
-            json.dump(metadata.to_dict(), f, indent=2)
-        
-        return filepath
+        # Metadata saving disabled - all info is in result files
+        return self.output_dir / f"metadata_{metadata.run_id}.json"
     
     def get_recent_runs(self, limit: int = 10) -> List[RunMetadata]:
         """
-        Retrieve metadata for recent benchmark runs.
+        Retrieve metadata for recent benchmark runs (disabled - no longer used).
         
-        Args:
-            limit: Maximum number of runs to return
-        
-        Returns:
-            List of RunMetadata objects, sorted by timestamp (newest first)
+        Returns empty list.
         """
-        metadata_files = sorted(
-            (self.root / self.METADATA_DIR).glob("run_*.json"),
-            key=lambda p: p.stat().st_mtime,
-            reverse=True
-        )[:limit]
-        
-        runs = []
-        for filepath in metadata_files:
-            try:
-                with open(filepath) as f:
-                    data = json.load(f)
-                runs.append(RunMetadata(**data))
-            except Exception:
-                continue
-        
-        return runs
+        # Metadata tracking disabled
+        return []
     
     @staticmethod
     def _generate_run_id() -> str:
@@ -354,17 +299,17 @@ class PathManager:
 _default_manager = None
 
 
-def get_path_manager(workspace_root: Optional[Path] = None) -> PathManager:
+def get_path_manager(output_dir: Optional[Path] = None) -> PathManager:
     """
     Get the default PathManager instance.
     
     Args:
-        workspace_root: Override the workspace root (for testing)
+        output_dir: Override the output directory (for custom runs)
     
     Returns:
         PathManager instance
     """
     global _default_manager
-    if _default_manager is None or workspace_root is not None:
-        _default_manager = PathManager(workspace_root)
+    if _default_manager is None or output_dir is not None:
+        _default_manager = PathManager(output_dir)
     return _default_manager

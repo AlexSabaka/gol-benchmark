@@ -167,6 +167,39 @@ class C14TestConfig(BaseTestConfig):
             raise ValueError("Density must be between 0 and 1")
 
 @dataclass
+class AsciiShapesTestConfig(BaseTestConfig):
+    """Configuration for ASCII Shapes visual reasoning test runs"""
+    width_range: Tuple[int, int] = (3, 20)  # Min/max width
+    height_range: Tuple[int, int] = (2, 7)  # Min/max height
+    symbols: List[str] = field(default_factory=lambda: ["*", "#", "X", "█"])  # Characters to use
+    spacing: List[str] = field(default_factory=lambda: [" "])  # Separators between symbols
+    coordinate_labels: bool = True  # Add numbered axes
+    filled: List[bool] = field(default_factory=lambda: [True, False])  # Fill options (True=filled, False=hollow)
+    question_type: Literal["dimensions", "count", "position"] = "dimensions"  # Question type to test
+    cases_per_config: int = 10  # Number of test cases per prompt configuration
+    prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples'] = 'casual'
+    
+    def __post_init__(self):
+        """Validate ASCII Shapes specific configuration"""
+        super().__post_init__()
+        
+        # Validate width range
+        if self.width_range[0] < 1 or self.width_range[1] < self.width_range[0]:
+            raise ValueError(f"Invalid width_range: {self.width_range}")
+        
+        # Validate height range
+        if self.height_range[0] < 1 or self.height_range[1] < self.height_range[0]:
+            raise ValueError(f"Invalid height_range: {self.height_range}")
+        
+        # Validate symbols list
+        if not self.symbols:
+            raise ValueError("Must provide at least one symbol")
+        
+        # Validate spacing list
+        if not self.spacing:
+            raise ValueError("Must provide at least one spacing option")
+
+@dataclass
 class LindaFallacyTestConfig(BaseTestConfig):
     """Configuration for Linda Conjunction Fallacy test runs"""
     num_options: int = 8  # Number of ranking options

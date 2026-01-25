@@ -42,6 +42,7 @@ class MultiTaskConfig:
     name: str
     description: str
     tasks: List[TaskConfiguration]
+    output_dir: str  # Directory where all files will be saved
     temperature: float = 0.1
     language: str = 'en'
     thinking_enabled: bool = False
@@ -343,6 +344,7 @@ class BenchmarkTUI:
             {'id': 'ari', 'name': 'ARI (Math Expressions)', 'description': 'Arithmetic expression evaluation'},
             {'id': 'gol', 'name': 'GoL (Game of Life)', 'description': 'Conway\'s Game of Life simulation'},
             {'id': 'c14', 'name': 'C14 (Cellular Automata)', 'description': 'General cellular automata'},
+            {'id': 'shapes', 'name': 'Shapes (ASCII)', 'description': 'Visual spatial reasoning with ASCII shapes'},
             {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'}
         ]
         
@@ -428,12 +430,20 @@ class BenchmarkTUI:
             style=custom_style
         ).ask()
         
+        # Output directory - ask early since it's needed for all stages
+        output_dir = questionary.text(
+            'Output directory (all files will be saved here):',
+            default='results/runs',
+            style=custom_style
+        ).ask()
+        
         description = f"Multi-task: {', '.join([t.task_name for t in task_configs])}"
         
         return MultiTaskConfig(
             name=name,
             description=description,
             tasks=task_configs,
+            output_dir=output_dir,
             temperature=temperature,
             language=language,
             thinking_enabled=thinking
@@ -455,6 +465,8 @@ class BenchmarkTUI:
             parameters = {'difficulty': 'EASY', 'density': 0.3}
         elif task_id == 'c14':
             parameters = {'rule_numbers': [90], 'width': 16, 'steps': 1, 'boundary_condition': 'wrap'}
+        elif task_id == 'shapes':
+            parameters = {'width_range': (3, 15), 'height_range': (2, 5), 'symbols': ['*', '#'], 'spacing': [' '], 'coordinate_labels': True, 'filled': [True, False], 'question_type': 'dimensions'}
         elif task_id == 'linda':
             parameters = {'num_options': 8, 'personas_per_config': 5}
         
@@ -649,6 +661,94 @@ class BenchmarkTUI:
             ).ask()
             config['personas_per_config'] = int(personas_per_config)
         
+        elif task_type == 'shapes':
+            # ASCII Shapes specific configuration
+            console.print("\n🔲 [bold blue]Configuring ASCII Shapes Task[/bold blue]")
+            
+            # Width range
+            width_min = questionary.text(
+                'Minimum width:',
+                default='3',
+                validate=lambda x: x.isdigit() and int(x) > 0,
+                style=custom_style
+            ).ask()
+            width_max = questionary.text(
+                'Maximum width:',
+                default='20',
+                validate=lambda x: x.isdigit() and int(x) >= int(width_min),
+                style=custom_style
+            ).ask()
+            config['width_range'] = (int(width_min), int(width_max))
+            
+            # Height range
+            height_min = questionary.text(
+                'Minimum height:',
+                default='2',
+                validate=lambda x: x.isdigit() and int(x) > 0,
+                style=custom_style
+            ).ask()
+            height_max = questionary.text(
+                'Maximum height:',
+                default='7',
+                validate=lambda x: x.isdigit() and int(x) >= int(height_min),
+                style=custom_style
+            ).ask()
+            config['height_range'] = (int(height_min), int(height_max))
+            
+            # Symbols
+            symbols_input = questionary.text(
+                'Symbols to use (space-separated, e.g., "* # X █ 🟦"):',
+                default='* # X █',
+                style=custom_style
+            ).ask()
+            config['symbols'] = symbols_input.split()
+            
+            # Spacing
+            spacing_input = questionary.select(
+                'Spacing between symbols:',
+                choices=[
+                    questionary.Choice(title='Space (default)', value=' '),
+                    questionary.Choice(title='None (compact)', value=''),
+                    questionary.Choice(title='Underscore', value='_'),
+                ],
+                default=' ',
+                style=custom_style
+            ).ask()
+            config['spacing'] = [spacing_input]
+            
+            # Coordinate labels
+            coordinate_labels = questionary.confirm(
+                'Include coordinate labels (numbered axes)?',
+                default=True,
+                style=custom_style
+            ).ask()
+            config['coordinate_labels'] = coordinate_labels
+            
+            # Filled options
+            filled_options = questionary.checkbox(
+                'Shape fill options:',
+                choices=[
+                    questionary.Choice(title='Filled (solid)', value='filled', checked=True),
+                    questionary.Choice(title='Hollow (border only)', value='hollow', checked=True),
+                ],
+                style=custom_style,
+                validate=lambda x: len(x) > 0 or "Select at least one fill option"
+            ).ask()
+            config['filled'] = [opt == 'filled' for opt in filled_options]
+            
+            # Question type
+            question_type = questionary.select(
+                'Question type to test:',
+                choices=[
+                    questionary.Choice(title='Dimensions (What is the width and height?)', value='dimensions'),
+                    questionary.Choice(title='Count (How many symbols?)', value='count'),
+                    questionary.Choice(title='Position (Is there a symbol at x,y?)', value='position'),
+                ],
+                default='dimensions',
+                style=custom_style
+            ).ask()
+            config['question_type'] = question_type
+        
         return config
     
     def generate_test_set(self, multi_task_config: MultiTaskConfig) -> Optional[str]:
@@ -702,6 +802,7 @@ class BenchmarkTUI:
         generate_cmd = [
             sys.executable, "src/stages/generate_testset.py",
             yaml_config_path,
+            "--output-dir", multi_task_config.output_dir,
             "--validate"
         ]
         
@@ -724,13 +825,6 @@ class BenchmarkTUI:
         self.display_header()
         console.print(Panel("Step 4: Execution Configuration", style="bold"))
         
-        # Output directory
-        output_dir = questionary.text(
-            'Output directory:',
-            default='results/runs',
-            style=custom_style
-        ).ask()
-        
         # Generate charts
         generate_charts = questionary.confirm(
             'Generate analysis and visualizations after execution?',
@@ -747,7 +841,6 @@ class BenchmarkTUI:
         ).ask()
         
         return {
-            'output_dir': output_dir,
             'generate_charts': generate_charts,
             'verbosity': verbosity,
         }
@@ -963,16 +1056,9 @@ class BenchmarkTUI:
         return config
     
     def output_configuration(self) -> dict:
-        """Configure output and reporting options."""
+        """Configure reporting options."""
         self.display_header()
-        console.print(Panel("Step 6: Output Configuration", style="bold"))
-        
-        # Output directory
-        output_dir = questionary.text(
-            'Output directory:',
-            default='results/runs',
-            style=custom_style
-        ).ask()
+        console.print(Panel("Step 6: Reporting Configuration", style="bold"))
         
         # Generate charts
         generate_charts = questionary.confirm(
@@ -1005,7 +1091,6 @@ class BenchmarkTUI:
         ).ask()
         
         return {
-            'output_dir': output_dir,
             'generate_charts': generate_charts,
             'report_formats': report_formats,
             'verbosity': verbosity,
@@ -1102,7 +1187,7 @@ class BenchmarkTUI:
                 language=multi_task_config.language,
                 thinking_enabled=multi_task_config.thinking_enabled
             ),
-            output_dir=exec_config['output_dir'],
+            output_dir=multi_task_config.output_dir,
             generate_charts=exec_config['generate_charts'],
             report_formats=['markdown', 'json'],
             verbosity=exec_config['verbosity'],
@@ -1121,6 +1206,13 @@ class BenchmarkTUI:
         self.display_header()
         console.print(Panel("⚡ Quick Start (5 min test)", style="bold cyan"))
         console.print("[dim]Pre-configured test: Arithmetic task, 2 models, minimal settings[/dim]\n")
+        
+        # Ask for output directory first
+        output_dir = questionary.text(
+            'Output directory (all files will be saved here):',
+            default='results/runs',
+            style=custom_style
+        ).ask()
         
         # Auto-configure: Arithmetic task with minimal settings
         from src.core.PromptEngine import PromptStyle, SystemPromptStyle
@@ -1147,7 +1239,8 @@ class BenchmarkTUI:
             tasks=[task_config],
             temperature=0.1,
             language='en',
-            thinking_enabled=False
+            thinking_enabled=False,
+            output_dir=output_dir
         )
         
         # Generate test set
@@ -1187,7 +1280,7 @@ class BenchmarkTUI:
                 language='en',
                 thinking_enabled=False
             ),
-            output_dir=exec_config['output_dir'],
+            output_dir=output_dir,
             generate_charts=True,
             report_formats=['markdown', 'json'],
             verbosity='normal'
@@ -1232,6 +1325,7 @@ class BenchmarkTUI:
             'ari': 'arithmetic',
             'gol': 'game_of_life', 
             'c14': 'cellular_automata_1d',
+            'shapes': 'ascii_shapes',
             'linda': 'linda_fallacy'
         }
         
@@ -1284,6 +1378,17 @@ class BenchmarkTUI:
                     'cases_per_rule': task_config.batch_size
                 })
                 yaml_config['execution']['cell_markers'] = ['1', '0']
+            elif mapped_task_type == 'ascii_shapes':
+                task_yaml['generation'].update({
+                    'width_range': list(task_config.parameters.get('width_range', (3, 20))),
+                    'height_range': list(task_config.parameters.get('height_range', (2, 7))),
+                    'symbols': task_config.parameters.get('symbols', ['*', '#', 'X', '█']),
+                    'spacing': task_config.parameters.get('spacing', [' ']),
+                    'coordinate_labels': task_config.parameters.get('coordinate_labels', True),
+                    'filled': task_config.parameters.get('filled', [True, False]),
+                    'question_type': task_config.parameters.get('question_type', 'dimensions'),
+                    'cases_per_config': task_config.batch_size
+                })
             elif mapped_task_type == 'linda_fallacy':
                 task_yaml['generation'].update({
                     'num_options': task_config.parameters.get('num_options', 8),
@@ -1306,8 +1411,8 @@ class BenchmarkTUI:
             
             yaml_config['tasks'].append(task_yaml)
         
-        # Save YAML config using PathManager
-        path_mgr = get_path_manager()
+        # Save YAML config using PathManager to output directory
+        path_mgr = get_path_manager(output_dir=Path(multi_task_config.output_dir))
         
         # Extract task types for filename
         task_types = [t['type'] for t in yaml_config['tasks']]

@@ -140,6 +140,10 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'game_of_life'
         elif '_linda' in test_id:
             task_type = 'linda_fallacy'
+        elif '_ascii_shapes' in test_id:
+            task_type = 'ascii_shapes'
+        elif '_cellular_automata_1d' in test_id or '_c14' in test_id:
+            task_type = 'cellular_automata_1d'
         
         task_stats[task_type]['total'] += 1
         

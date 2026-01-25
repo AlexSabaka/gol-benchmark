@@ -289,6 +289,10 @@ def parse_answer(response: str, task_type: str) -> Any:
         # Linda Conjunction Fallacy ranking parsing with multi-strategy approach
         return parse_linda_response(response)
     
+    elif task_type == "ascii_shapes":
+        # ASCII Shapes answer parsing
+        return parse_ascii_shapes_response(response)
+    
     return None
 
 
@@ -510,6 +514,90 @@ def _extract_c14_state(text: str) -> List[int]:
     continuous = re.sub(r'[^01]', '', text)
     if 8 <= len(continuous) <= 64:
         return [int(d) for d in continuous]
+    
+    return None
+
+
+def parse_ascii_shapes_response(response: str) -> Any:
+    """
+    Parse ASCII shapes answer using multi-strategy approach.
+    
+    Supports three answer types:
+    - Dimensions: "WxH", "width: N, height: M", "W by H"
+    - Count: numeric answer
+    - Position: yes/no/true/false
+    
+    Returns:
+        Parsed answer (str for dimensions, int for count, bool for position) or None
+    """
+    if not response:
+        return None
+    
+    response_original = response.strip()
+    response = response_original.lower()
+    
+    # Strategy 1: Dimensions - "WxH" format (e.g., "8x5", "10 x 7")
+    dimension_patterns = [
+        r'(\d+)\s*x\s*(\d+)',  # "8x5" or "8 x 5" (most direct)
+        r'(\d+)\s*by\s*(\d+)',  # "8 by 5"
+        r'width\s*[=:]\s*(\d+).*?height\s*[=:]\s*(\d+)',  # "width = 8, height = 5" or "width: 8 ... height: 2"
+        r'(\d+)\s*wide.*?(\d+)\s*(?:tall|high)',  # "8 wide and 5 tall"
+        r'(\d+)\s*columns.*?(\d+)\s*rows',  # "8 columns, 5 rows"
+        r'width.*?(\d+).*?height.*?(\d+)',  # "width is 8 ... height is 5"
+    ]
+    
+    for pattern in dimension_patterns:
+        match = re.search(pattern, response)
+        if match:
+            try:
+                width = int(match.group(1))
+                height = int(match.group(2))
+                return f"{width}x{height}"
+            except:
+                continue
+    
+    # Strategy 2: Count - extract numeric answer
+    # Look for "answer:", "count:", "total:", etc. followed by number
+    count_patterns = [
+        r'(?:answer|count|total|number)\s*:?\s*(\d+)',
+        r'(?:there are|there\'s|has)\s*(\d+)',
+        r'(?:=|equals)\s*(\d+)',
+        r'^\s*(\d+)\s*$',  # Just a number alone
+    ]
+    
+    for pattern in count_patterns:
+        match = re.search(pattern, response)
+        if match:
+            try:
+                return int(match.group(1))
+            except:
+                continue
+    
+    # Strategy 3: Position - yes/no/true/false
+    # Check for boolean answers
+    if any(word in response for word in ['yes', 'true', 'present', 'exists', 'there is']):
+        # Make sure it's not negated
+        if not any(word in response for word in ['no', 'not', 'false', 'absent', 'isn\'t', 'doesn\'t']):
+            return True
+    
+    if any(word in response for word in ['no', 'false', 'not present', 'absent', 'doesn\'t exist']):
+        return False
+    
+    # Strategy 4: Try extracting any number (fallback for count/dimension questions)
+    all_numbers = re.findall(r'\d+', response)
+    if len(all_numbers) == 1:
+        # Single number might be a count
+        try:
+            return int(all_numbers[0])
+        except:
+            pass
+    elif len(all_numbers) == 2:
+        # Two numbers might be dimensions - try them
+        try:
+            # Likely width x height based on order
+            return f"{all_numbers[0]}x{all_numbers[1]}"
+        except:
+            pass
     
     return None
 
@@ -845,7 +933,144 @@ def evaluate_result(parsed_answer: Any, expected_answer: Any, task_type: str) ->
         # Linda Conjunction Fallacy evaluation
         return evaluate_linda_result(parsed_answer, expected_answer)
     
+    elif task_type == "ascii_shapes":
+        # ASCII Shapes evaluation
+        return evaluate_ascii_shapes_result(parsed_answer, expected_answer)
+    
     return {"correct": False, "match_type": "unknown", "accuracy": 0.0}
+
+
+def evaluate_ascii_shapes_result(parsed_answer: Any, expected_answer: Any) -> Dict:
+    """
+    Evaluate ASCII shapes answer based on question type.
+    
+    Handles three question types:
+    - dimensions: Exact string match "WxH"
+    - count: Numeric comparison (exact match required)
+    - position: Boolean comparison
+    """
+    if parsed_answer is None:
+        return {
+            "correct": False,
+            "match_type": "parse_error",
+            "accuracy": 0.0,
+            "error": "Failed to parse response"
+        }
+    
+    # Normalize expected answer types
+    if isinstance(expected_answer, str):
+        # Could be dimensions or position question
+        expected_lower = expected_answer.strip().lower()
+        
+        # Check if it's a position answer (yes/no)
+        if expected_lower in ['yes', 'no', 'true', 'false']:
+            # Position question - convert to boolean for comparison
+            expected_bool = expected_lower in ['yes', 'true']
+            
+            if parsed_answer is None:
+                return {
+                    "correct": False,
+                    "match_type": "parse_error",
+                    "accuracy": 0.0,
+                    "error": "Failed to parse response"
+                }
+            
+            try:
+                parsed_bool = bool(parsed_answer) if not isinstance(parsed_answer, str) else parsed_answer.lower() in ['yes', 'true']
+                correct = parsed_bool == expected_bool
+                
+                return {
+                    "correct": correct,
+                    "match_type": "exact" if correct else "boolean_mismatch",
+                    "accuracy": 1.0 if correct else 0.0,
+                    "expected": expected_answer,
+                    "actual": parsed_answer
+                }
+            except (ValueError, TypeError):
+                return {
+                    "correct": False,
+                    "match_type": "type_error",
+                    "accuracy": 0.0,
+                    "expected": expected_answer,
+                    "actual": parsed_answer
+                }
+        else:
+            # Dimensions question - normalize both to "WxH" format
+            expected_normalized = expected_answer.strip().lower().replace(" ", "")
+            
+            if isinstance(parsed_answer, str):
+                parsed_normalized = parsed_answer.strip().lower().replace(" ", "")
+                correct = expected_normalized == parsed_normalized
+                
+                return {
+                    "correct": correct,
+                    "match_type": "exact" if correct else "dimension_mismatch",
+                    "accuracy": 1.0 if correct else 0.0,
+                    "expected": expected_answer,
+                    "actual": parsed_answer
+                }
+            else:
+                # Type mismatch - expected string, got something else
+                return {
+                    "correct": False,
+                    "match_type": "type_error",
+                    "accuracy": 0.0,
+                    "expected": expected_answer,
+                    "actual": parsed_answer
+                }
+    
+    elif isinstance(expected_answer, (int, float)):
+        # Count question - numeric comparison
+        try:
+            parsed_num = int(parsed_answer) if not isinstance(parsed_answer, bool) else parsed_answer
+            expected_num = int(expected_answer)
+            correct = parsed_num == expected_num
+            
+            return {
+                "correct": correct,
+                "match_type": "exact" if correct else "count_mismatch",
+                "accuracy": 1.0 if correct else 0.0,
+                "expected": expected_num,
+                "actual": parsed_num
+            }
+        except (ValueError, TypeError):
+            return {
+                "correct": False,
+                "match_type": "type_error",
+                "accuracy": 0.0,
+                "expected": expected_answer,
+                "actual": parsed_answer
+            }
+    
+    elif isinstance(expected_answer, bool):
+        # Position question - boolean comparison
+        try:
+            parsed_bool = bool(parsed_answer)
+            correct = parsed_bool == expected_answer
+            
+            return {
+                "correct": correct,
+                "match_type": "exact" if correct else "boolean_mismatch",
+                "accuracy": 1.0 if correct else 0.0,
+                "expected": expected_answer,
+                "actual": parsed_bool
+            }
+        except (ValueError, TypeError):
+            return {
+                "correct": False,
+                "match_type": "type_error",
+                "accuracy": 0.0,
+                "expected": expected_answer,
+                "actual": parsed_answer
+            }
+    
+    return {
+        "correct": False,
+        "match_type": "unknown",
+        "accuracy": 0.0,
+        "expected": expected_answer,
+        "actual": parsed_answer
+    }
 
 
 def evaluate_linda_result(parsed_answer: Dict[str, Any], expected_answer: Dict[str, Any]) -> Dict:
@@ -1098,6 +1323,9 @@ def run_testset(
             if individual_task_type == "linda_fallacy":
                 # For Linda, pass the full task_params as expected_answer
                 expected_answer = test_case['task_params']
+            elif individual_task_type == "ascii_shapes":
+                # For ASCII shapes, get expected_answer from task_params
+                expected_answer = test_case['task_params'].get('expected_answer')
             else:
                 # For other tasks, use existing logic
                 expected_answer = test_case['task_params'].get('expected_answer') or test_case['task_params'].get('expected_next_state')
@@ -1166,7 +1394,7 @@ def run_testset(
         results["summary_statistics"] = {"accuracy": 0.0}
     
     # Save results using PathManager
-    path_mgr = get_path_manager()
+    path_mgr = get_path_manager(output_dir=Path(output_dir))
     testset_name = Path(testset_path).stem.replace('testset_', '')
     
     output_path = save_results(results, testset_name, model_name, path_mgr)

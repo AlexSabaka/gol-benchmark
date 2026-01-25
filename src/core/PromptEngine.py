@@ -53,6 +53,7 @@ class TaskType(str, Enum):
     MATH_EXPRESSION = "math_expression"
     LINDA_FALLACY = "linda_fallacy"
     CELLULAR_AUTOMATA_1D = "cellular_automata_1d"
+    ASCII_SHAPES = "ascii_shapes"
 
 
 # ==================== DATA CLASSES ====================
@@ -771,6 +772,164 @@ Nächste:""",
 }
 
 
+# ==================== ASCII SHAPES PROMPTS ====================
+
+ASCII_SHAPES_PROMPTS = {
+    Language.EN: {
+        PromptStyle.LINGUISTIC: """Please analyze the following ASCII-rendered shape carefully and answer the question.
+
+Shape:
+{shape}
+
+{question}
+
+Provide your answer in the format: {answer_format}""",
+
+        PromptStyle.CASUAL: """Check out this shape:
+
+{shape}
+
+{question}
+
+Answer: {answer_format}""",
+
+        PromptStyle.MINIMAL: """{shape}
+
+{question}
+{answer_format}""",
+
+        PromptStyle.EXAMPLES: """{examples}
+
+---
+
+{shape}
+
+{question}
+Answer: {answer_format}""",
+    },
+    
+    Language.ES: {
+        PromptStyle.LINGUISTIC: """Por favor, analice cuidadosamente la siguiente forma renderizada en ASCII y responda la pregunta.
+
+Forma:
+{shape}
+
+{question}
+
+Proporcione su respuesta en el formato: {answer_format}""",
+
+        PromptStyle.CASUAL: """Mira esta forma:
+
+{shape}
+
+{question}
+
+Respuesta: {answer_format}""",
+
+        PromptStyle.MINIMAL: """{shape}
+
+{question}
+{answer_format}""",
+    },
+    
+    Language.FR: {
+        PromptStyle.LINGUISTIC: """Veuillez analyser attentivement la forme ASCII suivante et répondre à la question.
+
+Forme:
+{shape}
+
+{question}
+
+Fournissez votre réponse au format: {answer_format}""",
+
+        PromptStyle.CASUAL: """Regarde cette forme:
+
+{shape}
+
+{question}
+
+Réponse: {answer_format}""",
+
+        PromptStyle.MINIMAL: """{shape}
+
+{question}
+{answer_format}""",
+    },
+    
+    Language.DE: {
+        PromptStyle.LINGUISTIC: """Bitte analysieren Sie die folgende ASCII-gerenderte Form sorgfältig und beantworten Sie die Frage.
+
+Form:
+{shape}
+
+{question}
+
+Geben Sie Ihre Antwort im Format: {answer_format}""",
+
+        PromptStyle.CASUAL: """Schau dir diese Form an:
+
+{shape}
+
+{question}
+
+Antwort: {answer_format}""",
+
+        PromptStyle.MINIMAL: """{shape}
+
+{question}
+{answer_format}""",
+    },
+    
+    Language.ZH: {
+        PromptStyle.LINGUISTIC: """请仔细分析以下ASCII渲染的形状并回答问题。
+
+形状：
+{shape}
+
+{question}
+
+请按以下格式提供答案：{answer_format}""",
+
+        PromptStyle.CASUAL: """看看这个形状：
+
+{shape}
+
+{question}
+
+答案：{answer_format}""",
+
+        PromptStyle.MINIMAL: """{shape}
+
+{question}
+{answer_format}""",
+    },
+    
+    Language.UA: {
+        PromptStyle.LINGUISTIC: """Будь ласка, уважно проаналізуйте наступну ASCII-форму та дайте відповідь на запитання.
+
+Форма:
+{shape}
+
+{question}
+
+Надайте відповідь у форматі: {answer_format}""",
+
+        PromptStyle.CASUAL: """Подивись на цю форму:
+
+{shape}
+
+{question}
+
+Відповідь: {answer_format}""",
+
+        PromptStyle.MINIMAL: """{shape}
+
+{question}
+{answer_format}""",
+    }
+}
+
+
 # ==================== PROMPT ENGINE ====================
 
 class PromptEngine:
@@ -787,6 +946,7 @@ class PromptEngine:
             TaskType.MATH_EXPRESSION: MATH_EXPRESSION_PROMPTS,
             TaskType.LINDA_FALLACY: LINDA_FALLACY_PROMPTS,
             TaskType.CELLULAR_AUTOMATA_1D: CELLULAR_AUTOMATA_1D_PROMPTS,
+            TaskType.ASCII_SHAPES: ASCII_SHAPES_PROMPTS,
         }
         self.system_prompts = SYSTEM_PROMPTS
     
@@ -995,6 +1155,34 @@ def create_ca_context(
     """
     context = PromptContext(
         task_type=TaskType.CELLULAR_AUTOMATA_1D,
+        language=Language(language),
+        style=PromptStyle(style),
+        system_style=SystemPromptStyle(system_style),
+    )
+    context.update(**kwargs)
+    return context
+
+
+def create_ascii_shapes_context(
+    language: str = "en",
+    style: str = "casual",
+    system_style: str = "analytical",
+    **kwargs
+) -> PromptContext:
+    """
+    Create a prompt context for ASCII Shapes visual reasoning task.
+    
+    Args:
+        language: Language code
+        style: Prompt style
+        system_style: System prompt style
+        **kwargs: Additional custom variables (shape, question, answer_format, examples, etc.)
+    
+    Returns:
+        PromptContext ready for generation
+    """
+    context = PromptContext(
+        task_type=TaskType.ASCII_SHAPES,
         language=Language(language),
         style=PromptStyle(style),
         system_style=SystemPromptStyle(system_style),

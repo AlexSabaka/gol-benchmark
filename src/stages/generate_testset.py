@@ -498,6 +498,167 @@ def generate_linda_tests(config: Dict) -> List[Dict]:
     return tests
 
 
+def generate_ascii_shapes_tests(config: Dict) -> List[Dict]:
+    """Generate ASCII shapes visual reasoning test cases."""
+    from src.engine.AsciiShapesEngine import AsciiShapesGenerator
+    from src.core.PromptEngine import create_ascii_shapes_context
+    
+    tests = []
+    gen_params = config['task']['generation']
+    
+    # Initialize generator with seed
+    generator = AsciiShapesGenerator(seed=gen_params['seed'])
+    prompt_engine = PromptEngine()
+    
+    # Question type-specific text and answer formats
+    question_templates = {
+        'dimensions': {
+            'en': "What is the width and height of this rectangle?",
+            'es': "¿Cuál es el ancho y la altura de este rectángulo?",
+            'fr': "Quelle est la largeur et la hauteur de ce rectangle?",
+            'de': "Was ist die Breite und Höhe dieses Rechtecks?",
+            'zh': "这个矩形的宽度和高度是多少？",
+            'ua': "Які ширина та висота цього прямокутника?"
+        },
+        'count': {
+            'en': 'How many "{symbol}" symbols are in the following shape?',
+            'es': '¿Cuántos símbolos "{symbol}" hay en la siguiente forma?',
+            'fr': 'Combien de symboles "{symbol}" y a-t-il dans la forme suivante?',
+            'de': 'Wie viele "{symbol}"-Symbole gibt es in der folgenden Form?',
+            'zh': '以下形状中有多少个"{symbol}"符号？',
+            'ua': 'Скільки символів "{symbol}" у наступній формі?'
+        },
+        'position': {
+            'en': 'Is there a "{symbol}" at position ({x}, {y})?',
+            'es': '¿Hay un "{symbol}" en la posición ({x}, {y})?',
+            'fr': 'Y a-t-il un "{symbol}" à la position ({x}, {y})?',
+            'de': 'Gibt es ein "{symbol}" an Position ({x}, {y})?',
+            'zh': '位置({x}, {y})是否有"{symbol}"？',
+            'ua': 'Чи є "{symbol}" на позиції ({x}, {y})?'
+        }
+    }
+    
+    answer_formats = {
+        'dimensions': {'en': 'WxH', 'es': 'AxA', 'fr': 'LxH', 'de': 'BxH', 'zh': '宽x高', 'ua': 'ШxВ'},
+        'count': {'en': 'Number', 'es': 'Número', 'fr': 'Nombre', 'de': 'Anzahl', 'zh': '数字', 'ua': 'Число'},
+        'position': {'en': 'yes/no', 'es': 'sí/no', 'fr': 'oui/non', 'de': 'ja/nein', 'zh': '是/否', 'ua': 'так/ні'}
+    }
+    
+    test_id = 0
+    question_type = gen_params['question_type']
+    
+    for prompt_config in config['task']['prompt_configs']:
+        language = prompt_config.get('language', 'en')
+        
+        # Generate batch of test cases
+        test_cases = generator.generate_batch(
+            width_range=tuple(gen_params['width_range']),
+            height_range=tuple(gen_params['height_range']),
+            symbols=gen_params['symbols'],
+            spacings=gen_params['spacing'],
+            filled_options=gen_params['filled'],
+            coordinate_labels=gen_params['coordinate_labels'],
+            question_type=question_type,
+            count=gen_params['cases_per_config'],
+            language=language,
+            style=prompt_config['user_style']
+        )
+        
+        for tc in test_cases:
+            # Build question text
+            q_template = question_templates[question_type].get(language, question_templates[question_type]['en'])
+            if question_type == 'count':
+                question_text = q_template.format(symbol=tc['shape']['symbol'])
+            elif question_type == 'position' and tc['position']:
+                question_text = q_template.format(
+                    symbol=tc['shape']['symbol'],
+                    x=tc['position']['x'],
+                    y=tc['position']['y']
+                )
+            else:
+                question_text = q_template
+            
+            answer_format = answer_formats[question_type].get(language, answer_formats[question_type]['en'])
+            
+            # Generate examples for EXAMPLES style
+            examples = ""
+            if prompt_config['user_style'] == 'examples':
+                # Generate 2 simple examples
+                example_cases = generator.generate_batch(
+                    width_range=(3, 6),
+                    height_range=(2, 3),
+                    symbols=gen_params['symbols'][:2],
+                    spacings=gen_params['spacing'],
+                    filled_options=[True],
+                    coordinate_labels=gen_params['coordinate_labels'],
+                    question_type=question_type,
+                    count=2,
+                    language=language,
+                    style='minimal'
+                )
+                
+                example_texts = []
+                for ex in example_cases:
+                    ex_q = question_templates[question_type].get(language, question_templates[question_type]['en'])
+                    if question_type == 'count':
+                        ex_q = ex_q.format(symbol=ex['shape']['symbol'])
+                    elif question_type == 'position' and ex['position']:
+                        ex_q = ex_q.format(symbol=ex['shape']['symbol'], x=ex['position']['x'], y=ex['position']['y'])
+                    
+                    example_texts.append(f"{ex['shape']['rendered']}\n\n{ex_q}\nAnswer: {ex['expected_answer']}")
+                
+                examples = "\n\n".join(example_texts)
+            
+            # Create prompt context
+            context = create_ascii_shapes_context(
+                language=language,
+                style=prompt_config['user_style'],
+                system_style=prompt_config['system_style'],
+                shape=tc['shape']['rendered'],
+                question=question_text,
+                answer_format=answer_format,
+                examples=examples
+            )
+            
+            # Generate prompts
+            result = prompt_engine.generate(context)
+            
+            # Build test case
+            test_case = {
+                'test_id': f"shapes_{test_id:04d}",
+                'task_type': 'ascii_shapes',
+                'config_name': f"{prompt_config['user_style']}_{prompt_config['system_style']}",
+                'prompts': {
+                    'system': result.system_prompt,
+                    'user': result.user_prompt,
+                    'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                },
+                'task_params': {
+                    'shape': tc['shape'],
+                    'question_type': question_type,
+                    'question_text': question_text,
+                    'expected_answer': tc['expected_answer'],
+                    'position': tc.get('position'),
+                    'difficulty': tc['difficulty']
+                },
+                'prompt_metadata': {
+                    'user_style': prompt_config['user_style'],
+                    'system_style': prompt_config['system_style'],
+                    'language': language
+                },
+                'generation_metadata': {
+                    'seed': gen_params['seed'],
+                    'generator_version': "1.0.0",
+                    'created_at': datetime.now().isoformat()
+                }
+            }
+            
+            tests.append(test_case)
+            test_id += 1
+    
+    return tests
+
+
 def generate_testset(config_path: str, output_dir: str = "testsets") -> str:
     """Generate test set from config file (supports both single-task and multi-task configs)."""
     print(f"Loading config: {config_path}")
@@ -529,6 +690,8 @@ def generate_single_task_testset(config: Dict, config_path: str, output_dir: str
         test_cases = generate_gol_tests(config)
     elif task_type == "cellular_automata_1d":
         test_cases = generate_c14_tests(config)
+    elif task_type == "ascii_shapes":
+        test_cases = generate_ascii_shapes_tests(config)
     else:
         raise ValueError(f"Unknown task type: {task_type}")
     
@@ -570,6 +733,8 @@ def generate_multi_task_testset(config: Dict, config_path: str, output_dir: str)
             task_test_cases = generate_linda_tests(single_task_config)
         elif task_type == "cellular_automata_1d":
             task_test_cases = generate_c14_tests(single_task_config)
+        elif task_type == "ascii_shapes":
+            task_test_cases = generate_ascii_shapes_tests(single_task_config)
         else:
             raise ValueError(f"Unknown task type: {task_type}")
         
@@ -637,7 +802,7 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
     }
     
     # Use PathManager for organized file management
-    path_mgr = get_path_manager()
+    path_mgr = get_path_manager(output_dir=Path(output_dir))
     
     # Extract task types for filename
     task_types = testset['statistics']['task_types']
