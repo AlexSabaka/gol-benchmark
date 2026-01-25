@@ -26,19 +26,39 @@ class ModelInfo:
     @property
     def size_params(self) -> str:
         """Extract parameter size if available."""
-        # Simple heuristic: divide bytes by ~6 (rough model compression ratio)
-        # More accurate would be parsing from model name
-        params_bytes = self.size_bytes / 6
-        if params_bytes < 1e9:
-            return f"{params_bytes/1e6:.1f}M"
-        else:
-            return f"{params_bytes/1e9:.1f}B"
+        import re
+        
+        # First try to parse from model name (e.g., "qwen3:0.6b", "gemma3:1b")
+        size_match = re.search(r':(\d+\.?\d*)[bB]', self.name)
+        if size_match:
+            size_value = float(size_match.group(1))
+            if size_value < 1:
+                return f"{size_value*1000:.0f}M"
+            else:
+                return f"{size_value:.1f}B"
+        
+        # Fallback: calculate from bytes with heuristic
+        if self.size_bytes > 0:
+            params_bytes = self.size_bytes / 6
+            if params_bytes < 1e9:
+                return f"{params_bytes/1e6:.1f}M"
+            else:
+                return f"{params_bytes/1e9:.1f}B"
+        
+        return "Unknown"
     
     @property
     def display_name(self) -> str:
         """Human-readable name with size and quantization."""
-        q_str = f" [{self.quantization}]" if self.quantization else ""
-        return f"{self.name} ({self.size_human}){q_str}"
+        # Show parameter size if available
+        size_str = self.size_params
+        if size_str and size_str != "Unknown":
+            size_display = f" [{size_str}]"
+        else:
+            size_display = f" [{self.size_human}]"
+        
+        q_str = f" {self.quantization}" if self.quantization else ""
+        return f"{self.name}{size_display}{q_str}"
 
 
 class ModelProvider(ABC):
@@ -130,9 +150,12 @@ class OllamaProvider(ModelProvider):
     @staticmethod
     def _parse_size(size_str: str) -> int:
         """Parse size string (e.g., '4.7 GB') to bytes."""
+        import logging
+        
         try:
             parts = size_str.split()
             if len(parts) != 2:
+                logging.warning(f"Unexpected size format: '{size_str}' - expected 'number unit'")
                 return 0
             
             size, unit = float(parts[0]), parts[1].upper()
@@ -145,8 +168,13 @@ class OllamaProvider(ModelProvider):
                 'TB': 1024**4,
             }
             
-            return int(size * multipliers.get(unit, 1))
-        except:
+            if unit not in multipliers:
+                logging.warning(f"Unknown size unit: '{unit}' in '{size_str}'")
+                return int(size)  # Return raw number as fallback
+            
+            return int(size * multipliers[unit])
+        except Exception as e:
+            logging.warning(f"Failed to parse size '{size_str}': {e}")
             return 0
     
     @staticmethod

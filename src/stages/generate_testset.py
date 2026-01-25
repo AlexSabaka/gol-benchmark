@@ -26,9 +26,11 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', '..'))
 from src.core.PromptEngine import PromptEngine, Language, PromptStyle, SystemPromptStyle, TaskType, PromptContext
 from src.engine.MathExpressionGenerator import MathExpressionGenerator
 from src.engine.GameOfLifeEngine import GameOfLifeEngine
+from src.engine.CellularAutomata1DEngine import CellularAutomata1DEngine, CellularAutomataTestGenerator
 from src.core.TestGenerator import TestGenerator
 from src.core.types import DifficultyLevel, BaseTestConfig, GameState
 from src.benchmarks.gol_eval import format_grid
+from src.utils.path_manager import get_path_manager, RunMetadata
 from dataclasses import dataclass
 
 @dataclass 
@@ -69,15 +71,26 @@ def generate_arithmetic_tests(config: Dict) -> List[Dict]:
     generator = MathExpressionGenerator(seed=gen_params['seed'])
     prompt_engine = PromptEngine()
     
+    # Support both old format (target_accuracies) and new format (complexity + target_values)
+    if 'complexity' in gen_params and 'target_values' in gen_params:
+        # New format: separate complexity and target values
+        complexity_levels = gen_params['complexity'] if isinstance(gen_params['complexity'], list) else [gen_params['complexity']]
+        target_values = gen_params['target_values'] if isinstance(gen_params['target_values'], list) else [gen_params['target_values']]
+    else:
+        # Old format: target_accuracies maps to both
+        target_values = gen_params.get('target_accuracies', [1])
+        complexity_levels = [min(tv + 1, 5) for tv in target_values]  # Map to complexity 1-5
+    
     test_id = 0
     for prompt_config in config['task']['prompt_configs']:
-        for target_accuracy in gen_params['target_accuracies']:
-            # Generate all expressions for this target at once
-            expressions = generator.generate_expressions_for_target(
-                target=target_accuracy,
-                complexity=target_accuracy + 1,  # Map to complexity level
-                count=gen_params['expressions_per_target']
-            )
+        for complexity in complexity_levels:
+            for target_value in target_values:
+                # Generate all expressions for this target at once
+                expressions = generator.generate_expressions_for_target(
+                    target=target_value,
+                    complexity=complexity,
+                    count=gen_params.get('expressions_per_target', gen_params.get('count', 10))
+                )
             
             for i, expression in enumerate(expressions):
                 
@@ -107,10 +120,10 @@ def generate_arithmetic_tests(config: Dict) -> List[Dict]:
                         'full': f"{result.system_prompt}\n\n{result.user_prompt}"
                     },
                     'task_params': {
-                        'target_accuracy': target_accuracy,
-                        'difficulty': target_accuracy + 1,
+                        'complexity': complexity,
+                        'target_value': target_value,
                         'expression': expression,
-                        'expected_answer': target_accuracy,  # The expression evaluates to this
+                        'expected_answer': target_value,  # The expression evaluates to this
                         'variables': {},
                         'mode': gen_params.get('mode', 'expression')
                     },
@@ -211,6 +224,124 @@ def generate_gol_tests(config: Dict) -> List[Dict]:
                         'dead_cell': dead_cell,
                         'density': gen_params.get('density', 0.5),
                         'known_pattern': None  # Could be enhanced to track pattern name
+                    },
+                    'prompt_metadata': {
+                        'user_style': prompt_config['user_style'],
+                        'system_style': prompt_config['system_style'],
+                        'language': prompt_config.get('language', 'en')
+                    },
+                    'generation_metadata': {
+                        'seed': gen_params['seed'],
+                        'generator_version': "1.0.0",
+                        'created_at': datetime.now().isoformat()
+                    }
+                }
+                
+                tests.append(test_case)
+                test_id += 1
+    
+    return tests
+
+
+def generate_c14_tests(config: Dict) -> List[Dict]:
+    """Generate 1D Cellular Automata test cases."""
+    tests = []
+    gen_params = config['task']['generation']
+    
+    # Initialize components
+    ca_engine = CellularAutomata1DEngine()
+    ca_generator = CellularAutomataTestGenerator(seed=gen_params['seed'])
+    prompt_engine = PromptEngine()
+    
+    test_id = 0
+    for prompt_config in config['task']['prompt_configs']:
+        for rule_number in gen_params['rule_numbers']:
+            for i in range(gen_params.get('cases_per_rule', 5)):
+                # Generate test case
+                test_case_data = ca_generator.generate_test_case(
+                    rule_number=rule_number,
+                    width=gen_params.get('width', 16),
+                    steps=gen_params.get('steps', 1),
+                    boundary=gen_params.get('boundary_condition', 'wrap'),
+                    initial_pattern=gen_params.get('initial_pattern', 'random'),
+                    density=gen_params.get('density', 0.5)
+                )
+                
+                # Create prompt context
+                context = PromptContext(
+                    task_type=TaskType.CELLULAR_AUTOMATA_1D,
+                    language=Language(prompt_config.get('language', 'en')),
+                    style=PromptStyle(prompt_config['user_style']),
+                    system_style=SystemPromptStyle(prompt_config['system_style'])
+                )
+                
+                # Prepare state strings
+                alive_char = config['execution'].get('cell_markers', ['1', '0'])[0]
+                dead_char = config['execution'].get('cell_markers', ['1', '0'])[1]
+                state_str = ca_engine.state_to_string(test_case_data['initial_state'], alive_char, dead_char)
+                expected_state_str = ca_engine.state_to_string(test_case_data['expected_states'][0], alive_char, dead_char)
+                
+                # Prepare rule table
+                rule_table = ca_engine.format_rule_table(rule_number)
+                
+                # Boundary descriptions
+                boundary_descriptions = {
+                    'wrap': 'Periodic boundaries (edges wrap around)',
+                    'dead': 'Fixed boundaries with dead cells (0)',
+                    'alive': 'Fixed boundaries with alive cells (1)'
+                }
+                boundary_desc = boundary_descriptions.get(test_case_data['boundary'], '')
+                
+                # Generate examples for EXAMPLES prompt style
+                examples_text = ""
+                if prompt_config['user_style'] == 'examples':
+                    # Generate 2 simple examples
+                    example_cases = ca_generator.generate_batch(
+                        rule_numbers=[rule_number],
+                        width=8,  # Smaller width for examples
+                        steps=1,
+                        cases_per_rule=2,  # Generate 2 examples
+                        boundary=test_case_data['boundary'],
+                        initial_pattern='centered_single',
+                        density=0.5
+                    )
+                    
+                    for i, ex in enumerate(example_cases[:2], 1):
+                        ex_initial = ' '.join(str(c) for c in ex['initial_state'])
+                        ex_next = ' '.join(str(c) for c in ex['expected_states'][0])
+                        examples_text += f"Example {i}:\nCurrent: {ex_initial}\nNext: {ex_next}\n\n"
+                
+                # Set all context variables
+                context.set('rule_number', rule_number)
+                context.set('state_str', state_str)
+                context.set('rule_table', rule_table)
+                context.set('boundary_description', boundary_desc)
+                context.set('boundary_math', f"periodic" if test_case_data['boundary'] == 'wrap' else "fixed")
+                context.set('example_output', f"{alive_char} {dead_char} {alive_char} ...")
+                context.set('examples', examples_text.strip())
+                
+                # Generate prompts
+                result = prompt_engine.generate(context)
+                
+                # Create test case
+                test_case = {
+                    'test_id': f"c14_{test_id:04d}",
+                    'task_type': 'cellular_automata_1d',
+                    'config_name': f"{prompt_config['user_style']}_{prompt_config['system_style']}",
+                    'prompts': {
+                        'system': result.system_prompt,
+                        'user': result.user_prompt,
+                        'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                    },
+                    'task_params': {
+                        'rule_number': rule_number,
+                        'initial_state': test_case_data['initial_state'],
+                        'expected_next_state': test_case_data['expected_states'][0],
+                        'width': test_case_data['width'],
+                        'steps': test_case_data['steps'],
+                        'boundary': test_case_data['boundary'],
+                        'difficulty': test_case_data['difficulty'],
+                        'rule_description': test_case_data['rule_description']
                     },
                     'prompt_metadata': {
                         'user_style': prompt_config['user_style'],
@@ -396,6 +527,8 @@ def generate_single_task_testset(config: Dict, config_path: str, output_dir: str
         test_cases = generate_arithmetic_tests(config)
     elif task_type == "game_of_life":
         test_cases = generate_gol_tests(config)
+    elif task_type == "cellular_automata_1d":
+        test_cases = generate_c14_tests(config)
     else:
         raise ValueError(f"Unknown task type: {task_type}")
     
@@ -435,6 +568,8 @@ def generate_multi_task_testset(config: Dict, config_path: str, output_dir: str)
             task_test_cases = generate_gol_tests(single_task_config)
         elif task_type == "linda_fallacy":
             task_test_cases = generate_linda_tests(single_task_config)
+        elif task_type == "cellular_automata_1d":
+            task_test_cases = generate_c14_tests(single_task_config)
         else:
             raise ValueError(f"Unknown task type: {task_type}")
         
@@ -501,13 +636,20 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
         }
     }
     
-    # Create output directory
-    Path(output_dir).mkdir(parents=True, exist_ok=True)
+    # Use PathManager for organized file management
+    path_mgr = get_path_manager()
     
-    # Generate output filename 
+    # Extract task types for filename
+    task_types = testset['statistics']['task_types']
     base_name = config['metadata']['name']
-    filename = f"testset_{base_name}_{timestamp}.json.gz"
-    filepath = Path(output_dir) / filename
+    
+    # Generate descriptive filepath
+    filepath = path_mgr.get_testset_path(
+        config_name=base_name,
+        task_types=task_types,
+        config_hash=config_hash,
+        timestamp=timestamp
+    )
     
     # Save compressed test set
     with gzip.open(filepath, 'wt', encoding='utf-8') as f:
@@ -516,7 +658,7 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
     print(f"✓ Generated test set: {filepath}")
     print(f"  - {len(test_cases)} test cases (expected: {total_expected})")
     print(f"  - {prompt_configs} prompt configs")
-    print(f"  - Task type: {task_type}")
+    print(f"  - Task types: {', '.join(task_types)}")
     print(f"  - Config hash: {config_hash}")
     print(f"  - Format version: {TESTSET_FORMAT_VERSION}")
     

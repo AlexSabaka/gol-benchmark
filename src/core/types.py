@@ -139,11 +139,32 @@ class AriTestConfig(BaseTestConfig):
 
 @dataclass
 class C14TestConfig(BaseTestConfig):
-    """Configuration for C14 (Cellular Automata) test runs"""
-    difficulties: List[int] = field(default_factory=lambda: [3])
-    target_values: List[int] = field(default_factory=lambda: [3])
+    """Configuration for C14 (1D Cellular Automata) test runs"""
+    rule_numbers: List[int] = field(default_factory=lambda: [30, 90, 110])  # Wolfram rules
+    width: int = 16  # Number of cells
+    steps: int = 1  # Number of generations to predict
+    boundary_condition: Literal["wrap", "dead", "alive"] = "wrap"
+    density: float = 0.5  # For random initial states
+    initial_pattern: Literal["random", "centered_single", "centered_pair", "centered_triplet"] = "random"
+    cell_markers: Tuple[str, str] = ('1', '0')  # (alive, dead)
     prompt_style: Literal['linguistic', 'casual', 'minimal', 'examples', 'rules_math'] = 'linguistic'
-    prompt_language: Literal["en"] = "en"
+    
+    def __post_init__(self):
+        """Validate C14 specific configuration"""
+        super().__post_init__()
+        
+        # Validate rule numbers
+        for rule in self.rule_numbers:
+            if not 0 <= rule <= 255:
+                raise ValueError(f"Rule number must be 0-255, got {rule}")
+        
+        # Validate width
+        if self.width < 3:
+            raise ValueError("Width must be at least 3")
+        
+        # Validate density
+        if not 0 <= self.density <= 1:
+            raise ValueError("Density must be between 0 and 1")
 
 @dataclass
 class LindaFallacyTestConfig(BaseTestConfig):

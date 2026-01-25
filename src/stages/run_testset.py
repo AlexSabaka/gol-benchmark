@@ -30,6 +30,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import Dict, List, Any, Optional
 
+# Add parent directory to path for PathManager import
+sys.path.insert(0, str(Path(__file__).parent.parent.parent))
+from src.utils.path_manager import get_path_manager, RunMetadata
+
 # Version for results format compatibility
 RESULTS_FORMAT_VERSION = "1.0.0"
 
@@ -202,12 +206,19 @@ def load_testset(filepath: str) -> Dict:
         return json.load(f)
 
 
-def save_results(results: Dict, output_dir: str, filename: str) -> str:
-    """Save results to gzipped JSON."""
-    output_path = Path(output_dir)
-    output_path.mkdir(parents=True, exist_ok=True)
+def save_results(results: Dict, testset_name: str, model_name: str, path_mgr=None) -> str:
+    """Save results using PathManager for organized storage."""
+    if path_mgr is None:
+        path_mgr = get_path_manager()
     
-    filepath = output_path / filename
+    # Generate results path with descriptive naming
+    filepath = path_mgr.get_results_path(
+        models=[model_name],
+        testset_name=testset_name,
+        run_id=results['metadata']['result_id'][:6],  # Use short ID
+        timestamp=datetime.fromisoformat(results['metadata']['timestamp']).strftime('%Y%m%d_%H%M%S')
+    )
+    
     with gzip.open(filepath, 'wt', encoding='utf-8') as f:
         json.dump(results, f, indent=2)
     
@@ -269,6 +280,10 @@ def parse_answer(response: str, task_type: str) -> Any:
                         continue
         
         return None
+    
+    elif task_type == "cellular_automata_1d":
+        # 1D Cellular Automata parsing - similar to GoL but for 1D arrays
+        return parse_c14_response(response)
     
     elif task_type == "linda_fallacy":
         # Linda Conjunction Fallacy ranking parsing with multi-strategy approach
@@ -406,20 +421,97 @@ def parse_arithmetic_response(target: str, response: str) -> float:
     return None
 
 
-def clean_markdown_text(text: str) -> str:
-    """Remove markdown formatting from text."""
-    # Remove markdown bold/italic
-    text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)  # **text**
-    text = re.sub(r'\*([^*]+)\*', r'\1', text)      # *text*
-    text = re.sub(r'_([^_]+)_', r'\1', text)        # _text_
+def parse_c14_response(response: str) -> List[int]:
+    """
+    Parse 1D Cellular Automata response to extract the next state.
+    Uses multi-strategy approach similar to GoL parsing.
     
-    # Remove markdown headers
-    text = re.sub(r'^#+\s*', '', text, flags=re.MULTILINE)
+    Returns:
+        List of integers (0s and 1s) representing the next state, or None if parsing fails
+    """
+    if not response:
+        return None
     
-    # Remove bullet points
-    text = re.sub(r'^[*-]\s+', '', text, flags=re.MULTILINE)
+    response = response.strip()
     
-    return text.strip()
+    # Strategy 1: Look for explicit markers like "Final Answer:", "Next state:", "Next row:", etc.
+    marker_patterns = [
+        r'(?:final\s+answer|next\s+state|next\s+row|next|answer|result)\s*:?\s*(.+?)(?:\n|$)',
+        r'(?:the\s+)?(?:next|resulting|final)\s+(?:state|row|generation)\s+(?:is|=|:)?\s*(.+?)(?:\n|$)',
+    ]
+    
+    for pattern in marker_patterns:
+        match = re.search(pattern, response, re.IGNORECASE | re.DOTALL)
+        if match:
+            extracted = match.group(1).strip()
+            # Try to parse this as a state
+            parsed = _extract_c14_state(extracted)
+            if parsed:
+                return parsed
+    
+    # Strategy 2: Look for the last line with space-separated 0s and 1s
+    lines = response.split('\n')
+    for line in reversed(lines):
+        line = line.strip()
+        if not line:
+            continue
+        parsed = _extract_c14_state(line)
+        if parsed:
+            return parsed
+    
+    # Strategy 3: Extract all 0s and 1s from the entire response
+    # Look for patterns like "0 1 1 0" or "0110" or "0, 1, 1, 0"
+    all_digits = re.findall(r'\b[01]\b', response)
+    if len(all_digits) >= 8:  # At least 8 cells (reasonable minimum)
+        return [int(d) for d in all_digits[:64]]  # Cap at 64 cells max
+    
+    # Strategy 4: Try to extract from code blocks or quoted sections
+    code_block_pattern = r'```(?:python|text)?\s*\n?(.+?)\n?```'
+    code_matches = re.findall(code_block_pattern, response, re.DOTALL)
+    for code in code_matches:
+        parsed = _extract_c14_state(code)
+        if parsed:
+            return parsed
+    
+    return None
+
+
+def _extract_c14_state(text: str) -> List[int]:
+    """
+    Helper to extract a 1D CA state from a text snippet.
+    
+    Args:
+        text: Text that might contain a state like "0 1 1 0" or "0110" or "[0, 1, 1, 0]"
+    
+    Returns:
+        List of integers if valid state found, None otherwise
+    """
+    if not text:
+        return None
+    
+    text = text.strip()
+    
+    # Remove common prefixes/suffixes
+    text = re.sub(r'^(?:state|row|generation|answer|result)\s*:?\s*', '', text, flags=re.IGNORECASE)
+    text = text.strip()
+    
+    # Try different formats:
+    # Format 1: Space-separated "0 1 1 0"
+    space_separated = re.findall(r'\b[01]\b', text)
+    if 8 <= len(space_separated) <= 64:  # Reasonable range
+        return [int(d) for d in space_separated]
+    
+    # Format 2: Comma-separated "0, 1, 1, 0" or "[0, 1, 1, 0]"
+    comma_separated = re.findall(r'[01]', text.replace('[', '').replace(']', ''))
+    if 8 <= len(comma_separated) <= 64:
+        return [int(d) for d in comma_separated]
+    
+    # Format 3: Continuous "0110" (no spaces)
+    continuous = re.sub(r'[^01]', '', text)
+    if 8 <= len(continuous) <= 64:
+        return [int(d) for d in continuous]
+    
+    return None
 
 
 def parse_linda_response(response: str) -> Dict[str, Any]:
@@ -430,6 +522,25 @@ def parse_linda_response(response: str) -> Dict[str, Any]:
     Returns:
         Dict with parsed_rankings, raw_response, and parsing metadata
     """
+    def strip_explanations(text: str) -> str:
+        """Strip common explanation patterns from ranking items."""
+        # Remove likelihood markers like ": Likely", ": Most Likely", "(Unlikely)", ": Possible"
+        text = re.sub(r'\s*[:\-–—]\s*(?:Most|Least|Very|Highly)?\s*(?:Likely|Unlikely|Probable|Improbable|Possible)\s*', '', text, flags=re.IGNORECASE)
+        # Remove parenthetical explanations with likelihood words
+        text = re.sub(r'\s*\([^)]*(?:likely|probable|fit|match|possible)[^)]*\)\s*', '', text, flags=re.IGNORECASE)
+        # Remove trailing scores/ratings like "(Score: 7/10)"
+        text = re.sub(r'\s*\([^)]*\d+[^)]*\)\s*$', '', text)
+        return text.strip()
+    
+    def clean_markdown_text(text: str) -> str:
+        """Clean markdown formatting from text."""
+        # Remove bold/italic markers
+        text = re.sub(r'\*\*([^*]+)\*\*', r'\1', text)
+        text = re.sub(r'\*([^*]+)\*', r'\1', text)
+        text = re.sub(r'__([^_]+)__', r'\1', text)
+        text = re.sub(r'_([^_]+)_', r'\1', text)
+        return text.strip()
+    
     if not response:
         return {
             'rankings': [],
@@ -462,27 +573,38 @@ def parse_linda_response(response: str) -> Dict[str, Any]:
                 # Clean up explanations and markdown
                 item_text = clean_markdown_text(item_text)
                 
-                # Extract just the profession/description part before explanations
-                # Look for pattern: "Person does X" or "Person is Y" before explanations
-                profession_match = re.match(r'^([^:–—-]*?)(?:[:\s]*(?:This is|This makes|It\'s|He\'s|She\'s|Given|While|\s*–|\s*—|\s*\([^)]*\)|\s*\.|$))', item_text)
-                if profession_match:
-                    item_text = profession_match.group(1).strip()
+                # Split on em/en dashes first (common pattern before explanations)
+                for dash in ['–', '—', ' - ']:
+                    if dash in item_text:
+                        item_text = item_text.split(dash)[0].strip()
+                        break
                 
-                # Also handle dash-separated explanations like "Linda is a teacher - Most likely"
-                item_text = re.sub(r'\s*[-–—]\s*.*$', '', item_text)
+                # Strip likelihood explanations and parenthetical explanations
+                item_text = strip_explanations(item_text)
                 
-                # Remove trailing explanations in parentheses
+                # Remove remaining parentheticals
                 item_text = re.sub(r'\s*\([^)]*\)\s*$', '', item_text)
+                
+                # Split on first colon if present (common pattern: "Item: explanation")
+                if ':' in item_text and not ' and ' in item_text.split(':')[0]:
+                    item_text = item_text.split(':')[0].strip()
+                
+                # Clean up any remaining sentence fragments
+                for delimiter in ['. This', '. It', '. He', '. She', '. Given', '. While']:
+                    if delimiter in item_text:
+                        item_text = item_text.split(delimiter)[0].strip()
+                        break
                 
                 if item_text and len(item_text) > 3:  # Avoid too-short items
                     parsed_rankings.append(item_text)
         
-        if parsed_rankings:
+        if parsed_rankings and len(parsed_rankings) >= 6:
             parse_strategy = 'explicit_ranking_section'
     
     # Strategy 2: Fallback - Find numbered list anywhere in response
-    if not parsed_rankings:
+    if not parsed_rankings or len(parsed_rankings) < 6:
         lines = response.split('\n')
+        temp_rankings = []
         for line in lines:
             line = line.strip()
             if re.match(r'^\d+\.', line):
@@ -491,25 +613,37 @@ def parse_linda_response(response: str) -> Dict[str, Any]:
                 # Clean up explanations and markdown
                 item_text = clean_markdown_text(item_text)
                 
-                # Extract just the profession/description part before explanations
-                profession_match = re.match(r'^([^:–—-]*?)(?:[:\s]*(?:This is|This makes|It\'s|He\'s|She\'s|Given|While|\s*–|\s*—|\s*\([^)]*\)|\s*\.|$))', item_text)
-                if profession_match:
-                    item_text = profession_match.group(1).strip()
+                # Split on em/en dashes first (common pattern before explanations)
+                for dash in ['–', '—', ' - ']:
+                    if dash in item_text:
+                        item_text = item_text.split(dash)[0].strip()
+                        break
                 
-                # Also handle dash-separated explanations
-                item_text = re.sub(r'\s*[-–—]\s*.*$', '', item_text)
+                # Strip likelihood explanations and parenthetical explanations
+                item_text = strip_explanations(item_text)
                 
-                # Remove trailing explanations
+                # Remove remaining parentheticals
                 item_text = re.sub(r'\s*\([^)]*\)\s*$', '', item_text)
                 
+                # Split on first colon if present (common pattern: "Item: explanation")
+                if ':' in item_text and not ' and ' in item_text.split(':')[0]:
+                    item_text = item_text.split(':')[0].strip()
+                
+                # Clean up any remaining sentence fragments
+                for delimiter in ['. This', '. It', '. He', '. She', '. Given', '. While']:
+                    if delimiter in item_text:
+                        item_text = item_text.split(delimiter)[0].strip()
+                        break
+                
                 if item_text and len(item_text) > 3:  # Avoid too-short items
-                    parsed_rankings.append(item_text)
+                    temp_rankings.append(item_text)
         
-        if parsed_rankings:
+        if temp_rankings and (not parsed_rankings or len(temp_rankings) > len(parsed_rankings)):
+            parsed_rankings = temp_rankings
             parse_strategy = 'numbered_list_fallback'
     
     # Strategy 3: Extract lines with ranking-like patterns (most/least probable mentions)
-    if not parsed_rankings:
+    if not parsed_rankings or len(parsed_rankings) < 6:
         lines = response.split('\n')
         ranking_pattern_lines = []
         
@@ -524,7 +658,7 @@ def parse_linda_response(response: str) -> Dict[str, Any]:
             parse_strategy = 'probability_keyword_extraction'
     
     # Strategy 4: Extract any sentence/phrase that looks like a ranking statement
-    if not parsed_rankings:
+    if not parsed_rankings or len(parsed_rankings) < 6:
         sentences = re.split(r'[.!?]', response)
         potential_rankings = []
         seen_items = set()  # Track to avoid duplicates
@@ -558,12 +692,32 @@ def parse_linda_response(response: str) -> Dict[str, Any]:
         
         # Remove items that are very similar (same normalized form)
         normalized = re.sub(r'[^a-zA-Z0-9]', '', ranking.lower())
-        if normalized in seen_normalized or len(normalized) < 5:
+        if len(normalized) < 5:
+            continue
+        
+        # Check for fuzzy duplicates - items that are >85% similar
+        is_duplicate = False
+        for existing in final_rankings:
+            existing_norm = re.sub(r'[^a-zA-Z0-9]', '', existing.lower())
+            # Check if one is substring of another (with 85%+ overlap)
+            if normalized in existing_norm or existing_norm in normalized:
+                # Allow if the difference is substantial (not just trailing explanation)
+                similarity = len(set(normalized) & set(existing_norm)) / len(set(normalized) | set(existing_norm))
+                if similarity > 0.85:
+                    is_duplicate = True
+                    break
+        
+        if is_duplicate or normalized in seen_normalized:
             continue
             
         final_rankings.append(ranking)
         seen_exact.add(ranking)
         seen_normalized.add(normalized)
+    
+    # Limit to reasonable number of items (typically 8 for Linda tests)
+    # If we have more than 10 items, truncate to avoid model verbosity
+    if len(final_rankings) > 10:
+        final_rankings = final_rankings[:10]
     
     return {
         'rankings': final_rankings,
@@ -643,6 +797,39 @@ def evaluate_result(parsed_answer: Any, expected_answer: Any, task_type: str) ->
                 if expected_cell == actual_cell:
                     correct_cells += 1
         
+        accuracy = correct_cells / total_cells if total_cells > 0 else 0.0
+        perfect_match = correct_cells == total_cells
+        
+        return {
+            "correct": perfect_match,
+            "match_type": "perfect" if perfect_match else "partial",
+            "accuracy": accuracy,
+            "correct_cells": correct_cells,
+            "total_cells": total_cells
+        }
+    
+    elif task_type == "cellular_automata_1d":
+        # 1D Cellular Automata state comparison (similar to GoL but 1D)
+        if not isinstance(parsed_answer, list) or not isinstance(expected_answer, list):
+            return {
+                "correct": False,
+                "match_type": "type_error",
+                "accuracy": 0.0
+            }
+        
+        # Compare lengths
+        if len(parsed_answer) != len(expected_answer):
+            return {
+                "correct": False,
+                "match_type": "length_mismatch",
+                "accuracy": 0.0,
+                "expected_length": len(expected_answer),
+                "actual_length": len(parsed_answer)
+            }
+        
+        # Cell-by-cell comparison
+        correct_cells = sum(1 for exp, act in zip(expected_answer, parsed_answer) if exp == act)
+        total_cells = len(expected_answer)
         accuracy = correct_cells / total_cells if total_cells > 0 else 0.0
         perfect_match = correct_cells == total_cells
         
@@ -825,6 +1012,7 @@ def run_testset(
         "metadata": {
             "result_id": f"results_{model_name.replace(':', '_').replace('/', '_')}_{testset['metadata']['name']}_{start_time.strftime('%Y%m%d_%H%M%S')}",
             "created_at": start_time.isoformat(),
+            "timestamp": start_time.isoformat(),  # Added for PathManager compatibility
             "hostname": socket.gethostname(),
             "python_version": f"{sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}",
             "runner_version": "1.0.0"
@@ -977,9 +1165,23 @@ def run_testset(
     else:
         results["summary_statistics"] = {"accuracy": 0.0}
     
-    # Save results
-    filename = f"{results['metadata']['result_id']}.json.gz"
-    output_path = save_results(results, output_dir, filename)
+    # Save results using PathManager
+    path_mgr = get_path_manager()
+    testset_name = Path(testset_path).stem.replace('testset_', '')
+    
+    output_path = save_results(results, testset_name, model_name, path_mgr)
+    
+    # Save run metadata for traceability
+    run_metadata = RunMetadata(
+        run_id=results['metadata']['result_id'][:6],
+        timestamp=results['metadata']['timestamp'],
+        models=[model_name],
+        task_types=testset['statistics'].get('task_types', [task_type]),
+        testset_path=testset_path,
+        description=f"{model_name} on {testset_name}",
+        config_hash=testset['metadata'].get('config_hash')
+    )
+    path_mgr.save_run_metadata(run_metadata)
     
     print(f"\\n✓ Results saved: {output_path}")
     print(f"  - Accuracy: {results['summary_statistics']['accuracy']:.2%}")
