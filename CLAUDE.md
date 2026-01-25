@@ -55,16 +55,29 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
+│   ├── plugins/           # NEW: Plugin-based benchmark system (v2.1.0)
+│   │   ├── base.py        # Abstract base classes for plugins
+│   │   ├── __init__.py    # Plugin registry with auto-discovery
+│   │   ├── game_of_life/  # GoL plugin (generator, parser, evaluator)
+│   │   ├── arithmetic/    # ARI plugin
+│   │   ├── linda_fallacy/ # Linda plugin
+│   │   ├── cellular_automata_1d/  # C14 plugin
+│   │   └── ascii_shapes/  # ASCII Shapes plugin
+│   ├── stages/            # 3-stage pipeline (uses plugin system)
+│   │   ├── generate_testset.py  # Stage 1: YAML → test sets
+│   │   ├── run_testset.py       # Stage 2: Execute tests
+│   │   └── analyze_results.py   # Stage 3: Analytics
 │   ├── core/              # Types, prompt engine, test generation
 │   ├── engine/            # Task-specific logic (GoL, Math)
 │   ├── models/            # LLM interfaces (Ollama, HuggingFace)
 │   ├── evaluation/        # Result scoring and metrics
-│   ├── benchmarks/        # Evaluation scripts (gol_eval, ari_eval, etc.)
+│   ├── benchmarks/        # DEPRECATED: Legacy monolithic scripts
 │   ├── cli/               # CLI tools, TUI, config management
 │   ├── visualization/     # Charts, analysis, reporting
 │   └── utils/             # Logging, model discovery
 │
 ├── tests/                 # Test suite
+│   └── plugins/           # Plugin system unit tests
 ├── scripts/               # Shell scripts for batch processing
 ├── configs/               # Benchmark configuration YAML files
 ├── data/                  # External data (Conway's Life patterns)
@@ -78,6 +91,19 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
+| **Plugin System (v2.1.0)** | |
+| [src/plugins/base.py](src/plugins/base.py) | Abstract base classes for all plugins |
+| [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
+| [src/plugins/game_of_life/](src/plugins/game_of_life/) | GoL plugin module (generator, parser, evaluator) |
+| [src/plugins/arithmetic/](src/plugins/arithmetic/) | ARI plugin module |
+| [src/plugins/linda_fallacy/](src/plugins/linda_fallacy/) | Linda Fallacy plugin module |
+| [src/plugins/cellular_automata_1d/](src/plugins/cellular_automata_1d/) | C14 plugin module |
+| [src/plugins/ascii_shapes/](src/plugins/ascii_shapes/) | ASCII Shapes plugin module |
+| **3-Stage Pipeline** | |
+| [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
+| [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
+| [src/stages/analyze_results.py](src/stages/analyze_results.py) | Stage 3: Analytics and reporting |
+| **Core Infrastructure** | |
 | [src/core/types.py](src/core/types.py) | All config classes, types, difficulty levels |
 | [src/core/PromptEngine.py](src/core/PromptEngine.py) | Multilingual prompt generation (6 languages) |
 | [src/core/TestGenerator.py](src/core/TestGenerator.py) | Test case generation with known patterns |
@@ -92,16 +118,26 @@ gol_eval/
 
 ## Architecture Patterns
 
-### 1. Factory Pattern
+### 1. Plugin Pattern (NEW in v2.1.0)
+Self-contained benchmark modules with auto-discovery via package scanning.
+```python
+from src.plugins import PluginRegistry
+plugin = PluginRegistry.get('game_of_life')
+generator = plugin.get_generator()
+parser = plugin.get_parser()
+evaluator = plugin.get_evaluator()
+```
+
+### 2. Factory Pattern
 `create_interface(config)` creates appropriate model interface based on config type.
 
-### 2. Strategy Pattern
-Different prompt/system styles are interchangeable via PromptEngine.
+### 3. Strategy Pattern
+Different prompt/system styles are interchangeable via PromptEngine. Multi-strategy parsing in parsers (6 strategies for ARI, 4 for GoL).
 
-### 3. Template Method
+### 4. Template Method
 `BaseModelInterface` defines contract; subclasses implement `query_model()` and `supports_reasoning()`.
 
-### 4. Configuration Inheritance
+### 5. Configuration Inheritance
 ```
 BaseTestConfig (ABC)
 ├── GameOfLifeTestConfig
@@ -114,36 +150,103 @@ BaseTestConfig (ABC)
 
 ## Adding New Features
 
-### New Benchmark Task
+### New Benchmark Task (Plugin System - v2.1.0)
 
-1. **Create config class** in [src/core/types.py](src/core/types.py):
+**Modern approach using the plugin system:**
+
+1. **Create plugin directory** `src/plugins/new_task/`:
+   ```bash
+   mkdir src/plugins/new_task
+   cd src/plugins/new_task
+   ```
+
+2. **Create `__init__.py`** with plugin instance:
+   ```python
+   from src.plugins.base import BenchmarkPlugin
+   from src.plugins.new_task.generator import NewTaskGenerator
+   from src.plugins.new_task.parser import NewTaskParser
+   from src.plugins.new_task.evaluator import NewTaskEvaluator
+
+   class NewTaskPlugin(BenchmarkPlugin):
+       @property
+       def task_type(self) -> str:
+           return "new_task"
+
+       @property
+       def display_name(self) -> str:
+           return "New Task Display Name"
+
+       def get_generator(self):
+           return NewTaskGenerator()
+
+       def get_parser(self):
+           return NewTaskParser()
+
+       def get_evaluator(self):
+           return NewTaskEvaluator()
+
+   plugin = NewTaskPlugin()  # Auto-discovered!
+   ```
+
+3. **Create `generator.py`** (test case generation):
+   ```python
+   from src.plugins.base import TestCaseGenerator, TestCase
+
+   class NewTaskGenerator(TestCaseGenerator):
+       def generate_batch(self, config, prompt_config, count, seed):
+           # Generate test cases
+           return [TestCase(...), ...]
+   ```
+
+4. **Create `parser.py`** (response parsing with multi-strategy):
+   ```python
+   from src.plugins.base import ResponseParser, ParsedAnswer
+
+   class NewTaskParser(ResponseParser):
+       def parse(self, response: str, task_params: Dict) -> ParsedAnswer:
+           # Try multiple parsing strategies
+           return ParsedAnswer(value=..., raw_response=response, parse_strategy='...')
+   ```
+
+5. **Create `evaluator.py`** (result evaluation):
+   ```python
+   from src.plugins.base import ResultEvaluator, EvaluationResult
+
+   class NewTaskEvaluator(ResultEvaluator):
+       def evaluate(self, parsed_answer, expected_answer, task_params) -> EvaluationResult:
+           # Evaluate correctness
+           return EvaluationResult(correct=..., match_type='...', accuracy=...)
+   ```
+
+6. **Add prompts** to [src/core/PromptEngine.py](src/core/PromptEngine.py):
+   ```python
+   TaskType = Enum('TaskType', [..., 'new_task'])
+   ```
+
+7. **Add config class** (if needed) in [src/core/types.py](src/core/types.py):
    ```python
    @dataclass
    class NewTaskTestConfig(BaseTestConfig):
        task_param1: int
        task_param2: str
-
-       def __post_init__(self):
-           super().__post_init__()
-           # Validation logic
    ```
 
-2. **Create evaluation script** in `src/benchmarks/new_task_eval.py`:
-   ```python
-   from src.core.types import NewTaskTestConfig
-   from src.models import create_interface
+**That's it! The plugin is automatically discovered and integrated into:**
+- Stage 1 (generate_testset.py)
+- Stage 2 (run_testset.py)
+- Stage 3 (analyze_results.py)
 
-   def run_new_task_test(config: NewTaskTestConfig):
-       interface = create_interface(config)
-       # Test logic here
-   ```
+### Legacy Approach (Deprecated)
 
-3. **Add prompts** to [src/core/PromptEngine.py](src/core/PromptEngine.py):
-   ```python
-   TaskType = Enum('TaskType', [..., 'new_task'])
-   ```
+<details>
+<summary>Click to see legacy monolithic approach (not recommended)</summary>
 
-4. **Create engine** (if needed) in `src/engine/NewTaskEngine.py`
+1. Create evaluation script in `src/benchmarks/new_task_eval.py`
+2. Add to TUI manually
+3. Duplicate parsing/evaluation logic
+
+**Note:** This approach is deprecated. Use the plugin system instead.
+</details>
 
 ### New Model Provider
 
@@ -240,6 +343,13 @@ BaseTestConfig (ABC)
 After reorganization, use these import patterns:
 
 ```python
+# Plugin System (NEW in v2.1.0)
+from src.plugins import PluginRegistry
+from src.plugins.base import (
+    BenchmarkPlugin, TestCaseGenerator, ResponseParser, ResultEvaluator,
+    TestCase, ParsedAnswer, EvaluationResult
+)
+
 # Core
 from src.core.types import GameOfLifeTestConfig, DifficultyLevel
 from src.core.PromptEngine import PromptEngine, Language, PromptStyle
@@ -535,6 +645,7 @@ pytest tests/
 
 ## Additional Resources
 
+- **Plugin System**: [docs/PLUGIN_SYSTEM_REFACTORING.md](docs/PLUGIN_SYSTEM_REFACTORING.md) - NEW v2.1.0
 - **Architecture**: [docs/03_ARCHITECTURE/SYSTEM_OVERVIEW.md](docs/03_ARCHITECTURE/SYSTEM_OVERVIEW.md)
 - **Research Reports**: [docs/05_RESEARCH/](docs/05_RESEARCH/)
 - **Full Documentation Index**: [docs/INDEX.md](docs/INDEX.md)
@@ -542,5 +653,5 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-01-22*
+*Last updated: 2026-01-25*
 *For questions or issues: Check [README.md](README.md) or create an issue*

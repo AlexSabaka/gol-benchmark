@@ -34,6 +34,14 @@ from typing import Dict, List, Any, Optional
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 from src.utils.path_manager import get_path_manager, RunMetadata
 
+# Plugin system integration (optional - falls back to built-in parsers if unavailable)
+try:
+    from src.plugins import PluginRegistry
+    PLUGINS_AVAILABLE = True
+except ImportError:
+    PLUGINS_AVAILABLE = False
+    PluginRegistry = None
+
 # Version for results format compatibility
 RESULTS_FORMAT_VERSION = "1.0.0"
 
@@ -225,13 +233,84 @@ def save_results(results: Dict, testset_name: str, model_name: str, path_mgr=Non
     return str(filepath)
 
 
+def parse_answer_via_plugin(response: str, task_type: str, task_params: Dict = None) -> Optional[Any]:
+    """
+    Parse answer using the plugin system.
+
+    This is the preferred method for response parsing, providing a unified
+    interface across all benchmark types.
+
+    Args:
+        response: Raw model response
+        task_type: Type of task
+        task_params: Task parameters from test case (needed for context)
+
+    Returns:
+        Parsed answer value, or None if parsing failed
+    """
+    if not PLUGINS_AVAILABLE:
+        return None
+
+    plugin = PluginRegistry.get(task_type)
+    if plugin is None:
+        return None
+
+    try:
+        parser = plugin.get_parser()
+        parsed = parser.parse(response, task_params or {})
+
+        if parsed.success:
+            return parsed.value
+        return None
+    except Exception:
+        return None
+
+
+def evaluate_via_plugin(parsed_answer: Any, expected_answer: Any, task_type: str, task_params: Dict = None) -> Optional[Dict]:
+    """
+    Evaluate answer using the plugin system.
+
+    Args:
+        parsed_answer: The parsed answer from parse_answer_via_plugin
+        expected_answer: Expected answer from test case
+        task_type: Type of task
+        task_params: Task parameters from test case
+
+    Returns:
+        EvaluationResult as dict, or None if evaluation failed
+    """
+    if not PLUGINS_AVAILABLE:
+        return None
+
+    plugin = PluginRegistry.get(task_type)
+    if plugin is None:
+        return None
+
+    try:
+        from src.plugins.base import ParsedAnswer
+
+        # Wrap in ParsedAnswer if not already
+        if not isinstance(parsed_answer, ParsedAnswer):
+            parsed_answer = ParsedAnswer(
+                value=parsed_answer,
+                raw_response="",
+                parse_strategy="external"
+            )
+
+        evaluator = plugin.get_evaluator()
+        result = evaluator.evaluate(parsed_answer, expected_answer, task_params or {})
+        return result.to_dict()
+    except Exception:
+        return None
+
+
 def parse_answer(response: str, task_type: str) -> Any:
     """Extract answer from model response using proven parsing strategies from ari_eval.py"""
     if not response:
         return None
-        
+
     response = response.strip()
-    
+
     if task_type == "arithmetic":
         # Use the exact parsing logic from ari_eval.py that we know works
         return parse_arithmetic_response("", response)  # target not used in our enhanced version
@@ -1313,24 +1392,35 @@ def run_testset(
         else:
             # Parse and evaluate response
             raw_response = response_data["response"]
-            
+
             # Get task type from individual test case (for multi-task support)
             individual_task_type = test_case.get('task_type', task_type)
-            
-            parsed_answer = parse_answer(raw_response, individual_task_type)
-            
+            task_params = test_case.get('task_params', {})
+
+            # Try plugin-based parsing first (preferred)
+            parsed_answer = parse_answer_via_plugin(raw_response, individual_task_type, task_params)
+
+            # Fallback to built-in parser if plugin failed
+            if parsed_answer is None:
+                parsed_answer = parse_answer(raw_response, individual_task_type)
+
             # Get expected answer based on task type
             if individual_task_type == "linda_fallacy":
                 # For Linda, pass the full task_params as expected_answer
-                expected_answer = test_case['task_params']
+                expected_answer = task_params
             elif individual_task_type == "ascii_shapes":
                 # For ASCII shapes, get expected_answer from task_params
-                expected_answer = test_case['task_params'].get('expected_answer')
+                expected_answer = task_params.get('expected_answer')
             else:
                 # For other tasks, use existing logic
-                expected_answer = test_case['task_params'].get('expected_answer') or test_case['task_params'].get('expected_next_state')
-            
-            evaluation = evaluate_result(parsed_answer, expected_answer, individual_task_type)
+                expected_answer = task_params.get('expected_answer') or task_params.get('expected_next_state')
+
+            # Try plugin-based evaluation first
+            evaluation = evaluate_via_plugin(parsed_answer, expected_answer, individual_task_type, task_params)
+
+            # Fallback to built-in evaluation if plugin failed
+            if evaluation is None:
+                evaluation = evaluate_result(parsed_answer, expected_answer, individual_task_type)
             
             result = {
                 "test_id": test_id,

@@ -2,9 +2,28 @@
 
 ## Project Overview
 
-This is a comprehensive LLM reasoning benchmark suite testing model capabilities across procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata). The system features a modern 3-stage architecture with support for multiple model providers (Ollama, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
+This is a comprehensive LLM reasoning benchmark suite testing model capabilities across procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes). The system features a modern 3-stage architecture with a **plugin-based benchmark system (v2.1.0)**, support for multiple model providers (Ollama, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.0.0)
+## Architecture (v2.1.0)
+
+### 🔌 **Plugin-Based Benchmark System (NEW)**
+All benchmarks are now self-contained plugins with auto-discovery:
+```
+src/plugins/
+├── base.py                    # Abstract base classes
+├── __init__.py                # Plugin registry
+├── game_of_life/              # GoL: generator, parser, evaluator
+├── arithmetic/                # ARI: 6-strategy parsing
+├── linda_fallacy/             # Linda: conjunction fallacy detection
+├── cellular_automata_1d/      # C14: state evolution
+└── ascii_shapes/              # Shapes: dimensions/count/position
+```
+
+**Benefits:**
+- ✅ Add new benchmarks without modifying core code
+- ✅ Self-contained modules (generation + parsing + evaluation)
+- ✅ Automatic plugin discovery
+- ✅ Clean separation of concerns
 
 ### 🏗️ **3-Stage Pipeline Architecture**
 ```
@@ -38,9 +57,17 @@ Config →   TestGenerator →            ModelInterface →        Enhanced Ana
 
 ```
 src/
-├── stages/             # 3-Stage Pipeline Scripts
-│   ├── generate_testset.py    # Stage 1: YAML → Test Sets
-│   ├── run_testset.py         # Stage 2: Execute on Models  
+├── plugins/            # 🔌 Plugin-Based Benchmark System (v2.1.0)
+│   ├── base.py         # Abstract base classes (BenchmarkPlugin, TestCaseGenerator, etc.)
+│   ├── __init__.py     # Plugin registry with auto-discovery
+│   ├── game_of_life/   # GoL plugin (generator.py, parser.py, evaluator.py, __init__.py)
+│   ├── arithmetic/     # ARI plugin (6-strategy parsing)
+│   ├── linda_fallacy/  # Linda plugin (conjunction fallacy detection)
+│   ├── cellular_automata_1d/  # C14 plugin (state evolution)
+│   └── ascii_shapes/   # Shapes plugin (dimensions/count/position)
+├── stages/             # 3-Stage Pipeline Scripts (uses plugins)
+│   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
+│   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
 │   └── analyze_results.py     # Stage 3: Analytics & Reports
 ├── cli/                # Command Line Interfaces
 │   └── benchmark_tui.py       # Interactive Terminal UI
@@ -58,9 +85,9 @@ src/
 │   └── MathExpressionGenerator.py # Arithmetic expression generation
 ├── evaluation/         # Result evaluation
 │   └── TestEvaluator.py# Grid comparison, accuracy calculations
-├── benchmarks/         # Legacy individual benchmark scripts
-│   ├── ari_eval.py     # Arithmetic evaluation (legacy)
-│   └── gol_eval.py     # Game of Life evaluation (legacy)
+├── benchmarks/         # ⚠️ DEPRECATED: Legacy monolithic scripts
+│   ├── ari_eval.py     # Arithmetic evaluation (use plugins instead)
+│   └── gol_eval.py     # Game of Life evaluation (use plugins instead)
 └── utils/              # Utilities
     └── logger.py       # Logging utilities
 ```
@@ -190,14 +217,21 @@ The benchmark systematically tests 3×3 prompt combinations:
 
 ## Code Conventions
 
-### **Adding New Benchmark Tasks**
-1. Add task type to `src/core/types.py` (`TaskType` enum)
-2. Add config dataclass inheriting from `BaseTestConfig`
-3. Add prompt templates in `src/core/PromptEngine.py` under the new `TaskType`
-4. Add generation logic in `src/stages/generate_testset.py`
-5. Add parsing logic in `src/stages/run_testset.py`
-6. Register in `src/cli/benchmark_tui.py` task selection
-7. Optional: Create legacy individual benchmark script in `src/benchmarks/`
+### **Adding New Benchmark Tasks (Plugin System v2.1.0)**
+**Modern approach - create a self-contained plugin:**
+
+1. **Create plugin directory**: `src/plugins/new_task/`
+2. **Create `__init__.py`**: Define `NewTaskPlugin` class and export `plugin` instance
+3. **Create `generator.py`**: Implement `TestCaseGenerator` with `generate_batch()` method
+4. **Create `parser.py`**: Implement `ResponseParser` with multi-strategy `parse()` method
+5. **Create `evaluator.py`**: Implement `ResultEvaluator` with `evaluate()` method
+6. **Add prompts**: Update `src/core/PromptEngine.py` with new `TaskType`
+7. **Done!** Plugin auto-discovered by registry, integrated into all 3 stages
+
+**Legacy approach (deprecated):**
+- Adding to `src/benchmarks/` requires manual integration
+- Code duplication across generation/parsing/evaluation
+- No longer recommended
 
 ### **Enhanced Response Parsing (v2.0.0)**
 Model responses use multi-strategy parsing with fallback mechanisms:
@@ -326,6 +360,9 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.0.0 (January 2026)  
-**Status**: Production Ready 🚀  
-**Key Feature**: Modern 3-stage architecture with enhanced parsing and analytics
+**Version**: 2.1.0 (January 25, 2026)
+**Status**: Production Ready 🚀
+**Key Features**:
+- Plugin-based benchmark system with auto-discovery
+- Modern 3-stage architecture with enhanced parsing and analytics
+- 5 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes

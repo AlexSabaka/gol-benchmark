@@ -2,7 +2,31 @@
 Cellular Automata 1D Benchmark (C14) for gol_eval
 Tests LLM reasoning on Wolfram elementary cellular automata (Rules 0-255)
 Validates evolution prediction accuracy with various rule complexities
+
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Please use the plugin-based architecture instead:
+
+    from src.plugins import PluginRegistry
+    plugin = PluginRegistry.get('cellular_automata_1d')
+    generator = plugin.get_generator()
+    parser = plugin.get_parser()
+    evaluator = plugin.get_evaluator()
+
+Or use the 3-stage pipeline:
+    python src/stages/generate_testset.py configs/testsets/c14_config.yaml
+    python src/stages/run_testset.py testset_*.json.gz --model <model>
+    python src/stages/analyze_results.py results_*.json.gz
 """
+
+import warnings
+warnings.warn(
+    "src.benchmarks.c14_eval is deprecated. "
+    "Use the plugin-based architecture (src.plugins.cellular_automata_1d) "
+    "or the 3-stage pipeline (src.stages) instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 from dataclasses import dataclass
 from datetime import datetime
 import json

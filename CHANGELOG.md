@@ -2,6 +2,132 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.1.0] - January 25, 2026
+
+### Plugin-Based Benchmark System
+
+#### Major Architectural Enhancement
+- **Complete refactoring** from monolithic benchmarks to plugin-based architecture
+- **Plugin registry** with automatic discovery via package scanning
+- **Self-contained modules** for each benchmark (generation, parsing, evaluation)
+- **Zero-modification extensibility** - add new benchmarks without touching core code
+
+#### Plugin System Components
+
+**Core Infrastructure:**
+- `src/plugins/base.py` - Abstract base classes for all plugins
+  - `BenchmarkPlugin` - Plugin interface definition
+  - `TestCaseGenerator` - Test generation interface
+  - `ResponseParser` - Multi-strategy response parsing interface
+  - `ResultEvaluator` - Evaluation interface with aggregation
+  - `TestCase`, `ParsedAnswer`, `EvaluationResult` - Standardized data structures
+
+- `src/plugins/__init__.py` - Plugin registry with auto-discovery
+  - Automatic plugin loading via `pkgutil`
+  - Registration and retrieval system
+  - Task type mapping
+
+**5 Built-in Plugins:**
+1. **Game of Life** (`src/plugins/game_of_life/`)
+   - 4-strategy parsing (line_scan_reverse, marker_search, digit_extraction, last_resort)
+   - Cell-by-cell accuracy evaluation
+   - Grid normalization and validation
+
+2. **Arithmetic** (`src/plugins/arithmetic/`)
+   - 6-strategy parsing (LaTeX boxed, JSON unescape, equals pattern, keyword search, etc.)
+   - Exact and approximate numeric matching
+   - Expression evaluation
+
+3. **Linda Fallacy** (`src/plugins/linda_fallacy/`)
+   - Ranking extraction with fuzzy matching
+   - Conjunction fallacy detection
+   - Cultural/language alignment
+
+4. **Cellular Automata 1D** (`src/plugins/cellular_automata_1d/`)
+   - Binary state parsing (4 strategies)
+   - Cell-by-cell state comparison
+   - Normalized accuracy (2 * (raw - 0.5))
+
+5. **ASCII Shapes** (`src/plugins/ascii_shapes/`)
+   - Type-specific parsing (dimensions, count, position)
+   - Multiple output formats supported
+   - Tolerance-based count evaluation
+
+#### Integration with 3-Stage Pipeline
+
+**Stage 1 (generate_testset.py):**
+- Plugin-based test generation with fallback to built-in generators
+- `generate_tests_via_plugin()` helper function
+- Backward-compatible with legacy generators
+
+**Stage 2 (run_testset.py):**
+- Plugin-based parsing with `parse_answer_via_plugin()`
+- Plugin-based evaluation with `evaluate_via_plugin()`
+- Graceful degradation to legacy parsing if plugin unavailable
+
+**Stage 3 (analyze_results.py):**
+- No changes required - works with plugin-generated results
+
+#### Deprecation and Migration
+
+**Legacy Files Deprecated:**
+- `src/benchmarks/gol_eval.py` - Use Game of Life plugin
+- `src/benchmarks/ari_eval.py` - Use Arithmetic plugin
+- `src/benchmarks/linda_eval.py` - Use Linda Fallacy plugin
+- `src/benchmarks/c14_eval.py` - Use C14 plugin
+
+**Deprecation warnings added** to all legacy files with migration guidance.
+
+#### Comprehensive Test Suite
+
+**Unit Tests Created:**
+- `tests/plugins/test_registry.py` - Plugin discovery and registration
+- `tests/plugins/test_game_of_life.py` - GoL plugin (generator, parser, evaluator, roundtrip)
+- `tests/plugins/test_arithmetic.py` - ARI plugin with all 6 strategies
+- `tests/plugins/test_linda_fallacy.py` - Linda plugin with fallacy detection
+- `tests/plugins/test_cellular_automata_1d.py` - C14 plugin with state comparison
+- `tests/plugins/test_ascii_shapes.py` - Shapes plugin with type-specific tests
+
+**Test coverage:**
+- Plugin auto-discovery
+- Component availability (generator, parser, evaluator)
+- Valid and invalid input handling
+- Exact, partial, and mismatch evaluation
+- Full roundtrip tests (generate → parse → evaluate)
+
+### Benefits and Impact
+
+**Code Quality:**
+- ✅ Eliminated ~1000+ lines of duplicated code across benchmarks
+- ✅ Clean separation of concerns (generation/parsing/evaluation)
+- ✅ Standardized data structures across all benchmarks
+- ✅ Multi-strategy parsing with fallback mechanisms
+
+**Extensibility:**
+- ✅ Add new benchmarks by creating plugin directory (no core code changes)
+- ✅ Plugin auto-discovery - just create and it works
+- ✅ Self-contained modules - everything in one place
+- ✅ Easy to test and maintain
+
+**Backward Compatibility:**
+- ✅ Legacy benchmarks still work via fallback
+- ✅ 3-stage pipeline unchanged for users
+- ✅ Existing configs and test sets compatible
+- ✅ Gradual migration path
+
+**Performance:**
+- ✅ No performance overhead from plugin system
+- ✅ Improved parsing success rates via multi-strategy approach
+- ✅ Better error handling and recovery
+
+### Documentation Updates
+
+- **CLAUDE.md** - Updated with plugin system patterns and examples
+- **.github/copilot-instructions.md** - Added plugin architecture overview
+- **docs/PLUGIN_SYSTEM_REFACTORING.md** - New comprehensive guide (created)
+
+---
+
 ## [2.0.0] - January 23, 2026
 
 ### Major Architecture Overhaul

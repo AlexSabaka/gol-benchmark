@@ -2,7 +2,31 @@
 Math Expression Generator for gol_eval benchmark
 Generates expressions that evaluate to a given target value with varying complexity levels
 Includes multilingual prompt templates similar to PROMPT_STYLES.py structure
+
+DEPRECATED: This module is deprecated and will be removed in a future version.
+Please use the plugin-based architecture instead:
+
+    from src.plugins import PluginRegistry
+    plugin = PluginRegistry.get('arithmetic')
+    generator = plugin.get_generator()
+    parser = plugin.get_parser()
+    evaluator = plugin.get_evaluator()
+
+Or use the 3-stage pipeline:
+    python src/stages/generate_testset.py configs/testsets/ari_config.yaml
+    python src/stages/run_testset.py testset_*.json.gz --model <model>
+    python src/stages/analyze_results.py results_*.json.gz
 """
+
+import warnings
+warnings.warn(
+    "src.benchmarks.ari_eval is deprecated. "
+    "Use the plugin-based architecture (src.plugins.arithmetic) "
+    "or the 3-stage pipeline (src.stages) instead.",
+    DeprecationWarning,
+    stacklevel=2
+)
+
 from dataclasses import dataclass, field
 from datetime import datetime
 from enum import Enum

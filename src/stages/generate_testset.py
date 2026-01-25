@@ -33,6 +33,14 @@ from src.benchmarks.gol_eval import format_grid
 from src.utils.path_manager import get_path_manager, RunMetadata
 from dataclasses import dataclass
 
+# Plugin system integration (optional - falls back to built-in generators if unavailable)
+try:
+    from src.plugins import PluginRegistry
+    PLUGINS_AVAILABLE = True
+except ImportError:
+    PLUGINS_AVAILABLE = False
+    PluginRegistry = None
+
 @dataclass 
 class MinimalTestConfig(BaseTestConfig):
     """Minimal config for test generation"""
@@ -61,6 +69,98 @@ def compute_config_hash(config: Dict) -> str:
     """Compute SHA256 hash of config for versioning."""
     config_str = json.dumps(config, sort_keys=True)
     return hashlib.sha256(config_str.encode()).hexdigest()[:16]  # Short hash for readability
+
+
+def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dict]]:
+    """
+    Generate test cases using the plugin system.
+
+    This is the preferred method for test generation, providing a unified
+    interface across all benchmark types. Falls back to None if plugins
+    are not available or if the task type is not registered.
+
+    Args:
+        config: Task configuration dictionary
+        task_type: Type of task to generate tests for
+
+    Returns:
+        List of test case dictionaries, or None if generation failed
+    """
+    if not PLUGINS_AVAILABLE:
+        return None
+
+    plugin = PluginRegistry.get(task_type)
+    if plugin is None:
+        return None
+
+    try:
+        generator = plugin.get_generator()
+        test_cases = []
+
+        gen_params = config['task']['generation']
+        seed = gen_params.get('seed', 42)
+
+        # Calculate total test count
+        if task_type == 'arithmetic':
+            complexity_levels = gen_params.get('complexity', [2])
+            if isinstance(complexity_levels, int):
+                complexity_levels = [complexity_levels]
+            target_values = gen_params.get('target_values', gen_params.get('target_accuracies', [1]))
+            if isinstance(target_values, int):
+                target_values = [target_values]
+            expressions_per_target = gen_params.get('expressions_per_target', gen_params.get('count', 10))
+            total_count = len(complexity_levels) * len(target_values) * expressions_per_target
+        elif task_type == 'game_of_life':
+            difficulty_levels = gen_params.get('difficulty_levels', ['MEDIUM'])
+            grids_per_difficulty = gen_params.get('grids_per_difficulty', 10)
+            total_count = len(difficulty_levels) * grids_per_difficulty
+        elif task_type == 'linda_fallacy':
+            personas_per_config = gen_params.get('personas_per_config', 5)
+            total_count = personas_per_config * len(config['task']['prompt_configs'])
+        elif task_type == 'cellular_automata_1d':
+            rules = gen_params.get('rules', [110, 30, 90])
+            if isinstance(rules, int):
+                rules = [rules]
+            tests_per_rule = gen_params.get('tests_per_rule', 10)
+            total_count = len(rules) * tests_per_rule
+        elif task_type == 'ascii_shapes':
+            total_count = gen_params.get('count', 50)
+        else:
+            total_count = gen_params.get('count', 100)
+
+        # Generate for each prompt config
+        for prompt_config in config['task']['prompt_configs']:
+            # Prepare generation config
+            generation_config = {
+                **gen_params,
+                'cell_markers': config['execution'].get('cell_markers', ['1', '0']),
+            }
+
+            # Prepare prompt config
+            prompt_conf = {
+                'user_style': prompt_config['user_style'],
+                'system_style': prompt_config['system_style'],
+                'name': prompt_config.get('name', f"{prompt_config['user_style']}_{prompt_config['system_style']}"),
+                'language': prompt_config.get('language', config['execution'].get('prompt_language', 'en')),
+            }
+
+            # Generate batch
+            batch = generator.generate_batch(
+                config=generation_config,
+                prompt_config=prompt_conf,
+                count=total_count // len(config['task']['prompt_configs']) or 1,
+                seed=seed
+            )
+
+            # Convert TestCase objects to dicts
+            for tc in batch:
+                test_cases.append(tc.to_dict() if hasattr(tc, 'to_dict') else tc)
+
+        return test_cases if test_cases else None
+
+    except Exception as e:
+        print(f"Warning: Plugin generation failed for {task_type}: {e}")
+        return None
 
 
 def generate_arithmetic_tests(config: Dict) -> List[Dict]:
@@ -679,22 +779,29 @@ def generate_single_task_testset(config: Dict, config_path: str, output_dir: str
     for field in required_fields:
         if field not in config:
             raise ValueError(f"Missing required field: {field}")
-    
+
     # Generate test cases based on task type
     task_type = config['task']['type']
     print(f"Generating test cases for task type: {task_type}")
-    
-    if task_type == "arithmetic":
-        test_cases = generate_arithmetic_tests(config)
-    elif task_type == "game_of_life":
-        test_cases = generate_gol_tests(config)
-    elif task_type == "cellular_automata_1d":
-        test_cases = generate_c14_tests(config)
-    elif task_type == "ascii_shapes":
-        test_cases = generate_ascii_shapes_tests(config)
+
+    # Try plugin-based generation first (preferred)
+    test_cases = generate_tests_via_plugin(config, task_type)
+
+    if test_cases is None:
+        # Fallback to built-in generators
+        if task_type == "arithmetic":
+            test_cases = generate_arithmetic_tests(config)
+        elif task_type == "game_of_life":
+            test_cases = generate_gol_tests(config)
+        elif task_type == "cellular_automata_1d":
+            test_cases = generate_c14_tests(config)
+        elif task_type == "ascii_shapes":
+            test_cases = generate_ascii_shapes_tests(config)
+        else:
+            raise ValueError(f"Unknown task type: {task_type}. Available plugins: {PluginRegistry.list_task_types() if PLUGINS_AVAILABLE else 'none'}")
     else:
-        raise ValueError(f"Unknown task type: {task_type}")
-    
+        print(f"  ✓ Used plugin system for {task_type}")
+
     return _finalize_testset(config, config_path, output_dir, test_cases, task_type)
 
 
@@ -724,19 +831,23 @@ def generate_multi_task_testset(config: Dict, config_path: str, output_dir: str)
             'execution': config['execution']
         }
         
-        # Generate tests for this task type
-        if task_type == "arithmetic":
-            task_test_cases = generate_arithmetic_tests(single_task_config)
-        elif task_type == "game_of_life":
-            task_test_cases = generate_gol_tests(single_task_config)
-        elif task_type == "linda_fallacy":
-            task_test_cases = generate_linda_tests(single_task_config)
-        elif task_type == "cellular_automata_1d":
-            task_test_cases = generate_c14_tests(single_task_config)
-        elif task_type == "ascii_shapes":
-            task_test_cases = generate_ascii_shapes_tests(single_task_config)
-        else:
-            raise ValueError(f"Unknown task type: {task_type}")
+        # Generate tests for this task type - try plugins first
+        task_test_cases = generate_tests_via_plugin(single_task_config, task_type)
+
+        if task_test_cases is None:
+            # Fallback to built-in generators
+            if task_type == "arithmetic":
+                task_test_cases = generate_arithmetic_tests(single_task_config)
+            elif task_type == "game_of_life":
+                task_test_cases = generate_gol_tests(single_task_config)
+            elif task_type == "linda_fallacy":
+                task_test_cases = generate_linda_tests(single_task_config)
+            elif task_type == "cellular_automata_1d":
+                task_test_cases = generate_c14_tests(single_task_config)
+            elif task_type == "ascii_shapes":
+                task_test_cases = generate_ascii_shapes_tests(single_task_config)
+            else:
+                raise ValueError(f"Unknown task type: {task_type}. Available plugins: {PluginRegistry.list_task_types() if PLUGINS_AVAILABLE else 'none'}")
         
         # Update test IDs to be unique across all tasks
         for test_case in task_test_cases:
