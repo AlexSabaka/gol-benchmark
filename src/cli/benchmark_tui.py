@@ -347,7 +347,8 @@ class BenchmarkTUI:
             {'id': 'shapes', 'name': 'Shapes (ASCII)', 'description': 'Visual spatial reasoning with ASCII shapes'},
             {'id': 'tracking', 'name': 'Tracking (Grape Test)', 'description': 'Object location tracking through action steps'},
             {'id': 'sally_anne', 'name': 'Sally-Anne (False Belief)', 'description': 'Theory of Mind false belief reasoning test'},
-            {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'}
+            {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'},
+            {'id': 'grid_tasks', 'name': 'Grid Tasks (Table Reasoning)', 'description': 'Reading and reasoning about formatted tables with various data types'}
         ]
         
         # Select tasks to include
@@ -475,6 +476,17 @@ class BenchmarkTUI:
             parameters = {'use_random_pairs': True, 'objects': ['marble', 'ball', 'toy'], 'containers': [('basket', 'box'), ('drawer', 'cupboard')], 'distractor_count': 0, 'leave_activities': ['goes for a walk', 'goes outside', 'leaves the room'], 'include_observer': False}
         elif task_id == 'linda':
             parameters = {'num_options': 8, 'personas_per_config': 5}
+        elif task_id == 'grid_tasks':
+            parameters = {
+                'min_rows': 2,
+                'max_rows': 10,
+                'min_cols': 2,
+                'max_cols': 6,
+                'data_types': ['sales', 'hr', 'grades'],
+                'question_types': ['cell_lookup', 'row_sum', 'column_count', 'max_min'],
+                'table_style': 'unicode',
+                'numeric_tolerance': 0.1
+            }
         
         return TaskConfiguration(
             task_type=task_id,
@@ -948,6 +960,108 @@ class BenchmarkTUI:
             console.print(f"  Leave activities: {len(config['leave_activities'])}")
             console.print(f"  Distractors: {config['distractor_count']}")
             console.print(f"  Observer: {'Yes' if config['include_observer'] else 'No'}")
+        
+        elif task_type == 'grid_tasks':
+            # Grid Tasks (Table Reasoning) specific configuration
+            console.print("\n📊 [bold blue]Configuring Grid Tasks (Table Reasoning)[/bold blue]")
+            console.print("[dim]Tests ability to read and reason about formatted tables with various data types[/dim]\n")
+            
+            # Table size ranges
+            console.print("[cyan]Table Size Ranges:[/cyan]")
+            min_rows = questionary.text(
+                'Minimum rows:',
+                default='2',
+                validate=lambda x: x.isdigit() and int(x) >= 1,
+                style=custom_style
+            ).ask()
+            max_rows = questionary.text(
+                'Maximum rows:',
+                default='10',
+                validate=lambda x: x.isdigit() and int(x) >= int(min_rows),
+                style=custom_style
+            ).ask()
+            config['min_rows'] = int(min_rows)
+            config['max_rows'] = int(max_rows)
+            
+            min_cols = questionary.text(
+                'Minimum columns:',
+                default='2',
+                validate=lambda x: x.isdigit() and int(x) >= 1,
+                style=custom_style
+            ).ask()
+            max_cols = questionary.text(
+                'Maximum columns:',
+                default='6',
+                validate=lambda x: x.isdigit() and int(x) >= int(min_cols),
+                style=custom_style
+            ).ask()
+            config['min_cols'] = int(min_cols)
+            config['max_cols'] = int(max_cols)
+            
+            # Data types
+            console.print("\n[cyan]Data Types:[/cyan] Types of fake data to generate")
+            data_types = questionary.checkbox(
+                'Select data types:',
+                choices=[
+                    questionary.Choice(title='Sales Reports (products, regions, revenues)', value='sales', checked=True),
+                    questionary.Choice(title='HR Data (employees, departments, salaries)', value='hr', checked=True),
+                    questionary.Choice(title='Student Grades (students, subjects, scores)', value='grades', checked=True),
+                    questionary.Choice(title='Inventory (items, quantities, prices)', value='inventory', checked=False),
+                ],
+                style=custom_style,
+                validate=lambda x: len(x) > 0 or "Select at least one data type"
+            ).ask()
+            config['data_types'] = data_types
+            
+            # Question types
+            console.print("\n[cyan]Question Types:[/cyan] Types of questions to ask about the data")
+            question_types = questionary.checkbox(
+                'Select question types:',
+                choices=[
+                    questionary.Choice(title='Cell Lookup (What is X\'s Y?)', value='cell_lookup', checked=True),
+                    questionary.Choice(title='Row Sum (What is the total?)', value='row_sum', checked=True),
+                    questionary.Choice(title='Column Count (How many X?)', value='column_count', checked=True),
+                    questionary.Choice(title='Filter Count (How many X > Y?)', value='filter_count', checked=False),
+                    questionary.Choice(title='Max/Min (Who has highest/lowest?)', value='max_min', checked=True),
+                ],
+                style=custom_style,
+                validate=lambda x: len(x) > 0 or "Select at least one question type"
+            ).ask()
+            config['question_types'] = question_types
+            
+            # Table style
+            console.print("\n[cyan]Table Style:[/cyan] Visual formatting for tables")
+            table_style = questionary.select(
+                'Table rendering style:',
+                choices=[
+                    questionary.Choice(title='Unicode Box Drawing (╔═╗ - default)', value='unicode'),
+                    questionary.Choice(title='Unicode Single Line (┌─┐)', value='unicode_single'),
+                    questionary.Choice(title='ASCII MySQL Style (+--+)', value='mysql'),
+                    questionary.Choice(title='GitHub Markdown (|---|)', value='gfm'),
+                    questionary.Choice(title='Compact (minimal borders)', value='compact'),
+                    questionary.Choice(title='Plain (no borders)', value='plain'),
+                ],
+                default='unicode',
+                style=custom_style
+            ).ask()
+            config['table_style'] = table_style
+            
+            # Numeric tolerance
+            console.print("\n[cyan]Numeric Tolerance:[/cyan] Acceptable difference for numeric answers")
+            numeric_tolerance = questionary.text(
+                'Numeric tolerance (e.g., 0.1 for ±0.1 difference):',
+                default='0.1',
+                validate=lambda x: x.replace('.', '', 1).isdigit() and float(x) >= 0,
+                style=custom_style
+            ).ask()
+            config['numeric_tolerance'] = float(numeric_tolerance)
+            
+            console.print(f"\n[green]✓ Configuration complete![/green]")
+            console.print(f"  Table size: {config['min_rows']}-{config['max_rows']} rows, {config['min_cols']}-{config['max_cols']} cols")
+            console.print(f"  Data types: {', '.join(config['data_types'])}")
+            console.print(f"  Question types: {', '.join(config['question_types'])}")
+            console.print(f"  Table style: {config['table_style']}")
+            console.print(f"  Numeric tolerance: ±{config['numeric_tolerance']}")
         
         return config
     
@@ -1528,7 +1642,8 @@ class BenchmarkTUI:
             'shapes': 'ascii_shapes',
             'tracking': 'object_tracking',
             'sally_anne': 'sally_anne',
-            'linda': 'linda_fallacy'
+            'linda': 'linda_fallacy',
+            'grid_tasks': 'grid_tasks'
         }
         
         # Add each task configuration
@@ -1624,6 +1739,18 @@ class BenchmarkTUI:
                     'personas_per_config': task_config.batch_size,
                     'culture_filter': task_config.parameters.get('culture_filter', []),
                     'ranking_mode': task_config.parameters.get('ranking_mode', 'probability')
+                })
+            elif mapped_task_type == 'grid_tasks':
+                task_yaml['generation'].update({
+                    'min_rows': task_config.parameters.get('min_rows', 2),
+                    'max_rows': task_config.parameters.get('max_rows', 20),
+                    'min_cols': task_config.parameters.get('min_cols', 2),
+                    'max_cols': task_config.parameters.get('max_cols', 10),
+                    'data_types': task_config.parameters.get('data_types', ['sales', 'hr', 'grades']),
+                    'question_types': task_config.parameters.get('question_types', ['cell_lookup', 'row_sum', 'column_count']),
+                    'table_style': task_config.parameters.get('table_style', 'unicode'),
+                    'cases_per_config': task_config.batch_size,
+                    'numeric_tolerance': task_config.parameters.get('numeric_tolerance', 0.1)
                 })
             
             # Add prompt configurations for this task
@@ -1829,76 +1956,6 @@ def _extract_result_path(output: str) -> str:
     if match:
         return match.group(1)
     return None
-
-
-def _generate_benchmark_charts(output_dir: str, task_type: str) -> None:
-    """Generate visualization charts for benchmark results."""
-    import re
-    from pathlib import Path
-    
-    results_dir = Path(output_dir)
-    result_files = sorted(results_dir.glob("results_*.txt"))
-    
-    if not result_files:
-        console.print("[yellow]No result files found for chart generation[/yellow]")
-        return
-    
-    # Parse results and create simple text-based summary
-    all_data = {}
-    
-    for result_file in result_files:
-        content = result_file.read_text()
-        
-        # Extract model names and accuracies from tabulate output
-        # Look for lines like: "model_name    | 85.50% | 82.30% | ..."
-        lines = content.split('\n')
-        for line in lines:
-            if '|' in line and '%' in line:
-                parts = [p.strip() for p in line.split('|')]
-                if len(parts) >= 3 and parts[0] and not parts[0].startswith('─'):
-                    model_name = parts[0]
-                    try:
-                        accuracy_str = parts[1].replace('%', '')
-                        accuracy = float(accuracy_str)
-                        if model_name not in all_data:
-                            all_data[model_name] = []
-                        all_data[model_name].append(accuracy)
-                    except (ValueError, IndexError):
-                        pass
-    
-    # Create summary chart file
-    if all_data:
-        chart_file = results_dir / f"accuracy_summary_{Path.cwd().name}.txt"
-        chart_content = _create_ascii_chart(all_data)
-        chart_file.write_text(chart_content)
-        console.print(f"[green]✓ Chart saved to: {chart_file}[/green]")
-
-
-def _create_ascii_chart(data: dict) -> str:
-    """Create a simple ASCII bar chart from accuracy data."""
-    if not data:
-        return "No data to display"
-    
-    # Calculate averages
-    avg_data = {model: sum(values) / len(values) for model, values in data.items()}
-    
-    # Sort by average accuracy
-    sorted_data = sorted(avg_data.items(), key=lambda x: x[1], reverse=True)
-    
-    max_model_len = max(len(model) for model in avg_data.keys())
-    max_accuracy = max(avg_data.values())
-    
-    chart = "╔════════════════════════════════════════════╗\n"
-    chart += "║       Model Accuracy Summary               ║\n"
-    chart += "╚════════════════════════════════════════════╝\n\n"
-    
-    for model, accuracy in sorted_data:
-        bar_length = int((accuracy / 100) * 40)
-        bar = "█" * bar_length + "░" * (40 - bar_length)
-        chart += f"{model:<{max_model_len}} │{bar}│ {accuracy:6.2f}%\n"
-    
-    return chart
-
 
 def main():
     """Main TUI entry point."""

@@ -234,6 +234,72 @@ class LindaFallacyTestConfig(BaseTestConfig):
                 raise ValueError(f"Invalid culture_filter '{self.culture_filter}'. Must be one of: {valid_cultures}")
 
 @dataclass
+class GridTasksTestConfig(BaseTestConfig):
+    """Configuration for Grid Tasks test runs"""
+    min_rows: int = 2
+    max_rows: int = 20
+    min_cols: int = 2
+    max_cols: int = 10
+    data_types: List[str] = field(default_factory=lambda: ['sales', 'hr', 'grades', 'inventory'])
+    question_types: List[str] = field(default_factory=lambda: ['cell_lookup', 'row_sum', 'column_count', 'max_min'])
+    table_style: str = 'unicode'  # Text table style from text_table module
+    cases_per_config: int = 10
+    numeric_tolerance: float = 0.1  # Tolerance for numeric comparisons
+    prompt_style: Literal['linguistic', 'casual', 'minimal'] = 'casual'
+    
+    def __post_init__(self):
+        """Validate Grid Tasks specific configuration"""
+        super().__post_init__()
+        
+        # Validate prompt_style
+        valid_styles = ['linguistic', 'casual', 'minimal']
+        if self.prompt_style not in valid_styles:
+            raise ValueError(f"Invalid prompt_style '{self.prompt_style}'. Must be one of: {valid_styles}")
+        
+        # Validate row/column ranges
+        if self.min_rows < 1:
+            raise ValueError("min_rows must be at least 1")
+        if self.max_rows < self.min_rows:
+            raise ValueError("max_rows must be >= min_rows")
+        if self.min_cols < 1:
+            raise ValueError("min_cols must be at least 1")
+        if self.max_cols < self.min_cols:
+            raise ValueError("max_cols must be >= min_cols")
+        
+        # Validate data types
+        valid_data_types = ['sales', 'hr', 'grades', 'inventory']
+        if not self.data_types:
+            raise ValueError("Must provide at least one data type")
+        for dt in self.data_types:
+            if dt not in valid_data_types:
+                raise ValueError(f"Invalid data type '{dt}'. Must be one of: {valid_data_types}")
+        
+        # Validate question types
+        valid_question_types = ['cell_lookup', 'row_sum', 'column_count', 'filter_count', 'max_min']
+        if not self.question_types:
+            raise ValueError("Must provide at least one question type")
+        for qt in self.question_types:
+            if qt not in valid_question_types:
+                raise ValueError(f"Invalid question type '{qt}'. Must be one of: {valid_question_types}")
+        
+        # Validate table style
+        valid_table_styles = [
+            'mysql', 'separated', 'compact', 'rounded', 'girder', 'bubbles', 'dots',
+            'gfm', 'reddit', 'rst_grid', 'rst_simple', 'jira', 'mediawiki',
+            'unicode', 'unicode_single', 'html', 'plain'
+        ]
+        if self.table_style not in valid_table_styles:
+            raise ValueError(f"Invalid table_style '{self.table_style}'. Must be one of: {valid_table_styles}")
+        
+        # Validate numeric tolerance
+        if self.numeric_tolerance < 0:
+            raise ValueError("numeric_tolerance must be >= 0")
+        
+        # Validate cases_per_config
+        if self.cases_per_config < 1:
+            raise ValueError("cases_per_config must be at least 1")
+
+@dataclass
 class GameState:
     """Represents a Game of Life grid state with validation"""
     grid: List[List[int]]
