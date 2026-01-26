@@ -54,6 +54,7 @@ class TaskType(str, Enum):
     LINDA_FALLACY = "linda_fallacy"
     CELLULAR_AUTOMATA_1D = "cellular_automata_1d"
     ASCII_SHAPES = "ascii_shapes"
+    OBJECT_TRACKING = "object_tracking"
 
 
 # ==================== DATA CLASSES ====================
@@ -930,6 +931,130 @@ Antwort: {answer_format}""",
 }
 
 
+# ==================== OBJECT TRACKING PROMPTS ====================
+
+OBJECT_TRACKING_PROMPTS = {
+    Language.EN: {
+        PromptStyle.LINGUISTIC: """{steps_text}
+
+Based on the sequence of actions described above, determine the current location of the {object}.
+
+Apply logical reasoning to track the object through each step:
+1. Identify where the object was initially placed
+2. Track any movements or transfers
+3. Pay special attention to any inversion or flipping of containers
+4. Determine the final resting location
+
+{question}
+Provide your answer as a single word indicating the location.""",
+
+        PromptStyle.CASUAL: """{steps_text}
+
+{question} Give single word answer.""",
+
+        PromptStyle.MINIMAL: """{steps_text}
+
+{question}
+Answer:""",
+
+        PromptStyle.ADVERSARIAL: """{steps_text}
+
+{question}
+One word:""",
+    },
+
+    Language.ES: {
+        PromptStyle.LINGUISTIC: """{steps_text}
+
+Basándose en la secuencia de acciones descritas arriba, determine la ubicación actual del {object}.
+
+{question}
+Proporcione su respuesta como una sola palabra indicando la ubicación.""",
+
+        PromptStyle.CASUAL: """{steps_text}
+
+{question} Respuesta de una sola palabra.""",
+
+        PromptStyle.MINIMAL: """{steps_text}
+
+{question}
+Respuesta:""",
+    },
+
+    Language.FR: {
+        PromptStyle.LINGUISTIC: """{steps_text}
+
+En vous basant sur la séquence d'actions décrites ci-dessus, déterminez l'emplacement actuel du {object}.
+
+{question}
+Fournissez votre réponse en un seul mot indiquant l'emplacement.""",
+
+        PromptStyle.CASUAL: """{steps_text}
+
+{question} Réponse en un mot.""",
+
+        PromptStyle.MINIMAL: """{steps_text}
+
+{question}
+Réponse:""",
+    },
+
+    Language.DE: {
+        PromptStyle.LINGUISTIC: """{steps_text}
+
+Bestimmen Sie anhand der oben beschriebenen Aktionsfolge den aktuellen Standort des {object}.
+
+{question}
+Geben Sie Ihre Antwort als ein einziges Wort an, das den Standort angibt.""",
+
+        PromptStyle.CASUAL: """{steps_text}
+
+{question} Ein-Wort-Antwort.""",
+
+        PromptStyle.MINIMAL: """{steps_text}
+
+{question}
+Antwort:""",
+    },
+
+    Language.ZH: {
+        PromptStyle.LINGUISTIC: """{steps_text}
+
+根据上述动作序列，确定{object}的当前位置。
+
+{question}
+请用一个词回答位置。""",
+
+        PromptStyle.CASUAL: """{steps_text}
+
+{question} 一个词回答。""",
+
+        PromptStyle.MINIMAL: """{steps_text}
+
+{question}
+答案：""",
+    },
+
+    Language.UA: {
+        PromptStyle.LINGUISTIC: """{steps_text}
+
+На основі послідовності дій, описаних вище, визначте поточне місцезнаходження {object}.
+
+{question}
+Надайте відповідь одним словом, що вказує місце.""",
+
+        PromptStyle.CASUAL: """{steps_text}
+
+{question} Відповідь одним словом.""",
+
+        PromptStyle.MINIMAL: """{steps_text}
+
+{question}
+Відповідь:""",
+    }
+}
+
+
 # ==================== PROMPT ENGINE ====================
 
 class PromptEngine:
@@ -947,6 +1072,7 @@ class PromptEngine:
             TaskType.LINDA_FALLACY: LINDA_FALLACY_PROMPTS,
             TaskType.CELLULAR_AUTOMATA_1D: CELLULAR_AUTOMATA_1D_PROMPTS,
             TaskType.ASCII_SHAPES: ASCII_SHAPES_PROMPTS,
+            TaskType.OBJECT_TRACKING: OBJECT_TRACKING_PROMPTS,
         }
         self.system_prompts = SYSTEM_PROMPTS
     

@@ -345,6 +345,7 @@ class BenchmarkTUI:
             {'id': 'gol', 'name': 'GoL (Game of Life)', 'description': 'Conway\'s Game of Life simulation'},
             {'id': 'c14', 'name': 'C14 (Cellular Automata)', 'description': 'General cellular automata'},
             {'id': 'shapes', 'name': 'Shapes (ASCII)', 'description': 'Visual spatial reasoning with ASCII shapes'},
+            {'id': 'tracking', 'name': 'Tracking (Grape Test)', 'description': 'Object location tracking through action steps'},
             {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'}
         ]
         
@@ -467,6 +468,8 @@ class BenchmarkTUI:
             parameters = {'rule_numbers': [90], 'width': 16, 'steps': 1, 'boundary_condition': 'wrap'}
         elif task_id == 'shapes':
             parameters = {'width_range': (3, 15), 'height_range': (2, 5), 'symbols': ['*', '#'], 'spacing': [' '], 'coordinate_labels': True, 'filled': [True, False], 'question_type': 'dimensions'}
+        elif task_id == 'tracking':
+            parameters = {'objects': ['grape', 'marble', 'keys'], 'containers': ['cup', 'bowl', 'mug'], 'distractor_count': [0, 1, 2], 'post_inversion_moves': [0, 1, 2]}
         elif task_id == 'linda':
             parameters = {'num_options': 8, 'personas_per_config': 5}
         
@@ -748,6 +751,98 @@ class BenchmarkTUI:
                 style=custom_style
             ).ask()
             config['question_type'] = question_type
+        
+        elif task_type == 'tracking':
+            # Object Tracking (Grape Test) specific configuration
+            console.print("\n🍇 [bold blue]Configuring Object Tracking (Grape Test) Task[/bold blue]")
+            console.print("[dim]Tests LLM's ability to track objects through inversions and movements[/dim]\n")
+            
+            # Objects to track
+            console.print("[cyan]Objects:[/cyan] Items to be tracked through the scenario")
+            objects_input = questionary.text(
+                'Objects to track (comma-separated):',
+                default='grape, marble, keys, coin, ring',
+                style=custom_style
+            ).ask()
+            config['objects'] = [obj.strip() for obj in objects_input.split(',')]
+            
+            # Containers
+            console.print("\n[cyan]Containers:[/cyan] What holds the objects initially")
+            containers_input = questionary.text(
+                'Containers (comma-separated):',
+                default='cup, bowl, mug, bucket, box',
+                style=custom_style
+            ).ask()
+            config['containers'] = [cont.strip() for cont in containers_input.split(',')]
+            
+            # Distractor counts
+            console.print("\n[cyan]Distractors:[/cyan] Irrelevant actions that increase difficulty")
+            distractor_options = questionary.checkbox(
+                'Number of distractor actions:',
+                choices=[
+                    questionary.Choice(title='0 distractors (easiest)', value='0', checked=True),
+                    questionary.Choice(title='1 distractor', value='1', checked=True),
+                    questionary.Choice(title='2 distractors', value='2', checked=True),
+                    questionary.Choice(title='3 distractors', value='3', checked=False),
+                    questionary.Choice(title='4+ distractors (nightmare)', value='4', checked=False),
+                ],
+                style=custom_style,
+                validate=lambda x: len(x) > 0 or "Select at least one distractor count"
+            ).ask()
+            config['distractor_count'] = [int(d) for d in distractor_options]
+            
+            # Post-inversion moves
+            console.print("\n[cyan]Post-Inversion Moves:[/cyan] Container movements after the object falls out")
+            console.print("[dim]This is the critical test: does the model know the object stays behind?[/dim]")
+            post_inv_options = questionary.checkbox(
+                'Number of container moves after inversion:',
+                choices=[
+                    questionary.Choice(title='0 moves (container stays)', value='0', checked=True),
+                    questionary.Choice(title='1 move', value='1', checked=True),
+                    questionary.Choice(title='2 moves', value='2', checked=True),
+                    questionary.Choice(title='3+ moves', value='3', checked=False),
+                ],
+                style=custom_style,
+                validate=lambda x: len(x) > 0 or "Select at least one post-inversion move count"
+            ).ask()
+            config['post_inversion_moves'] = [int(m) for m in post_inv_options]
+            
+            # Optional: Advanced settings
+            advanced = questionary.confirm(
+                '\nConfigure advanced settings? (locations, distractor types)',
+                default=False,
+                style=custom_style
+            ).ask()
+            
+            if advanced:
+                # Initial locations
+                console.print("\n[cyan]Initial Locations:[/cyan] Where objects are initially placed")
+                locations_input = questionary.text(
+                    'Initial locations (comma-separated):',
+                    default='counter, table, shelf, desk, dresser, nightstand',
+                    style=custom_style
+                ).ask()
+                config['location_initial'] = [loc.strip() for loc in locations_input.split(',')]
+                
+                # Distractor types
+                console.print("\n[cyan]Distractor Types:[/cyan] Categories of irrelevant actions")
+                distractor_types = questionary.checkbox(
+                    'Distractor action types:',
+                    choices=[
+                        questionary.Choice(title='Irrelevant (unrelated actions)', value='irrelevant', checked=True),
+                        questionary.Choice(title='Spatial (location-based)', value='spatial', checked=True),
+                        questionary.Choice(title='Temporal (time-based)', value='temporal', checked=True),
+                    ],
+                    style=custom_style
+                ).ask()
+                if distractor_types:
+                    config['distractor_types'] = distractor_types
+            
+            console.print(f"\n[green]✓ Configuration complete![/green]")
+            console.print(f"  Objects: {len(config['objects'])} types")
+            console.print(f"  Containers: {len(config['containers'])} types")
+            console.print(f"  Distractor levels: {config['distractor_count']}")
+            console.print(f"  Post-inversion moves: {config['post_inversion_moves']}")
         
         return config
     
@@ -1326,6 +1421,7 @@ class BenchmarkTUI:
             'gol': 'game_of_life', 
             'c14': 'cellular_automata_1d',
             'shapes': 'ascii_shapes',
+            'tracking': 'object_tracking',
             'linda': 'linda_fallacy'
         }
         
@@ -1389,6 +1485,19 @@ class BenchmarkTUI:
                     'question_type': task_config.parameters.get('question_type', 'dimensions'),
                     'cases_per_config': task_config.batch_size
                 })
+            elif mapped_task_type == 'object_tracking':
+                task_yaml['generation'].update({
+                    'count': task_config.batch_size,
+                    'object': task_config.parameters.get('objects', ['grape', 'marble', 'keys']),
+                    'container': task_config.parameters.get('containers', ['cup', 'bowl', 'mug']),
+                    'distractor_count': task_config.parameters.get('distractor_count', [0, 1, 2]),
+                    'post_inversion_moves': task_config.parameters.get('post_inversion_moves', [0, 1, 2])
+                })
+                # Add optional advanced parameters if provided
+                if 'location_initial' in task_config.parameters:
+                    task_yaml['generation']['location_initial'] = task_config.parameters['location_initial']
+                if 'distractor_types' in task_config.parameters:
+                    task_yaml['generation']['distractor_types'] = task_config.parameters['distractor_types']
             elif mapped_task_type == 'linda_fallacy':
                 task_yaml['generation'].update({
                     'num_options': task_config.parameters.get('num_options', 8),
