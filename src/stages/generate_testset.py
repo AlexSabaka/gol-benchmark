@@ -29,9 +29,14 @@ from src.engine.GameOfLifeEngine import GameOfLifeEngine
 from src.engine.CellularAutomata1DEngine import CellularAutomata1DEngine, CellularAutomataTestGenerator
 from src.core.TestGenerator import TestGenerator
 from src.core.types import DifficultyLevel, BaseTestConfig, GameState
-from src.benchmarks.gol_eval import format_grid
 from src.utils.path_manager import get_path_manager, RunMetadata
 from dataclasses import dataclass
+
+
+# Helper function for Game of Life grid formatting
+def format_grid(g: List[List[int]], live_cell_mark: str = '1', dead_cell_mark: str = '0') -> str:
+    """Format grid into string representation"""
+    return "\n".join([" ".join(map(str, row)) for row in g]).replace('1', live_cell_mark).replace('0', dead_cell_mark)
 
 # Plugin system integration (optional - falls back to built-in generators if unavailable)
 try:
@@ -60,7 +65,13 @@ TESTSET_FORMAT_VERSION = "1.0.0"
 
 
 def load_config(config_path: str) -> Dict[str, Any]:
-    """Load YAML config file."""
+    """Load YAML config file with support for tuple conversion."""
+    # Add custom constructor for Python tuples (convert to lists)
+    def tuple_constructor(loader, node):
+        return list(loader.construct_sequence(node))
+    
+    yaml.SafeLoader.add_constructor('tag:yaml.org,2002:python/tuple', tuple_constructor)
+    
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
 
@@ -883,6 +894,14 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     config_hash = compute_config_hash(config)
     
+    # Handle task_type vs task_types in metadata
+    if 'task_type' in config['metadata']:
+        metadata_task_type = config['metadata']['task_type']
+    elif 'task_types' in config['metadata']:
+        metadata_task_type = config['metadata']['task_types'][0] if isinstance(config['metadata']['task_types'], list) else config['metadata']['task_types']
+    else:
+        metadata_task_type = task_type  # Fallback to derived task type
+    
     testset = {
         "format_version": TESTSET_FORMAT_VERSION,
         "metadata": {
@@ -891,7 +910,7 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
             "schema_version": config['metadata']['schema_version'],
             "description": config['metadata']['description'],
             "created_by": config['metadata']['created_by'],
-            "task_type": config['metadata']['task_type'],
+            "task_type": metadata_task_type,
             "created_at": datetime.now().isoformat(),
             "config_file": os.path.basename(config_path),
             "config_hash": config_hash,

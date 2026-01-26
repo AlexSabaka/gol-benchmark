@@ -146,6 +146,8 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'cellular_automata_1d'
         elif '_object_tracking' in test_id or '_tracking' in test_id:
             task_type = 'object_tracking'
+        elif '_sally_anne' in test_id or '_false_belief' in test_id:
+            task_type = 'sally_anne'
         
         task_stats[task_type]['total'] += 1
         

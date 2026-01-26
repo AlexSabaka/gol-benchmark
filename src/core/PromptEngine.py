@@ -55,6 +55,7 @@ class TaskType(str, Enum):
     CELLULAR_AUTOMATA_1D = "cellular_automata_1d"
     ASCII_SHAPES = "ascii_shapes"
     OBJECT_TRACKING = "object_tracking"
+    SALLY_ANNE = "sally_anne"
 
 
 # ==================== DATA CLASSES ====================
@@ -1055,6 +1056,147 @@ Antwort:""",
 }
 
 
+# ==================== SALLY-ANNE PROMPTS ====================
+
+SALLY_ANNE_PROMPTS = {
+    Language.EN: {
+        PromptStyle.LINGUISTIC: """{narrative}
+
+This is a test of understanding beliefs and knowledge states. Consider what each person knows based on what they have witnessed.
+
+Key reasoning principles:
+1. A person's belief about an object's location is based on what they last saw
+2. If someone is absent when an object is moved, they don't know about the move
+3. The person will look where they believe the object is, not where it actually is
+
+{question}
+Provide your answer as a single word indicating the container.""",
+
+        PromptStyle.CASUAL: """{narrative}
+
+{question}
+Remember: people look where they think things are, not where they actually are!
+
+Answer (one word):""",
+
+        PromptStyle.MINIMAL: """{narrative}
+
+{question}
+Answer:""",
+
+        PromptStyle.ADVERSARIAL: """{narrative}
+
+{question}
+One word:""",
+    },
+
+    Language.ES: {
+        PromptStyle.LINGUISTIC: """{narrative}
+
+Esta es una prueba de comprensión de creencias y estados de conocimiento. Considere lo que cada persona sabe basándose en lo que ha presenciado.
+
+{question}
+Proporcione su respuesta como una sola palabra indicando el contenedor.""",
+
+        PromptStyle.CASUAL: """{narrative}
+
+{question}
+¡Recuerda: la gente busca donde cree que están las cosas, no donde realmente están!
+
+Respuesta (una palabra):""",
+
+        PromptStyle.MINIMAL: """{narrative}
+
+{question}
+Respuesta:""",
+    },
+
+    Language.FR: {
+        PromptStyle.LINGUISTIC: """{narrative}
+
+Ceci est un test de compréhension des croyances et des états de connaissance. Considérez ce que chaque personne sait en fonction de ce qu'elle a vu.
+
+{question}
+Fournissez votre réponse en un seul mot indiquant le conteneur.""",
+
+        PromptStyle.CASUAL: """{narrative}
+
+{question}
+Rappelez-vous : les gens cherchent où ils pensent que les choses sont, pas où elles sont réellement !
+
+Réponse (un mot) :""",
+
+        PromptStyle.MINIMAL: """{narrative}
+
+{question}
+Réponse:""",
+    },
+
+    Language.DE: {
+        PromptStyle.LINGUISTIC: """{narrative}
+
+Dies ist ein Test zum Verständnis von Überzeugungen und Wissenszuständen. Berücksichtigen Sie, was jede Person weiß, basierend auf dem, was sie gesehen hat.
+
+{question}
+Geben Sie Ihre Antwort als ein einziges Wort an, das den Behälter angibt.""",
+
+        PromptStyle.CASUAL: """{narrative}
+
+{question}
+Denken Sie daran: Menschen suchen dort, wo sie denken, dass Dinge sind, nicht wo sie tatsächlich sind!
+
+Antwort (ein Wort):""",
+
+        PromptStyle.MINIMAL: """{narrative}
+
+{question}
+Antwort:""",
+    },
+
+    Language.ZH: {
+        PromptStyle.LINGUISTIC: """{narrative}
+
+这是一个理解信念和知识状态的测试。根据每个人所见到的内容，考虑他们知道什么。
+
+{question}
+请用一个词回答容器名称。""",
+
+        PromptStyle.CASUAL: """{narrative}
+
+{question}
+记住：人们会在他们认为东西在的地方找，而不是东西实际在的地方！
+
+答案（一个词）：""",
+
+        PromptStyle.MINIMAL: """{narrative}
+
+{question}
+答案：""",
+    },
+
+    Language.UA: {
+        PromptStyle.LINGUISTIC: """{narrative}
+
+Це тест на розуміння переконань та станів знання. Розгляньте, що кожна людина знає на основі того, що вона бачила.
+
+{question}
+Надайте відповідь одним словом, що вказує контейнер.""",
+
+        PromptStyle.CASUAL: """{narrative}
+
+{question}
+Пам'ятайте: люди шукають там, де вони думають, що речі знаходяться, а не там, де вони насправді!
+
+Відповідь (одне слово):""",
+
+        PromptStyle.MINIMAL: """{narrative}
+
+{question}
+Відповідь:""",
+    }
+}
+
+
 # ==================== PROMPT ENGINE ====================
 
 class PromptEngine:
@@ -1073,6 +1215,7 @@ class PromptEngine:
             TaskType.CELLULAR_AUTOMATA_1D: CELLULAR_AUTOMATA_1D_PROMPTS,
             TaskType.ASCII_SHAPES: ASCII_SHAPES_PROMPTS,
             TaskType.OBJECT_TRACKING: OBJECT_TRACKING_PROMPTS,
+            TaskType.SALLY_ANNE: SALLY_ANNE_PROMPTS,
         }
         self.system_prompts = SYSTEM_PROMPTS
     

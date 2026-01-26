@@ -346,6 +346,7 @@ class BenchmarkTUI:
             {'id': 'c14', 'name': 'C14 (Cellular Automata)', 'description': 'General cellular automata'},
             {'id': 'shapes', 'name': 'Shapes (ASCII)', 'description': 'Visual spatial reasoning with ASCII shapes'},
             {'id': 'tracking', 'name': 'Tracking (Grape Test)', 'description': 'Object location tracking through action steps'},
+            {'id': 'sally_anne', 'name': 'Sally-Anne (False Belief)', 'description': 'Theory of Mind false belief reasoning test'},
             {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'}
         ]
         
@@ -470,6 +471,8 @@ class BenchmarkTUI:
             parameters = {'width_range': (3, 15), 'height_range': (2, 5), 'symbols': ['*', '#'], 'spacing': [' '], 'coordinate_labels': True, 'filled': [True, False], 'question_type': 'dimensions'}
         elif task_id == 'tracking':
             parameters = {'objects': ['grape', 'marble', 'keys'], 'containers': ['cup', 'bowl', 'mug'], 'distractor_count': [0, 1, 2], 'post_inversion_moves': [0, 1, 2]}
+        elif task_id == 'sally_anne':
+            parameters = {'use_random_pairs': True, 'objects': ['marble', 'ball', 'toy'], 'containers': [('basket', 'box'), ('drawer', 'cupboard')], 'distractor_count': 0, 'leave_activities': ['goes for a walk', 'goes outside', 'leaves the room'], 'include_observer': False}
         elif task_id == 'linda':
             parameters = {'num_options': 8, 'personas_per_config': 5}
         
@@ -843,6 +846,108 @@ class BenchmarkTUI:
             console.print(f"  Containers: {len(config['containers'])} types")
             console.print(f"  Distractor levels: {config['distractor_count']}")
             console.print(f"  Post-inversion moves: {config['post_inversion_moves']}")
+        
+        elif task_type == 'sally_anne':
+            # Sally-Anne False Belief Test specific configuration
+            console.print("\n🧠 [bold blue]Configuring Sally-Anne False Belief Test Task[/bold blue]")
+            console.print("[dim]Tests Theory of Mind: understanding that others can hold false beliefs[/dim]\n")
+            
+            # Subject pairs configuration
+            console.print("[cyan]Subject Pairs:[/cyan] Characters in the scenario")
+            use_random = questionary.confirm(
+                'Use random name pairs? (Names library generates diverse names with proper pronouns)',
+                default=True,
+                style=custom_style
+            ).ask()
+            
+            if use_random:
+                config['use_random_pairs'] = True
+                console.print("[green]✓ Will use random names from 'names' library[/green]")
+            else:
+                config['use_random_pairs'] = False
+                console.print("\n[yellow]Manual subject pairs format: name1,gender1,name2,gender2[/yellow]")
+                console.print("[dim]Gender options: male, female (for proper pronoun usage)[/dim]")
+                pairs_input = questionary.text(
+                    'Subject pairs (semicolon-separated, e.g., "Sally,female,Anne,female;Alice,female,Bob,male"):',
+                    default='Sally,female,Anne,female',
+                    style=custom_style
+                ).ask()
+                
+                # Parse subject pairs
+                pairs = []
+                for pair_str in pairs_input.split(';'):
+                    parts = [p.strip() for p in pair_str.split(',')]
+                    if len(parts) == 4:
+                        pairs.append(tuple(parts))
+                config['subject_pairs'] = pairs
+                console.print(f"[green]✓ Configured {len(pairs)} subject pair(s)[/green]")
+            
+            # Objects to be moved
+            console.print("\n[cyan]Objects:[/cyan] Items to be moved in the scenario")
+            objects_input = questionary.text(
+                'Objects (comma-separated):',
+                default='marble, ball, toy, book, keys',
+                style=custom_style
+            ).ask()
+            config['objects'] = [obj.strip() for obj in objects_input.split(',')]
+            
+            # Container pairs
+            console.print("\n[cyan]Container Pairs:[/cyan] (initial_container, moved_container)")
+            console.print("[dim]Format: basket:box means object starts in basket, moves to box[/dim]")
+            containers_input = questionary.text(
+                'Container pairs (semicolon-separated, e.g., "basket:box;drawer:cupboard"):',
+                default='basket:box;drawer:cupboard;bag:pocket',
+                style=custom_style
+            ).ask()
+            
+            # Parse container pairs
+            container_pairs = []
+            for pair_str in containers_input.split(';'):
+                parts = [p.strip() for p in pair_str.split(':')]
+                if len(parts) == 2:
+                    container_pairs.append(tuple(parts))
+            config['containers'] = container_pairs
+            
+            # Leave activities (what Subject A does when leaving)
+            console.print("\n[cyan]Leave Activities:[/cyan] What Subject A does when leaving the scene")
+            activities_input = questionary.text(
+                'Leave activities (comma-separated):',
+                default='goes for a walk, goes outside, leaves the room, goes to the kitchen',
+                style=custom_style
+            ).ask()
+            config['leave_activities'] = [act.strip() for act in activities_input.split(',')]
+            
+            # Distractor count
+            console.print("\n[cyan]Distractors:[/cyan] Additional scene elements (increases difficulty)")
+            distractor_count = questionary.select(
+                'Number of distractor elements:',
+                choices=[
+                    questionary.Choice(title='0 distractors (clean scenario)', value='0'),
+                    questionary.Choice(title='1 distractor', value='1'),
+                    questionary.Choice(title='2 distractors', value='2'),
+                    questionary.Choice(title='3 distractors', value='3'),
+                ],
+                default='0',
+                style=custom_style
+            ).ask()
+            config['distractor_count'] = int(distractor_count)
+            
+            # Observer variant
+            console.print("\n[cyan]Observer Variant:[/cyan] Include third-person witness?")
+            include_observer = questionary.confirm(
+                'Include an observer who watches both placement and transfer?',
+                default=False,
+                style=custom_style
+            ).ask()
+            config['include_observer'] = include_observer
+            
+            console.print(f"\n[green]✓ Configuration complete![/green]")
+            console.print(f"  Subject pairs: {'Random (names library)' if config.get('use_random_pairs') else f"{len(config.get('subject_pairs', []))} defined"}")
+            console.print(f"  Objects: {len(config['objects'])} types")
+            console.print(f"  Container pairs: {len(config['containers'])}")
+            console.print(f"  Leave activities: {len(config['leave_activities'])}")
+            console.print(f"  Distractors: {config['distractor_count']}")
+            console.print(f"  Observer: {'Yes' if config['include_observer'] else 'No'}")
         
         return config
     
@@ -1422,6 +1527,7 @@ class BenchmarkTUI:
             'c14': 'cellular_automata_1d',
             'shapes': 'ascii_shapes',
             'tracking': 'object_tracking',
+            'sally_anne': 'sally_anne',
             'linda': 'linda_fallacy'
         }
         
@@ -1498,6 +1604,20 @@ class BenchmarkTUI:
                     task_yaml['generation']['location_initial'] = task_config.parameters['location_initial']
                 if 'distractor_types' in task_config.parameters:
                     task_yaml['generation']['distractor_types'] = task_config.parameters['distractor_types']
+            elif mapped_task_type == 'sally_anne':
+                task_yaml['generation'].update({
+                    'cases_per_config': task_config.batch_size,
+                    'objects': task_config.parameters.get('objects', ['marble', 'ball', 'toy']),
+                    'containers': task_config.parameters.get('containers', [('basket', 'box'), ('drawer', 'cupboard')]),
+                    'distractor_count': task_config.parameters.get('distractor_count', 0),
+                    'leave_activities': task_config.parameters.get('leave_activities', ['goes for a walk', 'goes outside']),
+                    'include_observer': task_config.parameters.get('include_observer', False)
+                })
+                # Handle subject pairs (random vs specific)
+                if task_config.parameters.get('use_random_pairs', True):
+                    task_yaml['generation']['subject_pairs'] = []  # Empty list signals random generation
+                elif 'subject_pairs' in task_config.parameters:
+                    task_yaml['generation']['subject_pairs'] = task_config.parameters['subject_pairs']
             elif mapped_task_type == 'linda_fallacy':
                 task_yaml['generation'].update({
                     'num_options': task_config.parameters.get('num_options', 8),
