@@ -1888,6 +1888,7 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
                 
                 # Generate analysis report
                 report_path = f"{config.output_dir}/benchmark_report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.md"
+                html_report_path = report_path.replace('.md', '.html')
                 chart_dir = f"{config.output_dir}/charts"
                 
                 analyze_cmd = [
@@ -1898,13 +1899,20 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
                     "--output-dir", chart_dir
                 ]
                 
+                # Add --comparison flag for multi-model analysis
+                if len(result_files) > 1:
+                    analyze_cmd.append("--comparison")
+                
                 try:
                     result = subprocess.run(analyze_cmd, capture_output=True, text=True)
                     if result.returncode == 0:
-                        console.print(f"[green]✓ Analysis report generated: {report_path}[/green]")
-                        console.print(f"[green]✓ Visualizations saved to: {chart_dir}[/green]")
+                        console.print(f"[green]✓ Markdown report: {report_path}[/green]")
+                        console.print(f"[green]✓ HTML report with charts: {html_report_path}[/green]")
+                        console.print(f"[green]✓ Visualizations: {chart_dir}[/green]")
                     else:
                         console.print(f"[yellow]⚠️  Analysis completed with warnings[/yellow]")
+                        if result.stderr:
+                            console.print(f"[dim]{result.stderr[:500]}[/dim]")
                 except Exception as e:
                     console.print(f"[yellow]⚠️  Could not generate analysis: {e}[/yellow]")
             

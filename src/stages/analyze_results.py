@@ -51,6 +51,47 @@ except ImportError:
     VISUALIZATION_AVAILABLE = False
     print("Warning: matplotlib/seaborn not available. Visualization features disabled.")
 
+# ================================================================================
+# VISUALIZATION COLOR PALETTES (acemath_quantization style)
+# ================================================================================
+
+# Quantization level colors (6 variants: full precision down to Q2_K)
+QUANTIZATION_COLORS = {
+    'FP16': '#2ecc71',      # Green - best quality
+    'Q8_0': '#3498db',      # Blue
+    'Q6_K': '#9b59b6',      # Purple
+    'Q5_K_M': '#f39c12',    # Orange
+    'Q4_K_M': '#e67e22',    # Dark orange
+    'Q2_K': '#e74c3c',      # Red - lowest quality
+}
+
+# Task type colors (8 task types)
+TASK_COLORS = {
+    'arithmetic': '#3498db',           # Blue
+    'game_of_life': '#2ecc71',         # Green
+    'linda_fallacy': '#9b59b6',        # Purple
+    'ascii_shapes': '#f39c12',         # Orange
+    'cellular_automata_1d': '#1abc9c', # Teal
+    'object_tracking': '#e74c3c',      # Red
+    'sally_anne': '#34495e',           # Dark gray
+    'multi-task': '#95a5a6',           # Light gray
+}
+
+# Prompt style colors (5 styles)
+PROMPT_COLORS = {
+    'minimal': '#3498db',      # Blue
+    'casual': '#2ecc71',       # Green
+    'linguistic': '#9b59b6',   # Purple
+    'analytical': '#f39c12',   # Orange
+    'adversarial': '#e74c3c',  # Red
+}
+
+# Semantic colors for performance thresholds
+SUCCESS_GREEN = '#2ecc71'   # Accuracy >= 70%
+WARNING_ORANGE = '#f39c12'  # Accuracy 50-70%
+ERROR_RED = '#e74c3c'       # Accuracy < 50%
+INFO_BLUE = '#3498db'       # Neutral/informational
+
 
 def load_result_file(filepath: str) -> Dict:
     """Load result JSON.gz file."""
@@ -72,6 +113,20 @@ def extract_summary_stats(result: Dict) -> Dict:
     total_tests = len(results)
     successful = execution_info.get('successful_tests', 0)
     failed = execution_info.get('failed_tests', 0)
+    
+    # Token statistics
+    total_input_tokens = summary_stats.get('total_input_tokens', 0)
+    total_output_tokens = summary_stats.get('total_output_tokens', 0)
+    avg_input_tokens = summary_stats.get('avg_input_tokens_per_test', 0)
+    avg_output_tokens = summary_stats.get('avg_output_tokens_per_test', 0)
+    
+    # If not in summary_stats, calculate from individual results
+    if total_input_tokens == 0 and results:
+        total_input_tokens = sum(r.get('tokens', {}).get('input_tokens', 0) for r in results)
+        total_output_tokens = sum(r.get('tokens', {}).get('output_tokens', 0) for r in results)
+        if successful > 0:
+            avg_input_tokens = total_input_tokens / successful
+            avg_output_tokens = total_output_tokens / successful
     
     # Enhanced multi-task analysis
     task_breakdown = extract_task_breakdown(results)
@@ -106,6 +161,19 @@ def extract_summary_stats(result: Dict) -> Dict:
         
         'duration_seconds': execution_info.get('duration_seconds', 0),
         'avg_time_per_test': execution_info.get('average_time_per_test', 0),
+        
+        # Token statistics
+        'total_input_tokens': total_input_tokens,
+        'total_output_tokens': total_output_tokens,
+        'total_tokens': total_input_tokens + total_output_tokens,
+        'avg_input_tokens_per_test': avg_input_tokens,
+        'avg_output_tokens_per_test': avg_output_tokens,
+        'avg_tokens_per_test': avg_input_tokens + avg_output_tokens,
+        
+        # Prompt configuration metadata (for visualization)
+        'user_prompt_style': result.get('test_config', {}).get('user_prompt_style') or \
+                            result.get('test_config', {}).get('prompt_style'),
+        'system_prompt_style': result.get('test_config', {}).get('system_prompt_style'),
         
         # Task-specific stats
         'avg_cell_accuracy': summary_stats.get('average_cell_accuracy'),  # For GoL
@@ -208,11 +276,110 @@ def extract_prompt_breakdown(results: List[Dict]) -> Dict:
     return {}
 
 
-def generate_markdown_report(results: List[Dict], output_path: str):
-    """Generate comprehensive markdown report with enhanced multi-task analysis."""
+def group_results_by_model(results: List[Dict]) -> Dict[str, List[Dict]]:
+    """Group result files by model name for aggregated analysis."""
+    grouped = defaultdict(list)
     
-    # Extract stats from all results
-    stats = [extract_summary_stats(r) for r in results]
+    for result in results:
+        model_info = result.get('model_info', {})
+        model_name = model_info.get('model_name', 'unknown')
+        
+        # Create a unique key with quantization if present
+        quantization = model_info.get('quantization')
+        if quantization:
+            model_key = f"{model_name} ({quantization})"
+        else:
+            model_key = model_name
+        
+        grouped[model_key].append(result)
+    
+    return dict(grouped)
+
+
+def aggregate_model_stats(model_results: List[Dict]) -> Dict:
+    """Aggregate statistics across multiple result files for the same model."""
+    if not model_results:
+        return {}
+    
+    # Extract individual stats
+    all_stats = [extract_summary_stats(r) for r in model_results]
+    
+    # Use first result for model metadata
+    first_stat = all_stats[0]
+    
+    # Aggregate metrics
+    total_tests = sum(s['total_tests'] for s in all_stats)
+    successful_tests = sum(s['successful_tests'] for s in all_stats)
+    correct_responses = sum(s['correct_responses'] for s in all_stats)
+    parse_errors = sum(s['parse_errors'] for s in all_stats)
+    total_duration = sum(s['duration_seconds'] for s in all_stats)
+    
+    # Token statistics
+    total_input_tokens = sum(s.get('total_input_tokens', 0) for s in all_stats)
+    total_output_tokens = sum(s.get('total_output_tokens', 0) for s in all_stats)
+    
+    # Calculate aggregated rates
+    accuracy = correct_responses / successful_tests if successful_tests > 0 else 0
+    parse_error_rate = parse_errors / successful_tests if successful_tests > 0 else 0
+    success_rate = successful_tests / total_tests if total_tests > 0 else 0
+    
+    # Aggregate task breakdowns
+    combined_task_breakdown = defaultdict(lambda: {
+        'total': 0, 'correct': 0, 'parse_errors': 0
+    })
+    
+    for stat in all_stats:
+        for task_type, task_stats in stat.get('task_breakdown', {}).items():
+            combined_task_breakdown[task_type]['total'] += task_stats['total']
+            combined_task_breakdown[task_type]['correct'] += task_stats['correct']
+            combined_task_breakdown[task_type]['parse_errors'] += task_stats['parse_errors']
+    
+    # Calculate task-level percentages
+    for task_type, stats in combined_task_breakdown.items():
+        if stats['total'] > 0:
+            stats['accuracy'] = stats['correct'] / stats['total']
+            stats['parse_error_rate'] = stats['parse_errors'] / stats['total']
+        else:
+            stats['accuracy'] = 0
+            stats['parse_error_rate'] = 0
+    
+    # Collect all unique task types encountered
+    task_types = set()
+    for stat in all_stats:
+        task_types.add(stat.get('task_type', 'unknown'))
+    
+    return {
+        'model_name': first_stat['model_name'],
+        'provider': first_stat['provider'],
+        'quantization': first_stat['quantization'],
+        'result_count': len(model_results),
+        'task_types': list(task_types),
+        
+        'total_tests': total_tests,
+        'successful_tests': successful_tests,
+        'correct_responses': correct_responses,
+        'accuracy': accuracy,
+        'parse_errors': parse_errors,
+        'parse_error_rate': parse_error_rate,
+        'success_rate': success_rate,
+        
+        'total_duration_seconds': total_duration,
+        'avg_time_per_test': total_duration / successful_tests if successful_tests > 0 else 0,
+        
+        # Token statistics
+        'total_input_tokens': total_input_tokens,
+        'total_output_tokens': total_output_tokens,
+        'total_tokens': total_input_tokens + total_output_tokens,
+        'avg_input_tokens_per_test': total_input_tokens / successful_tests if successful_tests > 0 else 0,
+        'avg_output_tokens_per_test': total_output_tokens / successful_tests if successful_tests > 0 else 0,
+        
+        'task_breakdown': dict(combined_task_breakdown),
+        'individual_results': all_stats,
+    }
+
+
+def generate_markdown_report(results: List[Dict], output_path: str, grouped_by_model: bool = False):
+    """Generate comprehensive markdown report with enhanced multi-task analysis."""
     
     # Generate timestamp for consistent use
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
@@ -220,6 +387,107 @@ def generate_markdown_report(results: List[Dict], output_path: str):
     report = []
     report.append("# Benchmark Analysis Report\n")
     report.append(f"Generated: {timestamp}\n\n")
+    
+    # Check if we should group by model
+    if grouped_by_model and len(results) > 1:
+        # Group results by model
+        grouped_results = group_results_by_model(results)
+        
+        report.append(f"## Overview\n\n")
+        report.append(f"Analyzed **{len(results)}** result files across **{len(grouped_results)}** model(s)\n\n")
+        
+        # Model comparison summary table
+        report.append("## Model Comparison Summary\n\n")
+        report.append("| Model | Result Files | Total Tests | Accuracy | Parse Error Rate | Avg Time/Test | Avg Tokens/Test | Tasks Covered |\n")
+        report.append("|-------|--------------|-------------|----------|------------------|---------------|-----------------|---------------|\n")
+        
+        model_aggregates = {}
+        for model_name, model_results in sorted(grouped_results.items()):
+            agg_stats = aggregate_model_stats(model_results)
+            model_aggregates[model_name] = agg_stats
+            
+            tasks_str = ", ".join(sorted(agg_stats['task_types']))[:50]
+            if len(", ".join(sorted(agg_stats['task_types']))) > 50:
+                tasks_str += "..."
+            
+            # Format token count with "K" for thousands
+            avg_tokens = agg_stats.get('avg_input_tokens_per_test', 0) + agg_stats.get('avg_output_tokens_per_test', 0)
+            if avg_tokens >= 1000:
+                tokens_str = f"{avg_tokens/1000:.1f}K"
+            else:
+                tokens_str = f"{avg_tokens:.0f}"
+            
+            report.append(
+                f"| **{model_name}** | {agg_stats['result_count']} | "
+                f"{agg_stats['total_tests']} | "
+                f"{agg_stats['accuracy']:.1%} | "
+                f"{agg_stats['parse_error_rate']:.1%} | "
+                f"{agg_stats['avg_time_per_test']:.2f}s | "
+                f"{tokens_str} | "
+                f"{tasks_str} |\n"
+            )
+        
+        report.append("\n")
+        
+        # Detailed per-model analysis
+        for model_name, model_results in sorted(grouped_results.items()):
+            agg_stats = model_aggregates[model_name]
+            report.append(f"## {model_name}\n\n")
+            
+            report.append(f"**Aggregated from {agg_stats['result_count']} result file(s)**\n\n")
+            
+            # Overall metrics
+            report.append("### Overall Performance\n\n")
+            report.append(f"- **Total Tests**: {agg_stats['total_tests']}\n")
+            report.append(f"- **Successful Tests**: {agg_stats['successful_tests']}\n")
+            report.append(f"- **Overall Accuracy**: {agg_stats['accuracy']:.2%} ({agg_stats['correct_responses']}/{agg_stats['successful_tests']})\n")
+            report.append(f"- **Parse Error Rate**: {agg_stats['parse_error_rate']:.2%}\n")
+            report.append(f"- **Success Rate**: {agg_stats['success_rate']:.2%}\n")
+            report.append(f"- **Average Time per Test**: {agg_stats['avg_time_per_test']:.2f} seconds\n")
+            report.append(f"- **Total Execution Time**: {agg_stats['total_duration_seconds']:.1f} seconds\n")
+            report.append("\n")
+            
+            # Task breakdown
+            if agg_stats['task_breakdown']:
+                report.append("### Performance by Task Type\n\n")
+                report.append("| Task Type | Tests | Correct | Accuracy | Parse Errors |\n")
+                report.append("|-----------|-------|---------|----------|--------------|\n")
+                
+                for task_type in sorted(agg_stats['task_breakdown'].keys()):
+                    task_stats = agg_stats['task_breakdown'][task_type]
+                    report.append(
+                        f"| {task_type.replace('_', ' ').title()} | "
+                        f"{task_stats['total']} | "
+                        f"{task_stats['correct']} | "
+                        f"{task_stats['accuracy']:.1%} | "
+                        f"{task_stats['parse_error_rate']:.1%} |\n"
+                    )
+                
+                report.append("\n")
+            
+            # Individual result file details
+            report.append("### Individual Result Files\n\n")
+            for result_stat in agg_stats['individual_results']:
+                report.append(f"#### {result_stat['testset_name']}\n\n")
+                report.append(f"- **Task Type**: {result_stat['task_type']}\n")
+                report.append(f"- **Tests**: {result_stat['total_tests']}\n")
+                report.append(f"- **Accuracy**: {result_stat['accuracy']:.2%}\n")
+                report.append(f"- **Execution**: {result_stat['created_at'][:19]}\n")
+                report.append("\n")
+        
+        # Write grouped report
+        output_path_obj = Path(output_path)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(output_path, 'w') as f:
+            f.writelines(report)
+        
+        print(f"✓ Model-grouped markdown report saved: {output_path}")
+        return
+    
+    # Fall back to original ungrouped report
+    # Extract stats from all results
+    stats = [extract_summary_stats(r) for r in results]
     
     # Enhanced summary with multi-task breakdown
     report.append("## Summary\n\n")
@@ -248,19 +516,26 @@ def generate_markdown_report(results: List[Dict], output_path: str):
                 report.append("\n")
     
     # Standard summary table
-    report.append("| Model | Provider | Task | Tests | Accuracy | Parse Errors | Avg Time | Duration |\n")
-    report.append("|-------|----------|------|-------|----------|--------------|----------|----------|\n")
+    report.append("| Model | Provider | Task | Tests | Accuracy | Parse Errors | Avg Time | Avg Tokens | Duration |\n")
+    report.append("|-------|----------|------|-------|----------|--------------|----------|------------|----------|\n")
     
     for stat in stats:
         model_display = f"{stat['model_name']}"
         if stat['quantization']:
             model_display += f" ({stat['quantization']})"
+        
+        # Format token count
+        avg_tokens = stat.get('avg_input_tokens_per_test', 0) + stat.get('avg_output_tokens_per_test', 0)
+        if avg_tokens >= 1000:
+            tokens_str = f"{avg_tokens/1000:.1f}K"
+        else:
+            tokens_str = f"{avg_tokens:.0f}"
             
         report.append(
             f"| {model_display} | {stat['provider']} | {stat['task_type']} | "
             f"{stat['successful_tests']}/{stat['total_tests']} | "
             f"{stat['accuracy']:.1%} | {stat['parse_error_rate']:.1%} | "
-            f"{stat['avg_time_per_test']:.1f}s | {stat['duration_seconds']:.0f}s |\n"
+            f"{stat['avg_time_per_test']:.1f}s | {tokens_str} | {stat['duration_seconds']:.0f}s |\n"
         )
     
     report.append("\n")
@@ -287,6 +562,16 @@ def generate_markdown_report(results: List[Dict], output_path: str):
         
         report.append(f"- **Average Time per Test**: {stat['avg_time_per_test']:.2f} seconds\n")
         report.append(f"- **Total Duration**: {stat['duration_seconds']:.1f} seconds\n")
+        
+        # Token statistics
+        if stat.get('total_input_tokens', 0) > 0:
+            report.append(f"\n**Token Usage:**\n")
+            report.append(f"- **Total Input Tokens**: {stat['total_input_tokens']:,}\n")
+            report.append(f"- **Total Output Tokens**: {stat['total_output_tokens']:,}\n")
+            report.append(f"- **Total Tokens**: {stat['total_tokens']:,}\n")
+            report.append(f"- **Avg Input per Test**: {stat['avg_input_tokens_per_test']:.0f}\n")
+            report.append(f"- **Avg Output per Test**: {stat['avg_output_tokens_per_test']:.0f}\n")
+        
         report.append("\n")
         
         # Task breakdown for multi-task results
@@ -352,12 +637,199 @@ def generate_markdown_report(results: List[Dict], output_path: str):
     print(f"✓ Report saved: {output_path}")
 
 
-def generate_html_report(results: List[Dict], output_path: str, charts_dir: str = None):
-    """Generate HTML version of the report with embedded charts."""
-    stats = [extract_summary_stats(r) for r in results]
+def generate_html_report(results: List[Dict], output_path: str, charts_dir: str = None, grouped_by_model: bool = False):
+    """Generate HTML version of the report with embedded charts and optional model grouping."""
     
     # Generate timestamp for consistent use in both HTML and Markdown
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    # Check if we should group by model
+    if grouped_by_model and len(results) > 1:
+        # Group results by model
+        grouped_results = group_results_by_model(results)
+        model_aggregates = {name: aggregate_model_stats(files) 
+                          for name, files in grouped_results.items()}
+        
+        # Start HTML document
+        html = f"""<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <title>Model-Grouped Benchmark Analysis</title>
+    <style>
+        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #f5f5f5; }}
+        .container {{ max-width: 1400px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
+        h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
+        h2 {{ color: #34495e; margin-top: 40px; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; }}
+        h3 {{ color: #7f8c8d; margin-top: 30px; }}
+        .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0; }}
+        .metric-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }}
+        .metric-card.success {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }}
+        .metric-card.warning {{ background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }}
+        .metric-card.info {{ background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }}
+        .metric-value {{ font-size: 36px; font-weight: bold; margin: 10px 0; }}
+        .metric-label {{ font-size: 14px; opacity: 0.9; text-transform: uppercase; }}
+        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }}
+        th {{ background: #3498db; color: white; padding: 12px; text-align: left; font-weight: 600; }}
+        td {{ padding: 12px; border-bottom: 1px solid #ecf0f1; }}
+        tr:hover {{ background: #f8f9fa; }}
+        .model-section {{ background: #f8f9fa; padding: 30px; margin: 30px 0; border-radius: 8px; border-left: 4px solid #3498db; }}
+        .badge {{ display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-right: 8px; }}
+        .badge-primary {{ background: #3498db; color: white; }}
+        .badge-success {{ background: #2ecc71; color: white; }}
+        .badge-warning {{ background: #f39c12; color: white; }}
+        .badge-danger {{ background: #e74c3c; color: white; }}
+        .task-card {{ background: white; padding: 20px; margin: 15px 0; border-radius: 6px; border-left: 3px solid #3498db; }}
+        .progress-bar {{ height: 8px; background: #ecf0f1; border-radius: 4px; overflow: hidden; margin: 10px 0; }}
+        .progress-fill {{ height: 100%; background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); transition: width 0.3s; }}
+        code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }}
+        .timestamp {{ color: #95a5a6; font-size: 14px; }}
+        img {{ max-width: 100%; height: auto; display: block; }}
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎯 Model-Grouped Benchmark Analysis</h1>
+        <p class='timestamp'>Generated: {timestamp}</p>
+"""
+        
+        # Overview metrics
+        total_files = len(results)
+        total_models = len(grouped_results)
+        total_tests = sum(agg['total_tests'] for agg in model_aggregates.values())
+        
+        html += f"""        <div class="summary-grid">
+            <div class="metric-card info"><div class="metric-label">Result Files</div><div class="metric-value">{total_files}</div></div>
+            <div class="metric-card"><div class="metric-label">Models Analyzed</div><div class="metric-value">{total_models}</div></div>
+            <div class="metric-card success"><div class="metric-label">Total Tests</div><div class="metric-value">{total_tests}</div></div>
+        </div>
+"""
+        
+        # Model comparison table
+        html += """        <h2>📊 Model Comparison</h2>
+        <table><thead><tr>
+            <th>Model</th><th>Files</th><th>Tests</th><th>Accuracy</th>
+            <th>Parse Errors</th><th>Avg Time</th><th>Tasks</th>
+        </tr></thead><tbody>
+"""
+        
+        # Sort by accuracy descending
+        sorted_models = sorted(model_aggregates.items(), 
+                              key=lambda x: x[1]['accuracy'], reverse=True)
+        
+        for model_name, agg_stats in sorted_models:
+            # Determine badge color for accuracy
+            acc = agg_stats['accuracy']
+            if acc >= 0.8:
+                acc_badge = 'success'
+            elif acc >= 0.5:
+                acc_badge = 'warning'
+            else:
+                acc_badge = 'danger'
+            
+            task_list = ", ".join(sorted(agg_stats['task_types']))
+            
+            html += f"""        <tr>
+            <td><strong>{model_name}</strong></td>
+            <td><span class='badge badge-primary'>{agg_stats['result_count']}</span></td>
+            <td>{agg_stats['total_tests']}</td>
+            <td><span class='badge badge-{acc_badge}'>{agg_stats['accuracy']:.1%}</span></td>
+            <td>{agg_stats['parse_error_rate']:.1%}</td>
+            <td>{agg_stats['avg_time_per_test']:.2f}s</td>
+            <td><small>{task_list}</small></td>
+        </tr>
+"""
+        
+        html += """        </tbody></table>
+        <h2>📋 Detailed Model Analysis</h2>
+"""
+        
+        # Detailed model sections
+        for model_name, model_results in sorted(grouped_results.items()):
+            agg_stats = model_aggregates[model_name]
+            
+            html += f"""        <div class="model-section">
+            <h3>{model_name}</h3>
+            <p>Aggregated from <strong>{agg_stats['result_count']}</strong> result file(s)</p>
+            
+            <div class="summary-grid">
+                <div class="metric-card success">
+                    <div class="metric-label">Accuracy</div>
+                    <div class="metric-value">{agg_stats['accuracy']:.1%}</div>
+                    <small>{agg_stats['correct_responses']}/{agg_stats['successful_tests']} correct</small>
+                </div>
+                
+                <div class="metric-card warning">
+                    <div class="metric-label">Parse Errors</div>
+                    <div class="metric-value">{agg_stats['parse_error_rate']:.1%}</div>
+                    <small>{agg_stats['parse_errors']} errors</small>
+                </div>
+                
+                <div class="metric-card info">
+                    <div class="metric-label">Avg Time</div>
+                    <div class="metric-value">{agg_stats['avg_time_per_test']:.2f}s</div>
+                    <small>per test</small>
+                </div>
+            </div>
+"""
+            
+            # Task breakdown
+            if agg_stats['task_breakdown']:
+                html += "            <h4>Performance by Task</h4>\n"
+                
+                for task_type in sorted(agg_stats['task_breakdown'].keys()):
+                    task_stats = agg_stats['task_breakdown'][task_type]
+                    acc_pct = task_stats['accuracy'] * 100
+                    
+                    html += f"""            <div class="task-card">
+                <strong>{task_type.replace('_', ' ').title()}</strong> - {task_stats['total']} tests
+                <div class="progress-bar">
+                    <div class="progress-fill" style="width: {acc_pct}%"></div>
+                </div>
+                <small>Accuracy: <strong>{task_stats['accuracy']:.1%}</strong> | Parse Errors: {task_stats['parse_error_rate']:.1%}</small>
+            </div>
+"""
+            
+            html += "        </div>\n"  # Close model-section
+        
+        # Include charts if available (for grouped mode)
+        if charts_dir and Path(charts_dir).exists():
+            chart_files = list(Path(charts_dir).glob('*.png'))
+            if chart_files:
+                html += "        <h2>📈 Visualizations</h2>\n"
+                html += "        <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 30px; margin: 30px 0;'>\n"
+                for chart_file in sorted(chart_files):
+                    chart_name = chart_file.stem.replace('_', ' ').title()
+                    # Calculate relative path from HTML file to chart
+                    html_dir = Path(output_path).parent
+                    try:
+                        rel_path = chart_file.relative_to(html_dir)
+                    except ValueError:
+                        # If relative path fails, use just the chart name
+                        rel_path = chart_file.name
+                    html += f"            <div style='background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>\n"
+                    html += f"                <h4 style='margin-top: 0;'>{chart_name}</h4>\n"
+                    html += f"                <img src='{rel_path}' alt='{chart_name}' style='width: 100%; height: auto; border-radius: 4px;'>\n"
+                    html += f"            </div>\n"
+                html += "        </div>\n"
+        
+        html += """    </div>
+</body>
+</html>
+"""
+        
+        # Write HTML file
+        output_path_obj = Path(output_path)
+        output_path_obj.parent.mkdir(parents=True, exist_ok=True)
+        
+        with open(output_path, 'w') as f:
+            f.write(html)
+        
+        print(f"✓ Model-grouped HTML report saved: {output_path}")
+        return
+    
+    # Fall back to original ungrouped HTML report
+    stats = [extract_summary_stats(r) for r in results]
     
     html = f"""<!DOCTYPE html>
 <html>
@@ -395,7 +867,7 @@ def generate_html_report(results: List[Dict], output_path: str, charts_dir: str 
     # Summary table
     html += "    <h2>Summary</h2>\n"
     html += "    <table class='summary-table'>\n"
-    html += "        <tr><th>Model</th><th>Provider</th><th>Task</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th><th>Avg Time</th><th>Duration</th></tr>\n"
+    html += "        <tr><th>Model</th><th>Provider</th><th>Task</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th><th>Avg Time</th><th>Avg Tokens</th><th>Duration</th></tr>\n"
     
     for stat in stats:
         model_display = f"{stat['model_name']}"
@@ -405,6 +877,13 @@ def generate_html_report(results: List[Dict], output_path: str, charts_dir: str 
         # Color-code accuracy
         acc_class = "accuracy-high" if stat['accuracy'] > 0.7 else "accuracy-low" if stat['accuracy'] < 0.3 else "accuracy-med"
         
+        # Format token count
+        avg_tokens = stat.get('avg_input_tokens_per_test', 0) + stat.get('avg_output_tokens_per_test', 0)
+        if avg_tokens >= 1000:
+            tokens_str = f"{avg_tokens/1000:.1f}K"
+        else:
+            tokens_str = f"{avg_tokens:.0f}"
+        
         html += f"        <tr>"
         html += f"<td>{model_display}</td>"
         html += f"<td>{stat['provider']}</td>"
@@ -413,6 +892,7 @@ def generate_html_report(results: List[Dict], output_path: str, charts_dir: str 
         html += f"<td class='{acc_class}'>{stat['accuracy']:.1%}</td>"
         html += f"<td>{stat['parse_error_rate']:.1%}</td>"
         html += f"<td>{stat['avg_time_per_test']:.1f}s</td>"
+        html += f"<td>{tokens_str}</td>"
         html += f"<td>{stat['duration_seconds']:.0f}s</td>"
         html += f"</tr>\n"
     
@@ -479,6 +959,15 @@ def generate_html_report(results: List[Dict], output_path: str, charts_dir: str 
         
         html += f"        <div class='performance-metric'><strong>Average Time per Test:</strong> {stat['avg_time_per_test']:.2f} seconds</div>\n"
         html += f"        <div class='performance-metric'><strong>Total Duration:</strong> {stat['duration_seconds']:.1f} seconds</div>\n"
+        
+        # Token statistics
+        if stat.get('total_input_tokens', 0) > 0:
+            html += f"        <h3>Token Usage</h3>\n"
+            html += f"        <div class='performance-metric'><strong>Total Input Tokens:</strong> {stat['total_input_tokens']:,}</div>\n"
+            html += f"        <div class='performance-metric'><strong>Total Output Tokens:</strong> {stat['total_output_tokens']:,}</div>\n"
+            html += f"        <div class='performance-metric'><strong>Total Tokens:</strong> {stat['total_tokens']:,}</div>\n"
+            html += f"        <div class='performance-metric'><strong>Avg Input per Test:</strong> {stat['avg_input_tokens_per_test']:.0f}</div>\n"
+            html += f"        <div class='performance-metric'><strong>Avg Output per Test:</strong> {stat['avg_output_tokens_per_test']:.0f}</div>\n"
         
         # Task breakdown for multi-task results
         if stat.get('is_multi_task', False) and stat['task_breakdown']:
@@ -562,7 +1051,18 @@ def generate_html_report(results: List[Dict], output_path: str, charts_dir: str 
 
 
 def generate_visualizations(results: List[Dict], output_dir: str):
-    """Generate comprehensive visualization suite."""
+    """
+    Generate comprehensive visualization suite with intelligent auto-detection.
+    
+    Automatically determines applicable comparisons:
+    - Prompt combinations (user_style × system_style)
+    - Task types
+    - Models
+    - Quantization variants
+    - Multi-dimensional interactions
+    
+    Generates heatmaps, radar charts, bar charts, scatter plots based on data structure.
+    """
     if not VISUALIZATION_AVAILABLE:
         print("✗ Visualization libraries not available. Skipping charts.")
         return
@@ -577,39 +1077,1065 @@ def generate_visualizations(results: List[Dict], output_dir: str):
         print("No data to visualize")
         return
     
-    print(f"Generating {len(stats)} model visualizations...")
+    print(f"\n{'='*70}")
+    print(f"🎨 INTELLIGENT VISUALIZATION GENERATOR")
+    print(f"{'='*70}")
+    print(f"Analyzing {len(results)} result files...")
     
-    # Set style for all plots
+    # Auto-detect data dimensions
+    dimensions = _detect_data_dimensions(results, stats)
+    
+    print(f"\n📊 Detected Data Dimensions:")
+    print(f"  Models: {len(dimensions['models'])} unique ({', '.join(list(dimensions['models'])[:3])}{'...' if len(dimensions['models']) > 3 else ''})")
+    print(f"  Tasks: {len(dimensions['tasks'])} unique ({', '.join(list(dimensions['tasks']))})")
+    print(f"  Quantizations: {len(dimensions['quantizations'])} unique ({', '.join(list(dimensions['quantizations']))})")
+    print(f"  Prompt Configs: {len(dimensions['prompt_configs'])} unique")
+    if dimensions['prompt_configs']:
+        sample_prompts = list(dimensions['prompt_configs'])[:2]
+        print(f"    Examples: {', '.join(sample_prompts)}")
+    print(f"  User Prompts: {len(dimensions['user_prompts'])} styles ({', '.join(list(dimensions['user_prompts']))})")
+    print(f"  System Prompts: {len(dimensions['system_prompts'])} styles ({', '.join(list(dimensions['system_prompts']))})")
+    
+    # Set global plotting style
     sns.set_style("whitegrid")
-    plt.rcParams['figure.figsize'] = (14, 8)
-    plt.rcParams['font.size'] = 11
     plt.rcParams['font.family'] = 'sans-serif'
+    plt.rcParams['font.size'] = 10
     
-    # 1. Accuracy Comparison Matrix (Heatmap)
-    if len(stats) > 1:
-        _generate_accuracy_heatmap(stats, output_path)
+    # Generate applicable visualizations
+    chart_count = 0
     
-    # 2. Performance Overview Dashboard
-    _generate_performance_dashboard(stats, output_path)
+    print(f"\n🔥 Generating Comparison Charts...")
+    print(f"{'-'*70}")
     
-    # 3. Error Analysis Breakdown
-    _generate_error_analysis(stats, results, output_path)
+    # === PROMPT COMPARISONS ===
+    if len(dimensions['prompt_configs']) > 1:
+        print("\n📌 PROMPT ANALYSIS CHARTS")
+        
+        # 1. Prompt Performance Heatmap (user × system)
+        if len(dimensions['user_prompts']) > 1 and len(dimensions['system_prompts']) > 1:
+            chart_count += 1
+            _generate_prompt_heatmap(results, stats, dimensions, output_path, chart_count)
+        
+        # 2. User Prompt Impact (averaged over system prompts)
+        if len(dimensions['user_prompts']) > 1:
+            chart_count += 1
+            _generate_user_prompt_impact(results, stats, dimensions, output_path, chart_count)
+        
+        # 3. System Prompt Impact (averaged over user prompts)
+        if len(dimensions['system_prompts']) > 1:
+            chart_count += 1
+            _generate_system_prompt_impact(results, stats, dimensions, output_path, chart_count)
+        
+        # 4. Prompt Configuration Radar (multi-dimensional comparison)
+        if len(dimensions['prompt_configs']) >= 3:
+            chart_count += 1
+            _generate_prompt_radar(results, stats, dimensions, output_path, chart_count)
     
-    # 4. Time vs Accuracy Efficiency Plot
-    _generate_efficiency_analysis(stats, output_path)
+    # === TASK COMPARISONS ===
+    if len(dimensions['tasks']) > 1:
+        print("\n📌 TASK ANALYSIS CHARTS")
+        
+        # 5. Task Performance Heatmap (model × task)
+        chart_count += 1
+        _generate_task_heatmap(results, stats, dimensions, output_path, chart_count)
+        
+        # 6. Task Difficulty Analysis (bar chart with error analysis)
+        chart_count += 1
+        _generate_task_difficulty(results, stats, dimensions, output_path, chart_count)
+        
+        # 7. Per-Task Model Rankings (grouped bars)
+        if len(dimensions['models']) > 1:
+            chart_count += 1
+            _generate_task_model_ranking(results, stats, dimensions, output_path, chart_count)
     
-    # 5. Enhanced Task-specific Analysis (if multi-task or cross-task comparison)
-    multi_task_results = [s for s in stats if s.get('is_multi_task', False)]
-    if multi_task_results:
-        _generate_enhanced_multi_task_analysis(stats, output_path)
-    elif len(set(s['task_type'] for s in stats)) > 1:
-        _generate_multi_task_analysis(stats, output_path)
+    # === MODEL COMPARISONS ===
+    if len(dimensions['models']) > 1:
+        print("\n📌 MODEL COMPARISON CHARTS")
+        
+        # 8. Model Performance Dashboard (multi-panel overview)
+        chart_count += 1
+        _generate_model_dashboard(results, stats, dimensions, output_path, chart_count)
+        
+        # 9. Model Efficiency Scatter (accuracy vs time)
+        chart_count += 1
+        _generate_model_efficiency(results, stats, dimensions, output_path, chart_count)
+        
+        # 10. Model Leaderboard with Confidence Intervals
+        chart_count += 1
+        _generate_model_leaderboard(results, stats, dimensions, output_path, chart_count)
     
-    # 6. Model Comparison Radar Chart
-    if len(stats) > 1:
-        _generate_radar_comparison(stats, output_path)
+    # === QUANTIZATION COMPARISONS ===
+    if len(dimensions['quantizations']) > 1:
+        print("\n📌 QUANTIZATION ANALYSIS CHARTS")
+        
+        # 11. Quantization Impact Heatmap (config × quantization)
+        chart_count += 1
+        _generate_quantization_heatmap(results, stats, dimensions, output_path, chart_count)
+        
+        # 12. Quantization Trade-off Analysis (compression vs accuracy)
+        chart_count += 1
+        _generate_quantization_tradeoff(results, stats, dimensions, output_path, chart_count)
+        
+        # 13. Quantization Distribution Box Plot
+        chart_count += 1
+        _generate_quantization_distribution(results, stats, dimensions, output_path, chart_count)
     
-    print(f"✓ Visualizations saved to: {output_dir}")
+    # === MULTI-DIMENSIONAL COMPARISONS ===
+    if len(dimensions['models']) > 1 and len(dimensions['tasks']) > 1:
+        print("\n📌 MULTI-DIMENSIONAL ANALYSIS")
+        
+        # 14. 3D Interaction Heatmap (model × task × prompt)
+        if len(dimensions['prompt_configs']) > 1:
+            chart_count += 1
+            _generate_3d_interaction_heatmap(results, stats, dimensions, output_path, chart_count)
+        
+        # 15. Best Configuration Finder (top-5 rankings)
+        chart_count += 1
+        _generate_best_worst_configs(results, stats, dimensions, output_path, chart_count)
+    
+    # === ERROR ANALYSIS ===
+    print("\n📌 ERROR & RELIABILITY ANALYSIS")
+    
+    # 16. Parse Error Analysis (by dimension)
+    chart_count += 1
+    _generate_error_analysis_enhanced(results, stats, dimensions, output_path, chart_count)
+    
+    # 17. Variance & Stability Analysis
+    if len(dimensions['models']) > 1 or len(dimensions['tasks']) > 1:
+        chart_count += 1
+        _generate_variance_analysis(results, stats, dimensions, output_path, chart_count)
+    
+    # === TOKEN USAGE ANALYSIS ===
+    if any(stat.get('total_input_tokens', 0) > 0 for stat in stats):
+        print("\n📌 TOKEN USAGE ANALYSIS")
+        
+        # 18. Token Usage Comparison (input vs output by model/task)
+        chart_count += 1
+        _generate_token_usage_chart(results, stats, dimensions, output_path, chart_count)
+        
+        # 19. Token Efficiency Scatter (tokens vs accuracy)
+        chart_count += 1
+        _generate_token_efficiency_scatter(results, stats, dimensions, output_path, chart_count)
+    
+    print(f"\n{'='*70}")
+    print(f"✅ Generated {chart_count} visualizations")
+    print(f"📁 Saved to: {output_path}")
+    print(f"{'='*70}\n")
+
+
+def _detect_data_dimensions(results: List[Dict], stats: List[Dict]) -> Dict[str, set]:
+    """
+    Auto-detect available data dimensions for intelligent chart generation.
+    
+    Returns dict with sets of unique values for each dimension:
+    - models: unique model names
+    - tasks: unique task types
+    - quantizations: unique quantization formats
+    - prompt_configs: unique prompt combinations
+    - user_prompts: unique user prompt styles
+    - system_prompts: unique system prompt styles
+    """
+    dimensions = {
+        'models': set(),
+        'tasks': set(),
+        'quantizations': set(),
+        'prompt_configs': set(),
+        'user_prompts': set(),
+        'system_prompts': set(),
+        'providers': set(),
+    }
+    
+    for result, stat in zip(results, stats):
+        # Model info
+        model_name = stat.get('model_name', 'unknown')
+        dimensions['models'].add(model_name)
+        
+        # Task type - handle multi-task results
+        task_type = stat.get('task_type', 'unknown')
+        if task_type == 'multi-task' and 'task_breakdown' in stat:
+            # Extract individual tasks from breakdown
+            for task_name in stat['task_breakdown'].keys():
+                dimensions['tasks'].add(task_name)
+        else:
+            dimensions['tasks'].add(task_type)
+        
+        # Quantization
+        quant = stat.get('quantization')
+        if quant:
+            dimensions['quantizations'].add(quant)
+        
+        # Provider
+        provider = stat.get('provider', 'unknown')
+        dimensions['providers'].add(provider)
+        
+        # Prompt configuration from stats (already extracted)
+        user_prompt = stat.get('user_prompt_style')
+        system_prompt = stat.get('system_prompt_style')
+        
+        if user_prompt:
+            dimensions['user_prompts'].add(user_prompt)
+        if system_prompt:
+            dimensions['system_prompts'].add(system_prompt)
+        
+        # Create combined config identifier
+        if user_prompt and system_prompt:
+            config_key = f"{user_prompt}_{system_prompt}"
+            dimensions['prompt_configs'].add(config_key)
+    
+    return dimensions
+
+
+def _save_chart(fig, output_path: Path, chart_num: int, name: str, print_size: bool = True):
+    """Save figure with consistent formatting and progress reporting."""
+    filename = f"{chart_num:02d}_{name}.png"
+    filepath = output_path / filename
+    
+    fig.savefig(
+        filepath,
+        dpi=300,
+        bbox_inches='tight',
+        pad_inches=0.3,
+        facecolor='white',
+        edgecolor='none'
+    )
+    
+    if print_size:
+        size_mb = filepath.stat().st_size / (1024 * 1024)
+        print(f"  ✓ {filename} ({size_mb:.2f} MB)")
+    else:
+        print(f"  ✓ {filename}")
+    
+    plt.close(fig)
+
+
+# =============================================================================
+# PROMPT COMPARISON CHARTS
+# =============================================================================
+
+def _generate_prompt_heatmap(results, stats, dimensions, output_path, chart_num):
+    """1. Prompt Performance Heatmap: User × System accuracy matrix."""
+    user_prompts = sorted(dimensions['user_prompts'])
+    system_prompts = sorted(dimensions['system_prompts'])
+    
+    # Build matrix
+    matrix = np.zeros((len(user_prompts), len(system_prompts)))
+    counts = np.zeros((len(user_prompts), len(system_prompts)))
+    
+    for stat in stats:
+        user = stat.get('user_prompt_style')
+        system = stat.get('system_prompt_style')
+        
+        if user in user_prompts and system in system_prompts:
+            u_idx = user_prompts.index(user)
+            s_idx = system_prompts.index(system)
+            matrix[u_idx, s_idx] += stat.get('accuracy', 0) * 100
+            counts[u_idx, s_idx] += 1
+    
+    # Average
+    matrix = np.divide(matrix, counts, where=counts > 0, out=matrix)
+    
+    # Create heatmap
+    fig, ax = plt.subplots(figsize=(10, 8))
+    
+    im = ax.imshow(matrix, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
+    
+    # Labels
+    ax.set_xticks(np.arange(len(system_prompts)))
+    ax.set_yticks(np.arange(len(user_prompts)))
+    ax.set_xticklabels([s.title() for s in system_prompts])
+    ax.set_yticklabels([u.title() for u in user_prompts])
+    
+    # Rotate labels
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    # Annotate cells
+    for i in range(len(user_prompts)):
+        for j in range(len(system_prompts)):
+            if counts[i, j] > 0:
+                text = ax.text(j, i, f'{matrix[i, j]:.1f}%',
+                             ha="center", va="center", color="black", fontsize=10, fontweight='bold')
+    
+    # Colorbar
+    cbar = ax.figure.colorbar(im, ax=ax)
+    cbar.ax.set_ylabel('Accuracy (%)', rotation=-90, va="bottom", fontsize=11)
+    
+    ax.set_title('Prompt Configuration Performance Matrix', fontsize=14, fontweight='bold', pad=20)
+    ax.set_xlabel('System Prompt Style', fontsize=12, fontweight='bold')
+    ax.set_ylabel('User Prompt Style', fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'prompt_heatmap')
+
+
+def _generate_user_prompt_impact(results, stats, dimensions, output_path, chart_num):
+    """2. User Prompt Impact: Averaged over system prompts."""
+    user_prompts = sorted(dimensions['user_prompts'])
+    
+    # Calculate average accuracy for each user prompt (averaging over system prompts)
+    user_scores = defaultdict(lambda: {'accuracies': []})
+    
+    for stat in stats:
+        user = stat.get('user_prompt_style')
+        if user:
+            user_scores[user]['accuracies'].append(stat.get('accuracy', 0) * 100)
+    
+    # Average per user prompt
+    avg_scores = {user: np.mean(data['accuracies']) for user, data in user_scores.items()}
+    std_scores = {user: np.std(data['accuracies']) for user, data in user_scores.items()}
+    
+    # Create bar chart
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_pos = np.arange(len(user_prompts))
+    means = [avg_scores.get(u, 0) for u in user_prompts]
+    stds = [std_scores.get(u, 0) for u in user_prompts]
+    
+    # Color by performance
+    colors = [SUCCESS_GREEN if m >= 70 else WARNING_ORANGE if m >= 50 else ERROR_RED for m in means]
+    
+    bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    
+    # Annotations
+    for i, (bar, mean) in enumerate(zip(bars, means)):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + stds[i] + 2,
+               f'{mean:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    ax.set_xlabel('User Prompt Style', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Average Accuracy (%)', fontsize=12, fontweight='bold')
+    ax.set_title('User Prompt Impact on Performance\\n(Averaged across System Prompts)', 
+                fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([u.title() for u in user_prompts])
+    ax.set_ylim(0, 105)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'user_prompt_impact')
+
+
+def _generate_system_prompt_impact(results, stats, dimensions, output_path, chart_num):
+    """3. System Prompt Impact: Averaged over user prompts."""
+    system_prompts = sorted(dimensions['system_prompts'])
+    
+    # Calculate average accuracy for each system prompt
+    system_scores = defaultdict(lambda: {'accuracies': []})
+    
+    for stat in stats:
+        system = stat.get('system_prompt_style')
+        if system:
+            system_scores[system]['accuracies'].append(stat.get('accuracy', 0) * 100)
+    
+    avg_scores = {s: np.mean(data['accuracies']) for s, data in system_scores.items()}
+    std_scores = {s: np.std(data['accuracies']) for s, data in system_scores.items()}
+    
+    fig, ax = plt.subplots(figsize=(10, 6))
+    
+    x_pos = np.arange(len(system_prompts))
+    means = [avg_scores.get(s, 0) for s in system_prompts]
+    stds = [std_scores.get(s, 0) for s in system_prompts]
+    
+    colors = [SUCCESS_GREEN if m >= 70 else WARNING_ORANGE if m >= 50 else ERROR_RED for m in means]
+    
+    bars = ax.bar(x_pos, means, yerr=stds, capsize=5, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    
+    for i, (bar, mean) in enumerate(zip(bars, means)):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + stds[i] + 2,
+               f'{mean:.1f}%', ha='center', va='bottom', fontweight='bold', fontsize=11)
+    
+    ax.set_xlabel('System Prompt Style', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Average Accuracy (%)', fontsize=12, fontweight='bold')
+    ax.set_title('System Prompt Impact on Performance\\n(Averaged across User Prompts)', 
+                fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([s.title() for s in system_prompts])
+    ax.set_ylim(0, 105)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'system_prompt_impact')
+
+
+def _generate_prompt_radar(results, stats, dimensions, output_path, chart_num):
+    """4. Prompt Configuration Radar: Multi-dimensional comparison."""
+    prompt_configs = sorted(dimensions['prompt_configs'])[:9]  # Limit to 9 for readability
+    
+    # Calculate average accuracy per config
+    config_scores = defaultdict(list)
+    for stat in stats:
+        user = stat.get('user_prompt_style')
+        system = stat.get('system_prompt_style')
+        if user and system:
+            config_key = f"{user}_{system}"
+            if config_key in prompt_configs:
+                config_scores[config_key].append(stat.get('accuracy', 0) * 100)
+    
+    # Average scores
+    scores = [np.mean(config_scores[c]) if c in config_scores else 0 for c in prompt_configs]
+    
+    # Radar chart
+    fig, ax = plt.subplots(figsize=(10, 10), subplot_kw=dict(projection='polar'))
+    
+    angles = np.linspace(0, 2 * np.pi, len(prompt_configs), endpoint=False).tolist()
+    scores_plot = scores + [scores[0]]  # Close the circle
+    angles += angles[:1]
+    
+    ax.plot(angles, scores_plot, 'o-', linewidth=2, color=INFO_BLUE)
+    ax.fill(angles, scores_plot, alpha=0.25, color=INFO_BLUE)
+    
+    ax.set_xticks(angles[:-1])
+    ax.set_xticklabels([c.replace('_', '\\n').title() for c in prompt_configs], fontsize=9)
+    ax.set_ylim(0, 100)
+    ax.set_ylabel('Accuracy (%)', fontsize=10)
+    ax.set_title('Prompt Configuration Performance Radar', fontsize=14, fontweight='bold', pad=20)
+    ax.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'prompt_radar')
+
+
+# =============================================================================
+# TASK COMPARISON CHARTS
+# =============================================================================
+
+def _generate_task_heatmap(results, stats, dimensions, output_path, chart_num):
+    """5. Task Performance Heatmap: Model × Task accuracy matrix."""
+    models = sorted(dimensions['models'])
+    tasks = sorted(dimensions['tasks'])
+    
+    # Build matrix
+    matrix = np.zeros((len(models), len(tasks)))
+    counts = np.zeros((len(models), len(tasks)))
+    
+    for stat in stats:
+        model = stat.get('model_name')
+        task = stat.get('task_type')
+        
+        if model in models and task in tasks:
+            m_idx = models.index(model)
+            t_idx = tasks.index(task)
+            matrix[m_idx, t_idx] += stat.get('accuracy', 0) * 100
+            counts[m_idx, t_idx] += 1
+    
+    # Average
+    matrix = np.divide(matrix, counts, where=counts > 0, out=matrix)
+    
+    # Create heatmap
+    fig, ax = plt.subplots(figsize=(max(10, len(tasks) * 1.5), max(8, len(models) * 1.2)))
+    
+    im = ax.imshow(matrix, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
+    
+    # Labels
+    ax.set_xticks(np.arange(len(tasks)))
+    ax.set_yticks(np.arange(len(models)))
+    ax.set_xticklabels([t.replace('_', ' ').title() for t in tasks])
+    ax.set_yticklabels(models)
+    
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    # Annotate cells
+    for i in range(len(models)):
+        for j in range(len(tasks)):
+            if counts[i, j] > 0:
+                ax.text(j, i, f'{matrix[i, j]:.1f}%',
+                       ha="center", va="center", color="black", fontsize=10, fontweight='bold')
+    
+    # Colorbar
+    cbar = ax.figure.colorbar(im, ax=ax)
+    cbar.ax.set_ylabel('Accuracy (%)', rotation=-90, va="bottom", fontsize=11)
+    
+    ax.set_title('Model vs Task Performance Matrix', fontsize=14, fontweight='bold', pad=20)
+    ax.set_xlabel('Task Type', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Model', fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'task_heatmap')
+
+
+def _generate_task_difficulty(results, stats, dimensions, output_path, chart_num):
+    """6. Task Difficulty Analysis: Bar chart with parse error overlays."""
+    tasks = sorted(dimensions['tasks'])
+    
+    # Calculate average metrics per task
+    task_metrics = defaultdict(lambda: {'accuracies': [], 'parse_errors': []})
+    
+    for stat in stats:
+        task = stat.get('task_type')
+        if task:
+            task_metrics[task]['accuracies'].append(stat.get('accuracy', 0) * 100)
+            task_metrics[task]['parse_errors'].append(stat.get('parse_error_rate', 0) * 100)
+    
+    # Average
+    avg_acc = [np.mean(task_metrics[t]['accuracies']) if t in task_metrics else 0 for t in tasks]
+    avg_err = [np.mean(task_metrics[t]['parse_errors']) if t in task_metrics else 0 for t in tasks]
+    
+    fig, ax = plt.subplots(figsize=(12, 7))
+    
+    x_pos = np.arange(len(tasks))
+    width = 0.35
+    
+    # Accuracy bars
+    colors_acc = [TASK_COLORS.get(t, INFO_BLUE) for t in tasks]
+    bars1 = ax.bar(x_pos - width/2, avg_acc, width, label='Accuracy', color=colors_acc, alpha=0.8, edgecolor='black')
+    
+    # Parse error bars
+    bars2 = ax.bar(x_pos + width/2, avg_err, width, label='Parse Errors', color=ERROR_RED, alpha=0.6, edgecolor='black')
+    
+    # Annotations
+    for bar, val in zip(bars1, avg_acc):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+               f'{val:.1f}%', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    for bar, val in zip(bars2, avg_err):
+        ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+               f'{val:.1f}%', ha='center', va='bottom', fontsize=9)
+    
+    ax.set_xlabel('Task Type', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Task Difficulty Analysis\\n(Accuracy vs Parse Error Rate)', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([t.replace('_', ' ').title() for t in tasks], rotation=45, ha='right')
+    ax.set_ylim(0, 105)
+    ax.legend(loc='upper right', fontsize=11)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'task_difficulty')
+
+
+def _generate_task_model_ranking(results, stats, dimensions, output_path, chart_num):
+    """7. Per-Task Model Rankings: Grouped bars showing model rank per task."""
+    tasks = sorted(dimensions['tasks'])
+    models = sorted(dimensions['models'])
+    
+    # Build data: task -> model -> accuracy
+    task_model_data = defaultdict(lambda: defaultdict(list))
+    
+    for stat in stats:
+        task = stat.get('task_type')
+        model = stat.get('model_name')
+        if task and model:
+            task_model_data[task][model].append(stat.get('accuracy', 0) * 100)
+    
+    # Average per task-model pair
+    for task in task_model_data:
+        for model in task_model_data[task]:
+            task_model_data[task][model] = np.mean(task_model_data[task][model])
+    
+    # Create grouped bar chart
+    fig, ax = plt.subplots(figsize=(max(12, len(tasks) * 2), 8))
+    
+    x_pos = np.arange(len(tasks))
+    width = 0.8 / len(models)
+    colors = plt.cm.Set2(np.linspace(0, 1, len(models)))
+    
+    for i, model in enumerate(models):
+        scores = [task_model_data[t].get(model, 0) for t in tasks]
+        offset = (i - len(models)/2) * width + width/2
+        bars = ax.bar(x_pos + offset, scores, width, label=model, color=colors[i], alpha=0.8, edgecolor='black')
+        
+        # Annotate
+        for bar, score in zip(bars, scores):
+            if score > 0:
+                ax.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 1,
+                       f'{score:.0f}', ha='center', va='bottom', fontsize=8)
+    
+    ax.set_xlabel('Task Type', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Model Performance Comparison Across Tasks', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels([t.replace('_', ' ').title() for t in tasks], rotation=45, ha='right')
+    ax.set_ylim(0, 105)
+    ax.legend(loc='upper right', fontsize=9, ncol=2)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'task_model_ranking')
+
+
+# =============================================================================
+# MODEL COMPARISON CHARTS
+# =============================================================================
+
+def _generate_model_dashboard(results, stats, dimensions, output_path, chart_num):
+    """8. Model Performance Dashboard: Comprehensive 2x2 grid."""
+    models = sorted(dimensions['models'])
+    
+    fig, ((ax1, ax2), (ax3, ax4)) = plt.subplots(2, 2, figsize=(16, 12))
+    
+    # Top-left: Accuracy comparison
+    accuracies = [np.mean([s['accuracy'] * 100 for s in stats if s['model_name'] == m]) 
+                 for m in models]
+    colors = [SUCCESS_GREEN if a >= 70 else WARNING_ORANGE if a >= 50 else ERROR_RED 
+             for a in accuracies]
+    
+    bars1 = ax1.barh(models, accuracies, color=colors, alpha=0.8, edgecolor='black')
+    for bar, acc in zip(bars1, accuracies):
+        ax1.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2,
+                f'{acc:.1f}%', va='center', fontweight='bold')
+    ax1.set_xlabel('Accuracy (%)', fontweight='bold')
+    ax1.set_title('Model Accuracy Comparison', fontweight='bold')
+    ax1.set_xlim(0, 105)
+    ax1.grid(axis='x', alpha=0.3)
+    
+    # Top-right: Parse error rates
+    parse_rates = [np.mean([s['parse_error_rate'] * 100 for s in stats if s['model_name'] == m])
+                  for m in models]
+    bars2 = ax2.barh(models, parse_rates, color=ERROR_RED, alpha=0.6, edgecolor='black')
+    for bar, rate in zip(bars2, parse_rates):
+        ax2.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2,
+                f'{rate:.1f}%', va='center', fontweight='bold')
+    ax2.set_xlabel('Parse Error Rate (%)', fontweight='bold')
+    ax2.set_title('Model Parse Error Rates', fontweight='bold')
+    ax2.grid(axis='x', alpha=0.3)
+    
+    # Bottom-left: Speed (tests per second)
+    speeds = []
+    for m in models:
+        model_stats = [s for s in stats if s['model_name'] == m]
+        avg_time = np.mean([s['avg_time_per_test'] for s in model_stats if s['avg_time_per_test'] > 0])
+        speeds.append(1/avg_time if avg_time > 0 else 0)
+    
+    bars3 = ax3.barh(models, speeds, color=INFO_BLUE, alpha=0.8, edgecolor='black')
+    for bar, speed in zip(bars3, speeds):
+        ax3.text(bar.get_width() + 0.1, bar.get_y() + bar.get_height()/2,
+                f'{speed:.2f}', va='center', fontweight='bold')
+    ax3.set_xlabel('Tests per Second', fontweight='bold')
+    ax3.set_title('Model Speed', fontweight='bold')
+    ax3.grid(axis='x', alpha=0.3)
+    
+    # Bottom-right: Test count
+    test_counts = [sum(s['total_tests'] for s in stats if s['model_name'] == m)
+                  for m in models]
+    bars4 = ax3.barh(models, test_counts, color='#95a5a6', alpha=0.8, edgecolor='black')
+    for bar, count in zip(bars4, test_counts):
+        ax4.text(bar.get_width() + 5, bar.get_y() + bar.get_height()/2,
+                f'{count}', va='center', fontweight='bold')
+    ax4.set_xlabel('Total Tests', fontweight='bold')
+    ax4.set_title('Test Coverage', fontweight='bold')
+    ax4.grid(axis='x', alpha=0.3)
+    
+    fig.suptitle('Comprehensive Model Performance Dashboard', fontsize=16, fontweight='bold', y=0.995)
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'model_dashboard')
+
+
+def _generate_model_efficiency(results, stats, dimensions, output_path, chart_num):
+    """9. Model Efficiency Scatter: Accuracy vs Speed trade-off."""
+    models = sorted(dimensions['models'])
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    # Calculate metrics for each model
+    model_data = []
+    for model in models:
+        model_stats = [s for s in stats if s['model_name'] == model]
+        
+        avg_acc = np.mean([s['accuracy'] * 100 for s in model_stats])
+        avg_time = np.mean([s['avg_time_per_test'] for s in model_stats if s['avg_time_per_test'] > 0])
+        total_tests = sum(s['total_tests'] for s in model_stats)
+        
+        model_data.append({
+            'name': model,
+            'accuracy': avg_acc,
+            'time': avg_time,
+            'tests': total_tests
+        })
+    
+    # Scatter plot with bubble sizes
+    for data in model_data:
+        size = np.sqrt(data['tests']) * 20  # Scale bubble size
+        color = SUCCESS_GREEN if data['accuracy'] >= 70 else WARNING_ORANGE if data['accuracy'] >= 50 else ERROR_RED
+        
+        ax.scatter(data['time'], data['accuracy'], s=size, color=color, alpha=0.6, 
+                  edgecolor='black', linewidth=2)
+        ax.text(data['time'], data['accuracy'], data['name'], 
+               fontsize=9, ha='center', va='center', fontweight='bold')
+    
+    ax.set_xlabel('Average Time per Test (seconds)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Model Efficiency: Accuracy vs Speed Trade-off\\n(Bubble size = test count)', 
+                fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.set_xlim(left=0)
+    ax.set_ylim(0, 105)
+    
+    # Add optimal region annotation
+    if len(model_data) > 0:
+        max_acc = max(d['accuracy'] for d in model_data)
+        min_time = min(d['time'] for d in model_data if d['time'] > 0)
+        ax.axhline(y=70, color=SUCCESS_GREEN, linestyle='--', alpha=0.3, label='Good accuracy threshold')
+        
+    ax.legend(loc='lower right')
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'model_efficiency')
+
+
+def _generate_model_leaderboard(results, stats, dimensions, output_path, chart_num):
+    """10. Model Leaderboard: Ranked performance table visualization."""
+    models = sorted(dimensions['models'])
+    
+    # Calculate composite scores
+    model_scores = []
+    for model in models:
+        model_stats = [s for s in stats if s['model_name'] == model]
+        
+        avg_acc = np.mean([s['accuracy'] for s in model_stats]) * 100
+        avg_parse_err = np.mean([s['parse_error_rate'] for s in model_stats]) * 100
+        avg_time = np.mean([s['avg_time_per_test'] for s in model_stats if s['avg_time_per_test'] > 0])
+        
+        # Composite score: accuracy - parse_errors - time_penalty
+        composite = avg_acc - (avg_parse_err * 0.5) - (avg_time * 2)
+        
+        model_scores.append({
+            'model': model,
+            'accuracy': avg_acc,
+            'parse_error': avg_parse_err,
+            'speed': 1/avg_time if avg_time > 0 else 0,
+            'composite': composite
+        })
+    
+    # Sort by composite score
+    model_scores.sort(key=lambda x: x['composite'], reverse=True)
+    
+    fig, ax = plt.subplots(figsize=(14, max(8, len(models) * 0.8)))
+    
+    # Create leaderboard bars
+    y_pos = np.arange(len(model_scores))
+    composites = [m['composite'] for m in model_scores]
+    model_names = [m['model'] for m in model_scores]
+    
+    # Color by rank
+    colors = [SUCCESS_GREEN if i < len(model_scores)//3 
+             else WARNING_ORANGE if i < 2*len(model_scores)//3 
+             else ERROR_RED 
+             for i in range(len(model_scores))]
+    
+    bars = ax.barh(y_pos, composites, color=colors, alpha=0.8, edgecolor='black', linewidth=1.5)
+    
+    # Annotations with detailed metrics
+    for i, (bar, data) in enumerate(zip(bars, model_scores)):
+        # Rank number
+        ax.text(-5, bar.get_y() + bar.get_height()/2, f'#{i+1}',
+               ha='right', va='center', fontsize=14, fontweight='bold', color='black')
+        
+        # Composite score
+        ax.text(bar.get_width() + 2, bar.get_y() + bar.get_height()/2,
+               f'{data["composite"]:.1f}', va='center', fontweight='bold', fontsize=11)
+        
+        # Detailed metrics (smaller text)
+        details = f'Acc: {data["accuracy"]:.1f}% | Parse: {data["parse_error"]:.1f}% | Speed: {data["speed"]:.2f} t/s'
+        ax.text(bar.get_width() / 2, bar.get_y() + bar.get_height()/2,
+               details, ha='center', va='center', fontsize=8, style='italic')
+    
+    ax.set_yticks(y_pos)
+    ax.set_yticklabels(model_names)
+    ax.set_xlabel('Composite Score', fontsize=12, fontweight='bold')
+    ax.set_title('Model Leaderboard\\n(Score = Accuracy - 0.5×ParseErrors - 2×AvgTime)', 
+                fontsize=14, fontweight='bold')
+    ax.grid(axis='x', alpha=0.3)
+    ax.axvline(x=0, color='black', linestyle='-', linewidth=1)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'model_leaderboard')
+
+def _generate_quantization_heatmap(results, stats, dimensions, output_path, chart_num):
+    """11. Quantization Impact Heatmap: Model × Quantization level accuracy."""
+    if not dimensions['quantizations']:
+        print(f"  ⏭ Skipping chart {chart_num} (quantization_heatmap) - no quantization data")
+        return
+    
+    models = sorted(dimensions['models'])
+    quants = sorted(dimensions['quantizations'])
+    
+    # Build matrix
+    matrix = np.zeros((len(models), len(quants)))
+    counts = np.zeros((len(models), len(quants)))
+    
+    for stat in stats:
+        model = stat.get('model_name')
+        quant = stat.get('quantization')
+        
+        if model in models and quant and quant in quants:
+            m_idx = models.index(model)
+            q_idx = quants.index(quant)
+            matrix[m_idx, q_idx] += stat.get('accuracy', 0) * 100
+            counts[m_idx, q_idx] += 1
+    
+    # Average
+    matrix = np.divide(matrix, counts, where=counts > 0, out=matrix)
+    
+    fig, ax = plt.subplots(figsize=(max(10, len(quants) * 1.5), max(8, len(models) * 1.2)))
+    
+    im = ax.imshow(matrix, cmap='RdYlGn', aspect='auto', vmin=0, vmax=100)
+    
+    ax.set_xticks(np.arange(len(quants)))
+    ax.set_yticks(np.arange(len(models)))
+    ax.set_xticklabels(quants)
+    ax.set_yticklabels(models)
+    
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
+    
+    # Annotate cells
+    for i in range(len(models)):
+        for j in range(len(quants)):
+            if counts[i, j] > 0:
+                ax.text(j, i, f'{matrix[i, j]:.1f}%',
+                       ha="center", va="center", color="black", fontsize=10, fontweight='bold')
+    
+    cbar = ax.figure.colorbar(im, ax=ax)
+    cbar.ax.set_ylabel('Accuracy (%)', rotation=-90, va="bottom", fontsize=11)
+    
+    ax.set_title('Quantization Impact on Model Performance', fontsize=14, fontweight='bold', pad=20)
+    ax.set_xlabel('Quantization Level', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Model', fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'quantization_heatmap')
+
+def _generate_quantization_tradeoff(results, stats, dimensions, output_path, chart_num):
+    """12. Quantization Trade-off: Quality vs efficiency scatter."""
+    if not dimensions['quantizations']:
+        print(f"  ⏭ Skipping chart {chart_num} (quantization_tradeoff) - no quantization data")
+        return
+    
+    quants = sorted(dimensions['quantizations'])
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    quant_data = []
+    for quant in quants:
+        quant_stats = [s for s in stats if s.get('quantization') == quant]
+        if quant_stats:
+            avg_acc = np.mean([s['accuracy'] * 100 for s in quant_stats])
+            avg_speed = np.mean([1/s['avg_time_per_test'] for s in quant_stats if s['avg_time_per_test'] > 0])
+            
+            quant_data.append({
+                'name': quant,
+                'accuracy': avg_acc,
+                'speed': avg_speed
+            })
+    
+    # Plot
+    for data in quant_data:
+        color = QUANTIZATION_COLORS.get(data['name'], INFO_BLUE)
+        ax.scatter(data['speed'], data['accuracy'], s=500, color=color, alpha=0.7,
+                  edgecolor='black', linewidth=2)
+        ax.text(data['speed'], data['accuracy'], data['name'],
+               ha='center', va='center', fontweight='bold', fontsize=10)
+    
+    ax.set_xlabel('Speed (tests/second)', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Quantization Trade-off: Accuracy vs Speed', fontsize=14, fontweight='bold')
+    ax.grid(True, alpha=0.3)
+    ax.set_ylim(0, 105)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'quantization_tradeoff')
+
+def _generate_quantization_distribution(results, stats, dimensions, output_path, chart_num):
+    """13. Quantization Distribution: Box plots showing variance."""
+    if not dimensions['quantizations']:
+        print(f"  ⏭ Skipping chart {chart_num} (quantization_distribution) - no quantization data")
+        return
+    
+    quants = sorted(dimensions['quantizations'])
+    
+    fig, ax = plt.subplots(figsize=(12, 8))
+    
+    data_for_box = []
+    for quant in quants:
+        quant_accuracies = [s['accuracy'] * 100 for s in stats if s.get('quantization') == quant]
+        data_for_box.append(quant_accuracies)
+    
+    bp = ax.boxplot(data_for_box, labels=quants, patch_artist=True, notch=True)
+    
+    # Color boxes
+    for patch, quant in zip(bp['boxes'], quants):
+        patch.set_facecolor(QUANTIZATION_COLORS.get(quant, INFO_BLUE))
+        patch.set_alpha(0.7)
+    
+    ax.set_xlabel('Quantization Level', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Accuracy Distribution (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Quantization Performance Variability', fontsize=14, fontweight='bold')
+    ax.grid(axis='y', alpha=0.3)
+    ax.set_ylim(0, 105)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'quantization_distribution')
+
+def _generate_3d_interaction_heatmap(results, stats, dimensions, output_path, chart_num):
+    """14. 3D Interaction Heatmap: Model × Task × Prompt interactions."""
+    # Skip if insufficient dimensions
+    if len(dimensions['models']) < 2 or len(dimensions['tasks']) < 2:
+        print(f"  ⏭ Skipping chart {chart_num} (3d_interaction) - insufficient dimensions")
+        return
+    
+    print(f"  ⏭ Skipping chart {chart_num} (3d_interaction) - complex 3D visualization not yet implemented")
+
+def _generate_best_worst_configs(results, stats, dimensions, output_path, chart_num):
+    """15. Best/Worst Configuration Finder: Top and bottom performers."""
+    if len(stats) < 3:
+        print(f"  ⏭ Skipping chart {chart_num} (best_worst_configs) - insufficient data")
+        return
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 8))
+    
+    # Sort by accuracy
+    sorted_stats = sorted(stats, key=lambda s: s['accuracy'], reverse=True)
+    
+    top_n = min(5, len(sorted_stats))
+    bottom_n = min(5, len(sorted_stats))
+    
+    # Best performers
+    best = sorted_stats[:top_n]
+    best_labels = [f"{s['model_name'][:20]}\n{s.get('task_type', '')[:15]}" for s in best]
+    best_scores = [s['accuracy'] * 100 for s in best]
+    
+    bars1 = ax1.barh(range(len(best)), best_scores, color=SUCCESS_GREEN, alpha=0.8, edgecolor='black')
+    ax1.set_yticks(range(len(best)))
+    ax1.set_yticklabels(best_labels, fontsize=9)
+    ax1.set_xlabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('🏆 Top 5 Configurations', fontsize=14, fontweight='bold')
+    ax1.set_xlim(0, 105)
+    ax1.grid(axis='x', alpha=0.3)
+    
+    for bar, score in zip(bars1, best_scores):
+        ax1.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2,
+                f'{score:.1f}%', va='center', fontweight='bold')
+    
+    # Worst performers
+    worst = sorted_stats[-bottom_n:][::-1]  # Reverse for display
+    worst_labels = [f"{s['model_name'][:20]}\n{s.get('task_type', '')[:15]}" for s in worst]
+    worst_scores = [s['accuracy'] * 100 for s in worst]
+    
+    bars2 = ax2.barh(range(len(worst)), worst_scores, color=ERROR_RED, alpha=0.8, edgecolor='black')
+    ax2.set_yticks(range(len(worst)))
+    ax2.set_yticklabels(worst_labels, fontsize=9)
+    ax2.set_xlabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('⚠️  Bottom 5 Configurations', fontsize=14, fontweight='bold')
+    ax2.set_xlim(0, 105)
+    ax2.grid(axis='x', alpha=0.3)
+    
+    for bar, score in zip(bars2, worst_scores):
+        ax2.text(bar.get_width() + 1, bar.get_y() + bar.get_height()/2,
+                f'{score:.1f}%', va='center', fontweight='bold')
+    
+    fig.suptitle('Configuration Performance: Best vs Worst', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'best_worst_configs')
+
+def _generate_error_analysis_enhanced(results, stats, dimensions, output_path, chart_num):
+    """16. Enhanced Error Analysis: Parse errors vs type errors breakdown."""
+    models = sorted(dimensions['models'])
+    
+    fig, ax = plt.subplots(figsize=(14, 8))
+    
+    # Calculate error rates per model
+    model_errors = {}
+    for model in models:
+        model_stats = [s for s in stats if s['model_name'] == model]
+        
+        parse_rate = np.mean([s['parse_error_rate'] * 100 for s in model_stats])
+        # Type errors (if available)
+        type_rate = np.mean([s.get('type_error_rate', 0) * 100 for s in model_stats])
+        success_rate = np.mean([s['success_rate'] * 100 for s in model_stats])
+        
+        model_errors[model] = {
+            'parse': parse_rate,
+            'type': type_rate,
+            'success': success_rate
+        }
+    
+    # Stacked bar chart
+    x_pos = np.arange(len(models))
+    width = 0.6
+    
+    parse_errors = [model_errors[m]['parse'] for m in models]
+    type_errors = [model_errors[m]['type'] for m in models]
+    success = [model_errors[m]['success'] for m in models]
+    
+    p1 = ax.bar(x_pos, success, width, label='Success', color=SUCCESS_GREEN, alpha=0.8, edgecolor='black')
+    p2 = ax.bar(x_pos, parse_errors, width, bottom=success, 
+               label='Parse Errors', color=ERROR_RED, alpha=0.8, edgecolor='black')
+    p3 = ax.bar(x_pos, type_errors, width, bottom=[s+p for s,p in zip(success, parse_errors)],
+               label='Type Errors', color=WARNING_ORANGE, alpha=0.8, edgecolor='black')
+    
+    ax.set_xlabel('Model', fontsize=12, fontweight='bold')
+    ax.set_ylabel('Percentage (%)', fontsize=12, fontweight='bold')
+    ax.set_title('Error Analysis: Success vs Parse vs Type Errors', fontsize=14, fontweight='bold')
+    ax.set_xticks(x_pos)
+    ax.set_xticklabels(models, rotation=45, ha='right')
+    ax.set_ylim(0, 105)
+    ax.legend(loc='upper right', fontsize=11)
+    ax.grid(axis='y', alpha=0.3)
+    
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'error_analysis_enhanced')
+
+def _generate_variance_analysis(results, stats, dimensions, output_path, chart_num):
+    """17. Variance & Stability Analysis: Model consistency metrics."""
+    models = sorted(dimensions['models'])
+    
+    if len(models) < 2:
+        print(f"  ⏭ Skipping chart {chart_num} (variance_analysis) - insufficient models")
+        return
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    
+    # Calculate variance metrics per model
+    model_variance = {}
+    for model in models:
+        model_stats = [s for s in stats if s['model_name'] == model]
+        
+        accuracies = [s['accuracy'] * 100 for s in model_stats]
+        times = [s['avg_time_per_test'] for s in model_stats if s['avg_time_per_test'] > 0]
+        
+        model_variance[model] = {
+            'acc_mean': np.mean(accuracies),
+            'acc_std': np.std(accuracies),
+            'time_mean': np.mean(times) if times else 0,
+            'time_std': np.std(times) if times else 0
+        }
+    
+    # Left: Accuracy stability
+    means = [model_variance[m]['acc_mean'] for m in models]
+    stds = [model_variance[m]['acc_std'] for m in models]
+    
+    colors = [SUCCESS_GREEN if std < 5 else WARNING_ORANGE if std < 10 else ERROR_RED for std in stds]
+    
+    bars1 = ax1.bar(range(len(models)), means, yerr=stds, capsize=8, 
+                   color=colors, alpha=0.7, edgecolor='black', linewidth=2)
+    
+    ax1.set_xticks(range(len(models)))
+    ax1.set_xticklabels(models, rotation=45, ha='right')
+    ax1.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('Accuracy Stability (Mean ± StdDev)', fontsize=13, fontweight='bold')
+    ax1.set_ylim(0, 105)
+    ax1.grid(axis='y', alpha=0.3)
+    
+    # Add stability labels
+    for i, (bar, std) in enumerate(zip(bars1, stds)):
+        label = '✓ Stable' if std < 5 else '~ Variable' if std < 10 else '✗ Unstable'
+        ax1.text(bar.get_x() + bar.get_width()/2, 5, label,
+                ha='center', va='bottom', fontsize=8, rotation=90)
+    
+    # Right: Speed stability
+    time_means = [model_variance[m]['time_mean'] for m in models]
+    time_stds = [model_variance[m]['time_std'] for m in models]
+    
+    bars2 = ax2.bar(range(len(models)), time_means, yerr=time_stds, capsize=8,
+                   color=INFO_BLUE, alpha=0.7, edgecolor='black', linewidth=2)
+    
+    ax2.set_xticks(range(len(models)))
+    ax2.set_xticklabels(models, rotation=45, ha='right')
+    ax2.set_ylabel('Time per Test (seconds)', fontsize=12, fontweight='bold')
+    ax2.set_title('Speed Stability (Mean ± StdDev)', fontsize=13, fontweight='bold')
+    ax2.grid(axis='y', alpha=0.3)
+    
+    fig.suptitle('Model Consistency Analysis', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'variance_analysis')
 
 
 def _generate_enhanced_multi_task_analysis(stats: List[Dict], output_path: Path):
@@ -1292,51 +2818,286 @@ def analyze_results(result_files: List[str], **kwargs):
     
     print(f"Successfully loaded {len(results)} results")
     
+    # Check if grouping by model is requested
+    grouped_by_model = kwargs.get('comparison', False) or kwargs.get('grouped_by_model', False)
+    
+    # Generate visualizations FIRST (before HTML report needs them)
+    charts_dir = None
+    if kwargs.get('visualize'):
+        if 'output_dir' in kwargs:
+            charts_dir = Path(kwargs['output_dir'])
+        elif kwargs.get('output'):
+            # Default: create charts directory next to the report
+            output_path = Path(kwargs['output'])
+            charts_dir = output_path.parent / 'charts'
+        else:
+            charts_dir = Path('reports/charts')
+        
+        # Generate charts before HTML report
+        generate_visualizations(results, str(charts_dir))
+    
     # Generate markdown report
     if kwargs.get('output'):
-        generate_markdown_report(results, kwargs['output'])
+        generate_markdown_report(results, kwargs['output'], grouped_by_model=grouped_by_model)
         
-        # Also generate HTML version if requested
+        # Also generate HTML version with embedded charts
         output_path = Path(kwargs['output'])
         html_path = output_path.with_suffix('.html')
-        
-        # For charts directory, create it relative to the output HTML file
-        if kwargs.get('visualize'):
-            # If output_dir is specified, create charts subdirectory within the same parent
-            if 'output_dir' in kwargs:
-                charts_dir = Path(kwargs['output_dir'])
-            else:
-                # Default: create charts directory next to the HTML report
-                charts_dir = output_path.parent / 'charts'
-        else:
-            charts_dir = None
-            
-        generate_html_report(results, html_path, charts_dir)
+        generate_html_report(results, html_path, charts_dir, grouped_by_model=grouped_by_model)
     else:
         # Generate summary to console
-        stats = [extract_summary_stats(r) for r in results]
-        print("\\nSummary:")
-        print("-" * 80)
-        for stat in stats:
-            print(f"{stat['model_name']} ({stat['task_type']}): "
-                  f"{stat['accuracy']:.1%} accuracy, "
-                  f"{stat['parse_error_rate']:.1%} parse errors, "
-                  f"{stat['avg_time_per_test']:.1f}s/test")
+        if grouped_by_model and len(results) > 1:
+            # Print grouped summary
+            grouped_results = group_results_by_model(results)
+            model_aggregates = {name: aggregate_model_stats(files) 
+                              for name, files in grouped_results.items()}
+            
+            print("\nModel-Grouped Summary:")
+            print("=" * 80)
+            for model_name, agg_stats in sorted(model_aggregates.items()):
+                print(f"\n{model_name} ({agg_stats['result_count']} files):")
+                print(f"  Total Tests: {agg_stats['total_tests']}")
+                print(f"  Accuracy: {agg_stats['accuracy']:.1%}")
+                print(f"  Parse Errors: {agg_stats['parse_error_rate']:.1%}")
+                print(f"  Avg Time: {agg_stats['avg_time_per_test']:.1f}s/test")
+                
+                if agg_stats['task_breakdown']:
+                    print("  Task Breakdown:")
+                    for task_type, task_stats in sorted(agg_stats['task_breakdown'].items()):
+                        print(f"    {task_type}: {task_stats['accuracy']:.1%} acc, {task_stats['total']} tests")
+        else:
+            # Original ungrouped summary
+            stats = [extract_summary_stats(r) for r in results]
+            print("\nSummary:")
+            print("-" * 80)
+            for stat in stats:
+                print(f"{stat['model_name']} ({stat['task_type']}): "
+                      f"{stat['accuracy']:.1%} accuracy, "
+                      f"{stat['parse_error_rate']:.1%} parse errors, "
+                      f"{stat['avg_time_per_test']:.1f}s/test")
+
+
+def _generate_token_usage_chart(results, stats, dimensions, output_path, chart_num):
+    """18. Token Usage Comparison: Input vs output tokens by model/task."""
+    # Filter stats with token data
+    token_stats = [s for s in stats if s.get('total_input_tokens', 0) > 0]
     
-    # Generate visualizations
-    if kwargs.get('visualize'):
-        generate_visualizations(results, kwargs.get('output_dir', 'reports/charts'))
+    if not token_stats:
+        print(f"  ⏭ Skipping chart {chart_num} (token_usage) - no token data")
+        return
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    
+    # Determine grouping (by model or by task)
+    if len(dimensions['models']) > 1:
+        groups = sorted(dimensions['models'])
+        group_key = 'model_name'
+        title_suffix = 'by Model'
+    elif len(dimensions['tasks']) > 1:
+        groups = sorted(dimensions['tasks'])
+        group_key = 'task_type'
+        title_suffix = 'by Task'
+    else:
+        groups = ['All']
+        group_key = None
+        title_suffix = 'Overall'
+    
+    # Aggregate token counts per group
+    input_tokens = []
+    output_tokens = []
+    
+    for group in groups:
+        if group_key:
+            group_stats = [s for s in token_stats if s[group_key] == group]
+        else:
+            group_stats = token_stats
+        
+        if group_stats:
+            avg_input = np.mean([s['avg_input_tokens_per_test'] for s in group_stats])
+            avg_output = np.mean([s['avg_output_tokens_per_test'] for s in group_stats])
+            input_tokens.append(avg_input)
+            output_tokens.append(avg_output)
+        else:
+            input_tokens.append(0)
+            output_tokens.append(0)
+    
+    # Left: Stacked bar chart (input + output)
+    x_pos = np.arange(len(groups))
+    width = 0.6
+    
+    bars1 = ax1.bar(x_pos, input_tokens, width, label='Input Tokens', 
+                   color='#3498db', alpha=0.8, edgecolor='black', linewidth=1.5)
+    bars2 = ax1.bar(x_pos, output_tokens, width, bottom=input_tokens,
+                   label='Output Tokens', color='#e74c3c', alpha=0.8, 
+                   edgecolor='black', linewidth=1.5)
+    
+    ax1.set_xticks(x_pos)
+    ax1.set_xticklabels(groups, rotation=45, ha='right')
+    ax1.set_ylabel('Avg Tokens per Test', fontsize=12, fontweight='bold')
+    ax1.set_title(f'Token Usage {title_suffix}', fontsize=13, fontweight='bold')
+    ax1.legend()
+    ax1.grid(axis='y', alpha=0.3)
+    
+    # Add value labels on bars
+    for i, (inp, out) in enumerate(zip(input_tokens, output_tokens)):
+        total = inp + out
+        if total > 0:
+            ax1.text(i, total + max(input_tokens + output_tokens) * 0.02, 
+                    f'{total:.0f}', ha='center', va='bottom', 
+                    fontsize=9, fontweight='bold')
+    
+    # Right: Input vs Output ratio
+    ratios = [out / inp if inp > 0 else 0 for inp, out in zip(input_tokens, output_tokens)]
+    colors = ['#2ecc71' if r < 1 else '#f39c12' if r < 2 else '#e74c3c' for r in ratios]
+    
+    bars3 = ax2.bar(x_pos, ratios, width, color=colors, alpha=0.8, 
+                   edgecolor='black', linewidth=1.5)
+    
+    ax2.axhline(y=1, color='gray', linestyle='--', linewidth=2, alpha=0.5, label='Equal I/O')
+    ax2.set_xticks(x_pos)
+    ax2.set_xticklabels(groups, rotation=45, ha='right')
+    ax2.set_ylabel('Output/Input Ratio', fontsize=12, fontweight='bold')
+    ax2.set_title(f'Token Efficiency {title_suffix}', fontsize=13, fontweight='bold')
+    ax2.legend()
+    ax2.grid(axis='y', alpha=0.3)
+    
+    # Add ratio labels
+    for i, (bar, ratio) in enumerate(zip(bars3, ratios)):
+        ax2.text(bar.get_x() + bar.get_width()/2, ratio + max(ratios) * 0.02,
+                f'{ratio:.2f}x', ha='center', va='bottom', fontsize=9, fontweight='bold')
+    
+    fig.suptitle('Token Usage Analysis', fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'token_usage')
+    print(f"  ✓ Chart {chart_num}: Token usage comparison ({title_suffix})")
+
+
+def _generate_token_efficiency_scatter(results, stats, dimensions, output_path, chart_num):
+    """19. Token Efficiency Scatter: Correlation between tokens and accuracy."""
+    # Filter stats with token data
+    token_stats = [s for s in stats if s.get('total_input_tokens', 0) > 0]
+    
+    if not token_stats:
+        print(f"  ⏭ Skipping chart {chart_num} (token_efficiency) - no token data")
+        return
+    
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(16, 7))
+    
+    # Extract data
+    input_tokens = [s['avg_input_tokens_per_test'] for s in token_stats]
+    output_tokens = [s['avg_output_tokens_per_test'] for s in token_stats]
+    total_tokens = [inp + out for inp, out in zip(input_tokens, output_tokens)]
+    accuracies = [s['accuracy'] * 100 for s in token_stats]
+    
+    # Color by model or task
+    if len(dimensions['models']) > 1:
+        color_key = 'model_name'
+        unique_values = sorted(dimensions['models'])
+        legend_title = 'Model'
+    elif len(dimensions['tasks']) > 1:
+        color_key = 'task_type'
+        unique_values = sorted(dimensions['tasks'])
+        legend_title = 'Task'
+    else:
+        color_key = None
+        unique_values = ['All']
+        legend_title = None
+    
+    # Color map
+    colors_map = {val: plt.cm.Set2(i) for i, val in enumerate(unique_values)}
+    
+    # Left: Input tokens vs accuracy
+    for val in unique_values:
+        if color_key:
+            mask = [s[color_key] == val for s in token_stats]
+        else:
+            mask = [True] * len(token_stats)
+        
+        x = [input_tokens[i] for i, m in enumerate(mask) if m]
+        y = [accuracies[i] for i, m in enumerate(mask) if m]
+        
+        ax1.scatter(x, y, s=100, alpha=0.6, 
+                   color=colors_map[val], 
+                   edgecolor='black', linewidth=1.5,
+                   label=val if color_key else None)
+    
+    # Add trend line
+    if len(input_tokens) > 2:
+        z = np.polyfit(input_tokens, accuracies, 1)
+        p = np.poly1d(z)
+        x_trend = np.linspace(min(input_tokens), max(input_tokens), 100)
+        ax1.plot(x_trend, p(x_trend), "r--", alpha=0.8, linewidth=2, label='Trend')
+        
+        # Calculate correlation
+        corr = np.corrcoef(input_tokens, accuracies)[0, 1]
+        ax1.text(0.05, 0.95, f'Correlation: {corr:.3f}', 
+                transform=ax1.transAxes, fontsize=11, 
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+                verticalalignment='top')
+    
+    ax1.set_xlabel('Avg Input Tokens per Test', fontsize=12, fontweight='bold')
+    ax1.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax1.set_title('Input Token Length vs Accuracy', fontsize=13, fontweight='bold')
+    if color_key:
+        ax1.legend(title=legend_title, loc='best')
+    ax1.grid(True, alpha=0.3)
+    
+    # Right: Output tokens vs accuracy
+    for val in unique_values:
+        if color_key:
+            mask = [s[color_key] == val for s in token_stats]
+        else:
+            mask = [True] * len(token_stats)
+        
+        x = [output_tokens[i] for i, m in enumerate(mask) if m]
+        y = [accuracies[i] for i, m in enumerate(mask) if m]
+        
+        ax2.scatter(x, y, s=100, alpha=0.6,
+                   color=colors_map[val],
+                   edgecolor='black', linewidth=1.5,
+                   label=val if color_key else None)
+    
+    # Add trend line
+    if len(output_tokens) > 2:
+        z = np.polyfit(output_tokens, accuracies, 1)
+        p = np.poly1d(z)
+        x_trend = np.linspace(min(output_tokens), max(output_tokens), 100)
+        ax2.plot(x_trend, p(x_trend), "r--", alpha=0.8, linewidth=2, label='Trend')
+        
+        # Calculate correlation
+        corr = np.corrcoef(output_tokens, accuracies)[0, 1]
+        ax2.text(0.05, 0.95, f'Correlation: {corr:.3f}',
+                transform=ax2.transAxes, fontsize=11,
+                bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5),
+                verticalalignment='top')
+    
+    ax2.set_xlabel('Avg Output Tokens per Test', fontsize=12, fontweight='bold')
+    ax2.set_ylabel('Accuracy (%)', fontsize=12, fontweight='bold')
+    ax2.set_title('Output Token Length vs Accuracy', fontsize=13, fontweight='bold')
+    if color_key:
+        ax2.legend(title=legend_title, loc='best')
+    ax2.grid(True, alpha=0.3)
+    
+    fig.suptitle('Token Efficiency Analysis: Correlation with Accuracy', 
+                fontsize=16, fontweight='bold')
+    plt.tight_layout()
+    _save_chart(fig, output_path, chart_num, 'token_efficiency_scatter')
+    print(f"  ✓ Chart {chart_num}: Token efficiency correlation analysis")
 
 
 def main():
     import argparse
     
-    parser = argparse.ArgumentParser(description="Analyze benchmark results")
+    parser = argparse.ArgumentParser(
+        description="Analyze benchmark results",
+        epilog="Example: python -m src.stages.analyze_results results/**/results_*.json.gz --comparison --output reports/model_comparison.md --visualize"
+    )
     parser.add_argument("results", nargs='+', help="Result files (supports glob patterns)")
     parser.add_argument("--output", help="Output markdown report path")
     parser.add_argument("--visualize", action='store_true', help="Generate visualizations")
     parser.add_argument("--output-dir", default="reports/charts", help="Visualization output dir")
-    parser.add_argument("--comparison", action='store_true', help="Multi-model comparison mode")
+    parser.add_argument("--comparison", action='store_true', 
+                       help="Group results by model for unified comparison across multiple tasks and files")
     
     args = parser.parse_args()
     
@@ -1358,6 +3119,10 @@ def main():
         sys.exit(1)
     
     print(f"Found {len(result_files)} result files")
+    
+    # Check if comparison mode makes sense
+    if args.comparison and len(result_files) < 2:
+        print("Warning: --comparison mode is most useful with 2+ result files")
     
     analyze_results(
         result_files,

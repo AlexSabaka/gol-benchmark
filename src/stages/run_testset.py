@@ -372,6 +372,18 @@ def parse_answer(response: str, task_type: str) -> Any:
         # ASCII Shapes answer parsing
         return parse_ascii_shapes_response(response)
     
+    elif task_type == "grid_tasks":
+        # Grid Tasks answer parsing
+        return parse_grid_tasks_response(response)
+    
+    elif task_type == "object_tracking":
+        # Object Tracking answer parsing (location extraction)
+        return parse_object_tracking_response(response)
+    
+    elif task_type == "sally_anne":
+        # Sally-Anne false belief parsing
+        return parse_sally_anne_response(response)
+    
     return None
 
 
@@ -613,16 +625,22 @@ def parse_ascii_shapes_response(response: str) -> Any:
         return None
     
     response_original = response.strip()
+    
+    # Normalize Unicode spaces and special characters
+    response_original = re.sub(r'[\u00A0\u202F\u2009\u200B]', ' ', response_original)
+    
     response = response_original.lower()
     
     # Strategy 1: Dimensions - "WxH" format (e.g., "8x5", "10 x 7")
     dimension_patterns = [
-        r'(\d+)\s*x\s*(\d+)',  # "8x5" or "8 x 5" (most direct)
+        r'(\d+)\s*[x×✕✖]\s*(\d+)',  # "8x5", "8 × 5" (Unicode multiplication signs)
         r'(\d+)\s*by\s*(\d+)',  # "8 by 5"
         r'width\s*[=:]\s*(\d+).*?height\s*[=:]\s*(\d+)',  # "width = 8, height = 5" or "width: 8 ... height: 2"
         r'(\d+)\s*wide.*?(\d+)\s*(?:tall|high)',  # "8 wide and 5 tall"
         r'(\d+)\s*columns.*?(\d+)\s*rows',  # "8 columns, 5 rows"
         r'width.*?(\d+).*?height.*?(\d+)',  # "width is 8 ... height is 5"
+        # Additional patterns for natural language
+        r'(\d+)\s*(?:characters?|symbols?|[a-z]+s?)\s*(?:across|wide).*?(\d+)\s*(?:lines?|rows?|tall|down|high)',  # "8 characters across, 5 lines"
     ]
     
     for pattern in dimension_patterns:
@@ -679,6 +697,179 @@ def parse_ascii_shapes_response(response: str) -> Any:
             pass
     
     return None
+
+
+def parse_grid_tasks_response(response: str) -> Any:
+    """
+    Parse grid tasks answer using multi-strategy approach.
+    
+    Grid tasks typically ask for names, categories, or values from tabular data.
+    Answers are often in bold markdown format.
+    
+    Returns:
+        Parsed answer (str or number) or None
+    """
+    if not response:
+        return None
+    
+    response_original = response.strip()
+    
+    # Normalize Unicode spaces to regular spaces
+    # \u00A0 = non-breaking space, \u202F = narrow no-break space, \u2009 = thin space
+    response_original = re.sub(r'[\u00A0\u202F\u2009\u200B]', ' ', response_original)
+    
+    response_lower = response_original.lower()
+    
+    # Strategy 1: Extract from bold markdown - FIRST meaningful bold text
+    # Pattern: **answer** - take first non-numeric bold
+    bold_pattern = r'\*\*([^*]+)\*\*'
+    matches = re.findall(bold_pattern, response_original)
+    
+    if matches:
+        # Filter out non-answer patterns (numbers, dollar amounts)
+        non_answer_patterns = [
+            r'^\$[\d,\.]+$',      # Dollar amounts like $8,678.19
+            r'^[\d,]+$',          # Plain numbers like 2,249
+            r'^[\d,]+\.\d+$',     # Decimal numbers
+            r'^Q\d+$',            # Quarter references like Q2
+        ]
+        
+        for match in matches:
+            match_stripped = match.strip()
+            # Skip if it matches a non-answer pattern
+            is_non_answer = any(re.match(p, match_stripped) for p in non_answer_patterns)
+            if not is_non_answer and len(match_stripped) > 1:
+                return match_stripped
+    
+    # Strategy 2: Look for "Answer:" or "The answer is" patterns
+    answer_patterns = [
+        r'(?:answer|result|the\s+answer\s+is)[:\s]+([^\n]+)',
+        r':\s*([A-Z][A-Za-z\s]+?)(?:\s*[\(\[]|$)',  # Capitalized name after colon
+    ]
+    
+    for pattern in answer_patterns:
+        match = re.search(pattern, response_original, re.IGNORECASE)
+        if match:
+            value = match.group(1).strip()
+            # Clean up trailing punctuation
+            value = value.rstrip('.,;!')
+            if len(value) > 1:
+                return value
+    
+    # Strategy 3: If response is very short, take it as is
+    if len(response_original) < 50 and '\n' not in response_original:
+        # Clean up common wrappers
+        cleaned = response_original.strip('"\'*')
+        if len(cleaned) > 1:
+            return cleaned
+    
+    # Strategy 4: Fallback - take first bold if any
+    if matches:
+        return matches[0].strip()
+    
+    return None
+
+
+def parse_object_tracking_response(response: str) -> str:
+    """
+    Parse object tracking response to extract location.
+    
+    Object tracking asks "Where is the object?" and expects a location word.
+    The FINAL location is usually the answer (object moved from A to B).
+    
+    Returns:
+        Location string or None
+    """
+    if not response:
+        return None
+    
+    response_original = response.strip()
+    response_lower = response_original.lower()
+    
+    # Common locations in object tracking tasks
+    locations = [
+        'table', 'desk', 'counter', 'shelf', 'drawer', 'cabinet', 'box',
+        'bag', 'pocket', 'closet', 'refrigerator', 'microwave', 'oven',
+        'sink', 'basket', 'container', 'floor', 'chair', 'bed', 'couch',
+        'sofa', 'windowsill', 'nightstand', 'dresser', 'kitchen', 'bedroom',
+        'living room', 'bathroom', 'garage', 'pantry', 'cupboard', 'fridge'
+    ]
+    
+    # Strategy 1: If response is just a location word
+    if response_lower in locations:
+        return response_lower
+    
+    # Strategy 2: Extract from bold markdown - prefer last bold location (final answer)
+    bold_pattern = r'\*\*([^*]+)\*\*'
+    bold_matches = re.findall(bold_pattern, response_lower)
+    bold_locations = [m.strip() for m in bold_matches if m.strip() in locations]
+    if bold_locations:
+        return bold_locations[-1]  # Return LAST bold location
+    
+    # Strategy 3: Extract from "now in/on the X" pattern (indicates final location)
+    now_patterns = [
+        r'(?:is|are)\s+now\s+(?:in|on|at|inside)\s+(?:the\s+)?(\w+)',
+        r'now\s+(?:in|on|at|inside)\s+(?:the\s+)?(\w+)',
+    ]
+    for pattern in now_patterns:
+        matches = re.findall(pattern, response_lower)
+        for loc in reversed(matches):  # Check from last to first
+            if loc.strip() in locations:
+                return loc.strip()
+    
+    # Strategy 4: Extract ALL locations from "in/on the X" patterns, return LAST
+    location_patterns = [
+        r'(?:in|on|at|inside)\s+(?:the\s+)?(\w+)',
+        r'(?:moved\s+to|placed\s+in|put\s+in|put\s+on)\s+(?:the\s+)?(\w+)',
+    ]
+    
+    found_locations = []
+    for pattern in location_patterns:
+        matches = re.findall(pattern, response_lower)
+        for loc in matches:
+            if loc.strip() in locations:
+                found_locations.append(loc.strip())
+    
+    if found_locations:
+        return found_locations[-1]  # Return LAST location found
+    
+    # Strategy 5: Find all location words in response, return LAST one
+    found_locs = []
+    for loc in locations:
+        idx = response_lower.rfind(loc)  # Find last occurrence
+        if idx != -1:
+            found_locs.append((idx, loc))
+    
+    if found_locs:
+        # Sort by position and return the one that appears latest
+        found_locs.sort(key=lambda x: x[0])
+        return found_locs[-1][1]
+    
+    # Strategy 6: Short response - take as is
+    if len(response_original) < 30:
+        cleaned = response_original.strip('"\'*').lower()
+        return cleaned if cleaned else None
+    
+    return None
+
+
+def parse_sally_anne_response(response: str) -> str:
+    """
+    Parse Sally-Anne false belief response.
+    
+    Sally-Anne tasks ask where someone THINKS an object is (not where it actually is).
+    
+    Returns:
+        Location string or None
+    """
+    if not response:
+        return None
+    
+    response_original = response.strip()
+    response_lower = response_original.lower()
+    
+    # Same location extraction as object tracking
+    return parse_object_tracking_response(response)
 
 
 def parse_linda_response(response: str) -> Dict[str, Any]:
@@ -1374,6 +1565,11 @@ def run_testset(
         response_data = interface.query(test_case['prompts']['user'], query_params)
         test_end = time.time()
         
+        # Calculate token counts (heuristic: chars/4)
+        user_prompt = test_case['prompts']['user']
+        system_prompt = test_case['prompts'].get('system', '')
+        input_tokens = (len(user_prompt) + len(system_prompt)) // 4
+        
         # Process response
         if "error" in response_data:
             result = {
@@ -1382,9 +1578,13 @@ def run_testset(
                 "error": response_data["error"],
                 "duration": response_data["duration"],
                 "input": {
-                    "user_prompt": test_case['prompts']['user'],
-                    "system_prompt": test_case['prompts'].get('system'),
+                    "user_prompt": user_prompt,
+                    "system_prompt": system_prompt,
                     "task_params": test_case['task_params']
+                },
+                "tokens": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": 0
                 }
             }
             failed += 1
@@ -1422,18 +1622,25 @@ def run_testset(
             if evaluation is None:
                 evaluation = evaluate_result(parsed_answer, expected_answer, individual_task_type)
             
+            # Calculate output tokens
+            output_tokens = len(raw_response) // 4
+            
             result = {
                 "test_id": test_id,
                 "status": "success",
                 "input": {
-                    "user_prompt": test_case['prompts']['user'],
-                    "system_prompt": test_case['prompts'].get('system'),
+                    "user_prompt": user_prompt,
+                    "system_prompt": system_prompt,
                     "task_params": test_case['task_params']
                 },
                 "output": {
                     "raw_response": raw_response,
                     "parsed_answer": parsed_answer,
                     "tokens_generated": response_data.get("tokens_generated", 0)
+                },
+                "tokens": {
+                    "input_tokens": input_tokens,
+                    "output_tokens": output_tokens
                 },
                 "evaluation": evaluation,
                 "duration": response_data["duration"]
@@ -1469,12 +1676,20 @@ def run_testset(
                     total_cell_accuracy.append(r["evaluation"]["accuracy"])
             avg_cell_accuracy = sum(total_cell_accuracy) / len(total_cell_accuracy) if total_cell_accuracy else 0.0
         
+        # Calculate token statistics
+        total_input_tokens = sum(r.get('tokens', {}).get('input_tokens', 0) for r in results['results'])
+        total_output_tokens = sum(r.get('tokens', {}).get('output_tokens', 0) for r in results['results'])
+        
         results["summary_statistics"] = {
             "accuracy": accuracy,
             "correct_responses": correct_count,
             "total_responses": successful,
             "parse_error_rate": sum(1 for r in results["results"] 
                                    if r.get("evaluation", {}).get("match_type") == "parse_error") / successful,
+            "total_input_tokens": total_input_tokens,
+            "total_output_tokens": total_output_tokens,
+            "avg_input_tokens_per_test": total_input_tokens / successful if successful > 0 else 0,
+            "avg_output_tokens_per_test": total_output_tokens / successful if successful > 0 else 0,
         }
         
         if task_type == "game_of_life" and 'avg_cell_accuracy' in locals():

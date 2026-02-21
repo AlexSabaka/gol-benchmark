@@ -48,6 +48,10 @@ class GridTasksResponseParser(ResponseParser):
                 error="Empty or whitespace-only response"
             )
         
+        # Normalize Unicode spaces to regular spaces
+        # \u00A0 = non-breaking space, \u202F = narrow no-break space
+        response = re.sub(r'[\u00A0\u202F\u2009\u200B]', ' ', response)
+        
         # Try strategies in order
         strategies = [
             ('boxed_latex', self._try_boxed_latex),
@@ -96,9 +100,28 @@ class GridTasksResponseParser(ResponseParser):
         pattern = r'\*\*([^*]+)\*\*'
         matches = re.findall(pattern, response)
         if matches:
-            # Take the last bold text as answer
-            value = matches[-1].strip()
-            return {'value': self._normalize_value(value), 'confidence': 0.95}
+            # For grid tasks, the answer is usually the FIRST bold text
+            # (e.g., "**Alice Smith** has the highest revenue...")
+            # Filter out common non-answer bold items
+            non_answer_patterns = [
+                r'^\$[\d,]+',        # Dollar amounts like $8,678.19
+                r'^[\d,]+$',         # Plain numbers
+                r'^[\d,]+\.\d+$',    # Decimal numbers
+                r'^Q\d+$',           # Quarter references like Q2
+                r'^Note:?',          # Notes
+                r'^Warning:?',       # Warnings
+            ]
+            
+            for match in matches:
+                match_stripped = match.strip()
+                # Skip if it matches a non-answer pattern
+                is_non_answer = any(re.match(p, match_stripped) for p in non_answer_patterns)
+                if not is_non_answer and len(match_stripped) > 1:
+                    return {'value': self._normalize_value(match_stripped), 'confidence': 0.95}
+            
+            # If all matches were filtered, take the first one anyway
+            value = matches[0].strip()
+            return {'value': self._normalize_value(value), 'confidence': 0.85}
         return None
     
     def _try_answer_pattern(self, response: str) -> Optional[Dict[str, Any]]:

@@ -40,6 +40,9 @@ class AsciiShapesResponseParser(ResponseParser):
                 error='Empty response from model'
             )
 
+        # Normalize Unicode spaces to regular spaces
+        response = re.sub(r'[\u00A0\u202F\u2009\u200B]', ' ', response)
+        
         question_type = task_params.get('question_type', 'dimensions')
         response_lower = response.strip().lower()
         response_original = response.strip()
@@ -77,13 +80,14 @@ class AsciiShapesResponseParser(ResponseParser):
     def _parse_dimensions(self, response: str, response_lower: str) -> ParsedAnswer:
         """Parse dimensions answer (WxH format)."""
         dimension_patterns = [
-            r'(\d+)\s*x\s*(\d+)',  # "8x5" or "8 x 5"
+            r'(\d+)\s*[x×✕✖]\s*(\d+)',  # "8x5", "8 × 5" (includes Unicode multiplication)
             r'(\d+)\s*by\s*(\d+)',  # "8 by 5"
-            r'(\d+)\s*\u00d7\s*(\d+)',  # "8 × 5"
             r'width\s*[=:]\s*(\d+).*?height\s*[=:]\s*(\d+)',  # "width = 8, height = 5"
             r'(\d+)\s*wide.*?(\d+)\s*(?:tall|high)',  # "8 wide and 5 tall"
             r'(\d+)\s*columns.*?(\d+)\s*rows',  # "8 columns, 5 rows"
             r'width.*?(\d+).*?height.*?(\d+)',  # "width is 8 ... height is 5"
+            # Natural language patterns
+            r'(\d+)\s*(?:characters?|symbols?|[a-z]+s?)\s*(?:across|wide).*?(\d+)\s*(?:lines?|rows?|tall|down|high)',  # "8 chars across, 5 lines"
         ]
 
         for pattern in dimension_patterns:
