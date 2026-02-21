@@ -78,11 +78,18 @@ class ModelProvider(ABC):
 class OllamaProvider(ModelProvider):
     """Ollama model provider."""
     
-    def __init__(self):
+    def __init__(self, host: str = "http://localhost:11434"):
+        self.host = host.rstrip("/")
         self._models_cache: Optional[List[ModelInfo]] = None
+    
+    def _is_default_host(self) -> bool:
+        return self.host in ("http://localhost:11434", "http://127.0.0.1:11434")
     
     def is_available(self) -> bool:
         """Check if Ollama is running."""
+        # For non-default hosts always use REST API
+        if not self._is_default_host():
+            return self._is_available_via_api()
         try:
             result = subprocess.run(
                 ["ollama", "list"],
@@ -90,14 +97,76 @@ class OllamaProvider(ModelProvider):
                 text=True,
                 timeout=2
             )
-            return result.returncode == 0
+            if result.returncode == 0:
+                return True
         except (FileNotFoundError, subprocess.TimeoutExpired):
+            pass
+        # Fallback to REST API check
+        return self._is_available_via_api()
+    
+    def _is_available_via_api(self) -> bool:
+        """Check availability via Ollama REST API."""
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                f"{self.host}/api/tags",
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=3) as resp:
+                return resp.status == 200
+        except Exception:
             return False
+    
+    def _list_models_via_api(self) -> List[ModelInfo]:
+        """List models via Ollama REST API (supports remote hosts)."""
+        import urllib.request
+        try:
+            req = urllib.request.Request(
+                f"{self.host}/api/tags",
+                headers={"Content-Type": "application/json"}
+            )
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                data = json.loads(resp.read().decode('utf-8'))
+            
+            models = []
+            for m in data.get('models', []):
+                name = m.get('name', '')
+                size_bytes = m.get('size', 0)
+                size_human = self._bytes_to_human(size_bytes)
+                quantization = self._extract_quantization(name)
+                family = self._extract_family(name)
+                models.append(ModelInfo(
+                    name=name,
+                    size_bytes=size_bytes,
+                    size_human=size_human,
+                    quantization=quantization,
+                    family=family,
+                    modified_at=m.get('modified_at', ''),
+                    digest=m.get('digest', ''),
+                ))
+            self._models_cache = models
+            return models
+        except Exception as e:
+            print(f"⚠️  Error listing Ollama models via API: {e}")
+            return []
+    
+    @staticmethod
+    def _bytes_to_human(size_bytes: int) -> str:
+        """Convert bytes to human-readable size string."""
+        for unit in ('B', 'KB', 'MB', 'GB', 'TB'):
+            if size_bytes < 1024:
+                return f"{size_bytes:.1f} {unit}"
+            size_bytes /= 1024
+        return f"{size_bytes:.1f} PB"
     
     def list_models(self) -> List[ModelInfo]:
         """Get list of models from Ollama."""
         if self._models_cache is not None:
             return self._models_cache
+        
+        # Always use REST API when host is non-default
+        if not self._is_default_host():
+            return self._list_models_via_api()
         
         try:
             result = subprocess.run(
@@ -108,7 +177,7 @@ class OllamaProvider(ModelProvider):
             )
             
             if result.returncode != 0:
-                return []
+                return self._list_models_via_api()
             
             models = []
             # Parse ollama list output
@@ -239,11 +308,15 @@ class HuggingFaceProvider(ModelProvider):
 class ModelProviderManager:
     """Manages multiple model providers."""
     
-    def __init__(self):
+    def __init__(self, ollama_host: str = "http://localhost:11434"):
         self.providers = {
-            'ollama': OllamaProvider(),
+            'ollama': OllamaProvider(host=ollama_host),
             'huggingface': HuggingFaceProvider(),
         }
+    
+    def set_ollama_host(self, host: str):
+        """Update the Ollama provider with a new host and clear its cache."""
+        self.providers['ollama'] = OllamaProvider(host=host)
     
     def get_available_providers(self) -> Dict[str, ModelProvider]:
         """Get all available providers."""

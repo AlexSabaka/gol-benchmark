@@ -2,11 +2,11 @@
 
 ## Project Overview
 
-This is a comprehensive LLM reasoning benchmark suite testing model capabilities across procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes). The system features a modern 3-stage architecture with a **plugin-based benchmark system (v2.1.0)**, support for multiple model providers (Ollama, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
+This is a comprehensive LLM reasoning benchmark suite testing model capabilities across procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, Carwash Paradox, Inverted Cup). The system features a modern 3-stage architecture with a **plugin-based benchmark system (v2.2.0)**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.1.0)
+## Architecture (v2.2.0)
 
-### 🔌 **Plugin-Based Benchmark System (NEW)**
+### 🔌 **Plugin-Based Benchmark System**
 All benchmarks are now self-contained plugins with auto-discovery:
 ```
 src/plugins/
@@ -16,7 +16,9 @@ src/plugins/
 ├── arithmetic/                # ARI: 6-strategy parsing
 ├── linda_fallacy/             # Linda: conjunction fallacy detection
 ├── cellular_automata_1d/      # C14: state evolution
-└── ascii_shapes/              # Shapes: dimensions/count/position
+├── ascii_shapes/              # Shapes: dimensions/count/position
+├── carwash/                   # Carwash Paradox: goal-tracking test
+└── inverted_cup/              # Inverted Cup: spatial orientation test
 ```
 
 **Benefits:**
@@ -51,20 +53,22 @@ Config →   TestGenerator →            ModelInterface →        Enhanced Ana
         PromptEngine                  (Ollama/HuggingFace)    Multi-dimensional Reports
 ```
 
-## Project Structure (v2.0.0)
+## Project Structure (v2.2.0)
 
 ### **Core Architecture (`src/` organization)**
 
 ```
 src/
-├── plugins/            # 🔌 Plugin-Based Benchmark System (v2.1.0)
+├── plugins/            # 🔌 Plugin-Based Benchmark System (v2.2.0)
 │   ├── base.py         # Abstract base classes (BenchmarkPlugin, TestCaseGenerator, etc.)
 │   ├── __init__.py     # Plugin registry with auto-discovery
 │   ├── game_of_life/   # GoL plugin (generator.py, parser.py, evaluator.py, __init__.py)
 │   ├── arithmetic/     # ARI plugin (6-strategy parsing)
 │   ├── linda_fallacy/  # Linda plugin (conjunction fallacy detection)
 │   ├── cellular_automata_1d/  # C14 plugin (state evolution)
-│   └── ascii_shapes/   # Shapes plugin (dimensions/count/position)
+│   ├── ascii_shapes/   # Shapes plugin (dimensions/count/position)
+│   ├── carwash/        # Carwash Paradox plugin (goal-tracking test)
+│   └── inverted_cup/   # Inverted Cup plugin (spatial orientation test)
 ├── stages/             # 3-Stage Pipeline Scripts (uses plugins)
 │   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
 │   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
@@ -281,7 +285,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - Pattern files in `conways_life/known_patterns/` (.cells, .rle formats) for Game of Life
 - Results and visualizations output to `results*/` and `docs/images/`
 
-## Critical Fixes & Known Issues (v2.0.0)
+## Critical Fixes & Known Issues (v2.2.0)
 
 ### ✅ **Major Fixes Implemented**
 1. **Game of Life Template Bug**: Fixed `{grid_str}` placeholder not being substituted (was causing 0% accuracy)
@@ -295,6 +299,8 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
    - ✅ Task configuration UI: placeholder checkboxes → full CA configuration (rule selection, width, steps, boundaries, patterns, density)
    - ✅ YAML generation: arithmetic fields (difficulty_levels) → proper CA fields (rule_numbers, cases_per_rule)
    - See `docs/C14_TUI_BUGFIXES_SUMMARY.md` for detailed analysis
+7. **"Unknown" task type in reports (2026-02-21)**: Fixed `extract_task_breakdown()` in `analyze_results.py` — added `carwash` and `inverted_cup` recognition patterns
+8. **Remote Ollama support (2026-02-21)**: `OllamaProvider` now accepts a `host` parameter; non-default hosts use REST API for discovery and availability checks
 
 ### ⚠️ **Known Limitations**
 - **Emoji cell markers** (`🟩/🟥`) cause model failures—always use `1/0` markers  
@@ -306,6 +312,8 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Arithmetic Tasks**: 60-90% accuracy with enhanced parsing
 - **Game of Life**: 40-70% accuracy (dramatically improved from 0% after grid_str fix)
 - **Cellular Automata 1D**: Expected 50-80% accuracy (Stage 1 complete, Stage 2 pending)
+- **Carwash Paradox**: Expected 30-70% accuracy (many models fall for the proximity trap)
+- **Inverted Cup**: Expected 60-90% accuracy (the flip answer is usually obvious)
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
@@ -360,9 +368,11 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.1.0 (January 25, 2026)
+**Version**: 2.2.0 (February 21, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery
 - Modern 3-stage architecture with enhanced parsing and analytics
-- 5 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes
+- 7 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Carwash Paradox, Inverted Cup
+- Remote Ollama support (`--ollama-host`)
+- Token counting throughout pipeline

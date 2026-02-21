@@ -74,6 +74,8 @@ TASK_COLORS = {
     'cellular_automata_1d': '#1abc9c', # Teal
     'object_tracking': '#e74c3c',      # Red
     'sally_anne': '#34495e',           # Dark gray
+    'carwash': '#e67e22',              # Amber
+    'inverted_cup': '#16a085',         # Dark teal
     'multi-task': '#95a5a6',           # Light gray
 }
 
@@ -216,6 +218,10 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'object_tracking'
         elif '_sally_anne' in test_id or '_false_belief' in test_id:
             task_type = 'sally_anne'
+        elif '_carwash' in test_id or test_id.startswith('carwash_'):
+            task_type = 'carwash'
+        elif '_inverted_cup' in test_id or test_id.startswith('inverted_cup_'):
+            task_type = 'inverted_cup'
         
         task_stats[task_type]['total'] += 1
         

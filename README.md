@@ -42,6 +42,14 @@ Pattern evolution testing (similar to GoL but configurable rules).
 
 Procedural equation generation for benchmarking symbolic reasoning.
 
+### 6. **Carwash Paradox** 🚗
+
+"The carwash is only 50 m away — should you walk or drive?" Correct answer is always **drive** (car must be physically present). Tests whether models track the *goal* of a trip rather than optimising naively for short distances.
+
+### 7. **Inverted Cup** 🥤
+
+A cup with a sealed top and open bottom — how do you use it? Correct answer is **flip it over**. Tests spatial/physical orientation reasoning. Models often suggest drilling, cutting, or returning the cup instead of the obvious solution.
+
 ---
 
 ## Quick Start
@@ -63,6 +71,10 @@ pip install -r requirements.txt
 
 # Make sure Ollama is running
 ollama serve
+
+# (Optional) use a remote Ollama instance
+# Pass --ollama-host http://remote-host:11434 to run_testset.py,
+# or configure the host interactively in the TUI.
 ```
 
 ### Run Your First Benchmark
@@ -255,6 +267,12 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Add visual result dashboards (9 comprehensive visualizations)
 - [x] Systematic analysis of prompt engineering effects
 - [x] Document model personalities and reasoning patterns
+- [x] Plugin-based benchmark architecture (v2.1.0) — 7 tasks auto-discovered
+- [x] 3-stage pipeline: generate → execute → analyze
+- [x] Remote Ollama support (`--ollama-host`)
+- [x] Token counting throughout pipeline
+- [x] Carwash Paradox plugin (practical-goal-tracking test)
+- [x] Inverted Cup plugin (spatial-orientation reasoning test)
 
 ### 🔄 In Progress
 

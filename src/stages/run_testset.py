@@ -1494,7 +1494,8 @@ def run_testset(
     # Initialize model interface
     print(f"Initializing {provider} interface for {model_name}")
     if provider == "ollama":
-        interface = OllamaInterface(model_name)
+        ollama_host = kwargs.get('ollama_host', 'http://localhost:11434')
+        interface = OllamaInterface(model_name, base_url=ollama_host)
     elif provider == "huggingface":
         interface = HuggingFaceInterface(model_name)
     else:
@@ -1735,6 +1736,8 @@ def main():
     parser.add_argument("--output-dir", default="results", help="Output directory")
     parser.add_argument("--quantization", help="Quantization format (for metadata)")
     parser.add_argument("--context-length", type=int, help="Context length (for metadata)")
+    parser.add_argument("--ollama-host", default="http://localhost:11434",
+                       help="Ollama server URL (default: http://localhost:11434)")
     
     args = parser.parse_args()
     
@@ -1745,7 +1748,8 @@ def main():
             provider=args.provider,
             output_dir=args.output_dir,
             quantization=args.quantization,
-            context_length=args.context_length
+            context_length=args.context_length,
+            ollama_host=args.ollama_host
         )
     except Exception as e:
         print(f"✗ Error running test set: {e}")

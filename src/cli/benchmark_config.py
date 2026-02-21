@@ -78,6 +78,7 @@ class BenchmarkConfig:
     save_config: bool = True
     generate_charts: bool = True
     report_formats: List[str] = field(default_factory=lambda: ["markdown", "json"])
+    ollama_host: str = "http://localhost:11434"
     verbosity: str = "normal"  # quiet, normal, verbose, debug
     timestamp: str = ""
     task_type: str = "gol"  # gol, ari, c14, linda

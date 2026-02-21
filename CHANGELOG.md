@@ -2,6 +2,62 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.2.0] - February 21, 2026
+
+### New Plugins – Practical Reasoning Traps
+
+#### Carwash Paradox (`src/plugins/carwash/`)
+- New plugin testing whether a model keeps track of the *goal* of a trip
+- Scenario: the carwash is only N metres away — should you walk or drive?
+- Correct answer is always **drive** (car must be physically present at the carwash)
+- Models naively say "walk" because the distance is short (proximity trap)
+- **Generator**: 5 distances × 6 framings × 4 weather contexts × 4 urgency phrases × 3 transport details × 6 question variants; full combinatorial space with seeded shuffling
+- **Parser**: 6-strategy detection (`boxed → bold → label_line → strong_intro → full_text → first_sentences`); negation-aware regex (`DRIVE_KEYWORDS`, `WALK_KEYWORDS`, `NEGATION`)
+- **Evaluator**: match types `correct` / `naive_trap` / `wrong` / `parse_error`
+- **TUI**: added to task selector with default `distances` and `count` parameters
+- **Report**: `carwash` task type now correctly labelled (amber `#e67e22` in charts)
+
+#### Inverted Cup (`src/plugins/inverted_cup/`)
+- New plugin testing spatial/physical orientation reasoning
+- Scenario: a cup with a sealed top and open bottom — how do you use it?
+- Correct answer is always **flip** (turn it right-side-up)
+- Models suggest drilling, cutting, or returning the cup instead
+- **Generator**: 7 sources × 7 description styles × 7 action questions × 5 extra contexts; configurable `description_styles` filter via YAML
+- **Parser**: 6-strategy detection including 16 `FLIP_PATTERNS` (flip/turn over/invert/upend/right-side-up) and `WRONG_PATTERNS` (drill/cut/return/discard)
+- **Evaluator**: match types `correct` / `wrong` / `parse_error`; distinguishes genuine parse failures from confident wrong answers
+- **TUI**: added to task selector with default `description_styles` and `count` parameters
+- **Report**: `inverted_cup` task type now correctly labelled (dark teal `#16a085` in charts)
+
+### Infrastructure Enhancements
+
+#### Remote Ollama Support (`--ollama-host`)
+- Added `--ollama-host` argument to `src/stages/run_testset.py` (default: `http://localhost:11434`)
+- `OllamaInterface` in `run_testset.py` now accepts `base_url` parameter
+- `OllamaProvider` in `src/utils/model_providers.py` extended with configurable `host`:
+  - `_is_default_host()` helper to detect non-local endpoints
+  - Non-default hosts always use REST API (`/api/tags`) instead of CLI subprocess
+  - `_is_available_via_api()` and `_list_models_via_api()` methods added
+  - `_bytes_to_human()` static helper for size formatting
+- `ModelProviderManager.set_ollama_host(host)` method for dynamic re-configuration
+- TUI (`benchmark_tui.py`) prompts for Ollama host URL whenever Ollama provider is selected
+  - `BenchmarkTUI._configure_ollama_host()` method
+  - `ollama_host` stored on both `MultiTaskConfig` and `BenchmarkConfig` dataclasses
+  - Host propagated through execution pipeline to `run_testset.py` via `--ollama-host`
+
+#### Token Counting in Pipeline
+- Response token counts tracked throughout Stage 2 (`run_testset.py`)
+- Token counts surfaced in Stage 3 reports via dedicated columns/charts
+- Old result files show `0` tokens (expected backward-compatible behaviour)
+
+### Bug Fixes
+
+- **"Unknown" task type in reports**: Fixed `extract_task_breakdown()` in `analyze_results.py`
+  - Added `elif '_carwash' in test_id or test_id.startswith('carwash_')` branch
+  - Added `elif '_inverted_cup' in test_id or test_id.startswith('inverted_cup_')` branch
+  - Display rendering works automatically via `.replace('_', ' ').title()` pattern
+
+---
+
 ## [2.1.0] - January 25, 2026
 
 ### Plugin-Based Benchmark System

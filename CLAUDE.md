@@ -13,11 +13,13 @@
 - **Arithmetic (ARI)**: Math expression parsing and evaluation
 - **Linda Fallacy**: Cognitive bias testing (conjunction fallacy)
 - **Cellular Automata (C14)**: Configurable rule-based pattern evolution
+- **Carwash Paradox**: Practical-goal-tracking test — walk or drive? (answer: always drive)
+- **Inverted Cup**: Spatial-orientation reasoning — sealed top / open bottom cup (answer: flip it)
 
 ### Key Characteristics
 
 - **Multilingual**: 6 languages supported (EN, FR, ES, DE, ZH, UA)
-- **Multi-provider**: Ollama and HuggingFace integrations
+- **Multi-provider**: Ollama (local & remote) and HuggingFace integrations
 - **Prompt engineering**: 3 user styles × 3 system styles = 9 configurations
 - **Reproducible**: Seeded random generation for consistent benchmarks
 
@@ -38,8 +40,17 @@ python -m src.benchmarks.linda_eval --model gemma3:1b --language es --trials 10
 # Run C14 cellular automata
 python -m src.benchmarks.c14_eval --model qwen3:4b --rule 110 --steps 5
 
+# Run Carwash Paradox (via 3-stage pipeline — no legacy script)
+# 1) Generate, 2) run, 3) analyze — or use TUI
+python src/cli/benchmark_tui.py  # select 'Carwash Paradox' task
+
 # Interactive benchmark TUI
 python -m src.cli.benchmark_tui
+
+# Run on a remote Ollama instance
+python src/stages/run_testset.py testsets/testset_xyz.json.gz \
+    --model qwen3:0.6b --provider ollama \
+    --ollama-host http://192.168.1.50:11434
 
 # Run full test suite
 pytest tests/
@@ -55,14 +66,16 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # NEW: Plugin-based benchmark system (v2.1.0)
+│   ├── plugins/           # Plugin-based benchmark system (v2.2.0 — 7 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
 │   │   ├── game_of_life/  # GoL plugin (generator, parser, evaluator)
 │   │   ├── arithmetic/    # ARI plugin
 │   │   ├── linda_fallacy/ # Linda plugin
 │   │   ├── cellular_automata_1d/  # C14 plugin
-│   │   └── ascii_shapes/  # ASCII Shapes plugin
+│   │   ├── ascii_shapes/  # ASCII Shapes plugin
+│   │   ├── carwash/       # Carwash Paradox plugin (v2.2.0)
+│   │   └── inverted_cup/  # Inverted Cup plugin (v2.2.0)
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
 │   │   ├── generate_testset.py  # Stage 1: YAML → test sets
 │   │   ├── run_testset.py       # Stage 2: Execute tests
@@ -91,7 +104,7 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (v2.1.0)** | |
+| **Plugin System (v2.2.0)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes for all plugins |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
 | [src/plugins/game_of_life/](src/plugins/game_of_life/) | GoL plugin module (generator, parser, evaluator) |
@@ -99,6 +112,8 @@ gol_eval/
 | [src/plugins/linda_fallacy/](src/plugins/linda_fallacy/) | Linda Fallacy plugin module |
 | [src/plugins/cellular_automata_1d/](src/plugins/cellular_automata_1d/) | C14 plugin module |
 | [src/plugins/ascii_shapes/](src/plugins/ascii_shapes/) | ASCII Shapes plugin module |
+| [src/plugins/carwash/](src/plugins/carwash/) | Carwash Paradox plugin (v2.2.0) |
+| [src/plugins/inverted_cup/](src/plugins/inverted_cup/) | Inverted Cup plugin (v2.2.0) |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
@@ -118,7 +133,7 @@ gol_eval/
 
 ## Architecture Patterns
 
-### 1. Plugin Pattern (NEW in v2.1.0)
+### 1. Plugin Pattern (v2.2.0)
 Self-contained benchmark modules with auto-discovery via package scanning.
 ```python
 from src.plugins import PluginRegistry
@@ -653,5 +668,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-01-25*
+*Last updated: 2026-02-21*
+*Version: 2.2.0*
+*Key additions: Carwash Paradox + Inverted Cup plugins • Remote Ollama support • Token counting in pipeline*
 *For questions or issues: Check [README.md](README.md) or create an issue*

@@ -46,6 +46,7 @@ class MultiTaskConfig:
     temperature: float = 0.1
     language: str = 'en'
     thinking_enabled: bool = False
+    ollama_host: str = 'http://localhost:11434'
     
     @property
     def total_tests(self) -> int:
@@ -83,6 +84,7 @@ class BenchmarkTUI:
         self.config: Optional[BenchmarkConfig] = None
         self.multi_task_config: Optional[MultiTaskConfig] = None
         self.generated_testset_path: Optional[str] = None
+        self.ollama_host: str = "http://localhost:11434"
         self.provider_manager = ModelProviderManager()
         self.selected_provider: str = "ollama"
         self.available_providers: Dict[str, bool] = {}
@@ -193,6 +195,8 @@ class BenchmarkTUI:
         
         if len(available) == 1:
             self.selected_provider = available[0]
+            if self.selected_provider == "ollama":
+                self._configure_ollama_host()
             return self.selected_provider
         
         self.display_header()
@@ -206,7 +210,22 @@ class BenchmarkTUI:
         ).ask()
         
         self.selected_provider = provider_choice
+        if provider_choice == "ollama":
+            self._configure_ollama_host()
         return provider_choice
+    
+    def _configure_ollama_host(self):
+        """Ask user for Ollama host URL (allows connecting to remote Ollama instances)."""
+        host = questionary.text(
+            'Ollama host URL:',
+            default=self.ollama_host,
+            style=custom_style
+        ).ask()
+        if host and host.strip():
+            self.ollama_host = host.strip().rstrip('/')
+            # Update provider manager and re-check availability
+            self.provider_manager.set_ollama_host(self.ollama_host)
+            self._check_available_providers()
     
     def _get_available_models_for_provider(self, provider: str) -> List[ModelInfo]:
         """Get available models from the selected provider."""
@@ -215,7 +234,7 @@ class BenchmarkTUI:
         if not models:
             console.print(f"[yellow]⚠️  No models found in {provider}[/yellow]")
             if provider == "ollama":
-                console.print("  Pull some models first: [dim]ollama pull qwen:0.5b[/dim]")
+                console.print("  Pull some models first: [dim]ollama pull qwen3:0.6b[/dim]")
         
         return models
     
@@ -348,7 +367,9 @@ class BenchmarkTUI:
             {'id': 'tracking', 'name': 'Tracking (Grape Test)', 'description': 'Object location tracking through action steps'},
             {'id': 'sally_anne', 'name': 'Sally-Anne (False Belief)', 'description': 'Theory of Mind false belief reasoning test'},
             {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'},
-            {'id': 'grid_tasks', 'name': 'Grid Tasks (Table Reasoning)', 'description': 'Reading and reasoning about formatted tables with various data types'}
+            {'id': 'grid_tasks', 'name': 'Grid Tasks (Table Reasoning)', 'description': 'Reading and reasoning about formatted tables with various data types'},
+            {'id': 'carwash', 'name': 'Carwash Paradox', 'description': 'Walk or drive? Tests whether model tracks the goal of a trip'},
+            {'id': 'inverted_cup', 'name': 'Inverted Cup', 'description': 'Sealed-top / open-bottom cup — how to use it? Tests spatial orientation reasoning'}
         ]
         
         # Select tasks to include
@@ -474,6 +495,19 @@ class BenchmarkTUI:
             parameters = {'objects': ['grape', 'marble', 'keys'], 'containers': ['cup', 'bowl', 'mug'], 'distractor_count': [0, 1, 2], 'post_inversion_moves': [0, 1, 2]}
         elif task_id == 'sally_anne':
             parameters = {'use_random_pairs': True, 'objects': ['marble', 'ball', 'toy'], 'containers': [('basket', 'box'), ('drawer', 'cupboard')], 'distractor_count': 0, 'leave_activities': ['goes for a walk', 'goes outside', 'leaves the room'], 'include_observer': False}
+        elif task_id == 'carwash':
+            parameters = {
+                'distances': ['50m', '100m', '200m', 'corner', '2min_walk'],
+                'count': 50,
+            }
+        elif task_id == 'inverted_cup':
+            parameters = {
+                'description_styles': [
+                    'sealed_top_open_bottom', 'lid_top_hole_bottom', 'upside_down_explicit',
+                    'rim_at_bottom', 'inverted_normal', 'mouth_down', 'closed_on_top'
+                ],
+                'count': 50,
+            }
         elif task_id == 'linda':
             parameters = {'num_options': 8, 'personas_per_config': 5}
         elif task_id == 'grid_tasks':
@@ -1505,6 +1539,7 @@ class BenchmarkTUI:
             generate_charts=exec_config['generate_charts'],
             report_formats=['markdown', 'json'],
             verbosity=exec_config['verbosity'],
+            ollama_host=self.ollama_host,
         )
         
         # Store multi-task info in config
@@ -1597,7 +1632,8 @@ class BenchmarkTUI:
             output_dir=output_dir,
             generate_charts=True,
             report_formats=['markdown', 'json'],
-            verbosity='normal'
+            verbosity='normal',
+            ollama_host=self.ollama_host,
         )
         
         config.task_type = 'multi-task'
@@ -1643,7 +1679,9 @@ class BenchmarkTUI:
             'tracking': 'object_tracking',
             'sally_anne': 'sally_anne',
             'linda': 'linda_fallacy',
-            'grid_tasks': 'grid_tasks'
+            'grid_tasks': 'grid_tasks',
+            'carwash': 'carwash',
+            'inverted_cup': 'inverted_cup'
         }
         
         # Add each task configuration
@@ -1752,6 +1790,22 @@ class BenchmarkTUI:
                     'cases_per_config': task_config.batch_size,
                     'numeric_tolerance': task_config.parameters.get('numeric_tolerance', 0.1)
                 })
+            elif mapped_task_type == 'carwash':
+                task_yaml['generation'].update({
+                    'distances': task_config.parameters.get(
+                        'distances', ['50m', '100m', '200m', 'corner', '2min_walk']
+                    ),
+                    'count': task_config.batch_size,
+                })
+            elif mapped_task_type == 'inverted_cup':
+                task_yaml['generation'].update({
+                    'description_styles': task_config.parameters.get(
+                        'description_styles',
+                        ['sealed_top_open_bottom', 'lid_top_hole_bottom', 'upside_down_explicit',
+                         'rim_at_bottom', 'inverted_normal', 'mouth_down', 'closed_on_top']
+                    ),
+                    'count': task_config.batch_size,
+                })
             
             # Add prompt configurations for this task
             for user_style in task_config.prompts.user_styles:
@@ -1846,6 +1900,11 @@ def execute_benchmark(config: BenchmarkConfig) -> bool:
             
             if model_spec.quantization:
                 run_cmd.extend(["--quantization", model_spec.quantization])
+            
+            if model_spec.provider == "ollama":
+                ollama_host = getattr(config, 'ollama_host', 'http://localhost:11434')
+                if ollama_host != 'http://localhost:11434':
+                    run_cmd.extend(["--ollama-host", ollama_host])
             
             try:
                 result = subprocess.run(
