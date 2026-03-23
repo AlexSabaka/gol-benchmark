@@ -369,7 +369,9 @@ class BenchmarkTUI:
             {'id': 'linda', 'name': 'Linda (Pattern Recognition)', 'description': 'Statistical reasoning patterns'},
             {'id': 'grid_tasks', 'name': 'Grid Tasks (Table Reasoning)', 'description': 'Reading and reasoning about formatted tables with various data types'},
             {'id': 'carwash', 'name': 'Carwash Paradox', 'description': 'Walk or drive? Tests whether model tracks the goal of a trip'},
-            {'id': 'inverted_cup', 'name': 'Inverted Cup', 'description': 'Sealed-top / open-bottom cup — how to use it? Tests spatial orientation reasoning'}
+            {'id': 'inverted_cup', 'name': 'Inverted Cup', 'description': 'Sealed-top / open-bottom cup — how to use it? Tests spatial orientation reasoning'},
+            {'id': 'strawberry', 'name': 'Strawberry (Letter Counting)', 'description': 'How many Rs in strawberry? Tests letter-counting accuracy'},
+            {'id': 'measure', 'name': 'Measure Comparison', 'description': 'Which is longer: 0.1 mm or 1 mm? Tests quantity comparison with units'}
         ]
         
         # Select tasks to include
@@ -506,6 +508,19 @@ class BenchmarkTUI:
                     'sealed_top_open_bottom', 'lid_top_hole_bottom', 'upside_down_explicit',
                     'rim_at_bottom', 'inverted_normal', 'mouth_down', 'closed_on_top'
                 ],
+                'count': 50,
+            }
+        elif task_id == 'strawberry':
+            parameters = {
+                'mode': 'mixed',
+                'word_lengths': ['short', 'medium', 'long', 'extra_long'],
+                'count': 50,
+            }
+        elif task_id == 'measure':
+            parameters = {
+                'number_format': 'mixed',
+                'comparison_type': 'all',
+                'unit_categories': ['length', 'mass', 'temperature', 'volume', 'speed', 'time'],
                 'count': 50,
             }
         elif task_id == 'linda':
@@ -1681,7 +1696,9 @@ class BenchmarkTUI:
             'linda': 'linda_fallacy',
             'grid_tasks': 'grid_tasks',
             'carwash': 'carwash',
-            'inverted_cup': 'inverted_cup'
+            'inverted_cup': 'inverted_cup',
+            'strawberry': 'strawberry',
+            'measure': 'measure_comparison'
         }
         
         # Add each task configuration
@@ -1803,6 +1820,24 @@ class BenchmarkTUI:
                         'description_styles',
                         ['sealed_top_open_bottom', 'lid_top_hole_bottom', 'upside_down_explicit',
                          'rim_at_bottom', 'inverted_normal', 'mouth_down', 'closed_on_top']
+                    ),
+                    'count': task_config.batch_size,
+                })
+            elif mapped_task_type == 'strawberry':
+                task_yaml['generation'].update({
+                    'mode': task_config.parameters.get('mode', 'mixed'),
+                    'word_lengths': task_config.parameters.get(
+                        'word_lengths', ['short', 'medium', 'long', 'extra_long']
+                    ),
+                    'count': task_config.batch_size,
+                })
+            elif mapped_task_type == 'measure_comparison':
+                task_yaml['generation'].update({
+                    'number_format': task_config.parameters.get('number_format', 'mixed'),
+                    'comparison_type': task_config.parameters.get('comparison_type', 'all'),
+                    'unit_categories': task_config.parameters.get(
+                        'unit_categories',
+                        ['length', 'mass', 'temperature', 'volume', 'speed', 'time']
                     ),
                     'count': task_config.batch_size,
                 })

@@ -77,6 +77,8 @@ TASK_COLORS = {
     'carwash': '#e67e22',              # Amber
     'inverted_cup': '#16a085',         # Dark teal
     'grid_tasks': '#8e44ad',           # Dark purple
+    'strawberry': '#e74c3c',           # Red (like a strawberry)
+    'measure_comparison': '#2980b9',   # Blue (measurement)
     'multi-task': '#95a5a6',           # Light gray
 }
 
@@ -223,6 +225,10 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'carwash'
         elif '_inverted_cup' in test_id or test_id.startswith('inverted_cup_'):
             task_type = 'inverted_cup'
+        elif '_strawberry' in test_id or test_id.startswith('strawberry_'):
+            task_type = 'strawberry'
+        elif '_measure_comparison' in test_id or test_id.startswith('measure_comparison_'):
+            task_type = 'measure_comparison'
         elif '_grid_tasks' in test_id or test_id.startswith('grid_tasks_'):
             task_type = 'grid_tasks'
         
