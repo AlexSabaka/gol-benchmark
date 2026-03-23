@@ -79,6 +79,14 @@ ollama serve
 
 ### Run Your First Benchmark
 
+**Web UI (Recommended)**
+```bash
+# Start the web UI for configuration, execution, and analysis
+python -m src.web
+# Open http://127.0.0.1:8000 in your browser
+```
+
+**CLI Examples**
 ```bash
 # Game of Life - Easy difficulty with qwen3
 python gol_eval.py --difficulty medium --temperature 0.25 --ctx-len 4096 --num-predict 2048 --top-k 40 --min-k 1 --min-p 0.05 --prompt-style linguistic --live-dead-cell-markers 1,0 --prompt-language en --model qwen3:0.6b gemma3:1b --batch-size=20 --seed=42 --known-patterns-ratio=1.0 --density=.50 --no-think

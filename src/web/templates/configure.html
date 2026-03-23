@@ -1,0 +1,294 @@
+{% extends "base.html" %}
+{% block title %}Configure — GoL Benchmark{% endblock %}
+{% block content %}
+<h2>Configure &amp; Generate Test Set</h2>
+
+<p class="text-muted">Select benchmark tasks, configure parameters, and generate a test set — or upload an existing YAML config / .json.gz test set.</p>
+
+<details open>
+  <summary><strong>Option A: Build configuration</strong></summary>
+
+  <form id="configure-form" onsubmit="return false;">
+
+    <!-- ── Task Selection ────────────────────────────── -->
+    <fieldset>
+      <legend><strong>1. Select Tasks</strong></legend>
+      <div class="inline-checks" id="task-checkboxes">
+        <p aria-busy="true">Loading plugins…</p>
+      </div>
+    </fieldset>
+
+    <!-- ── Per-task config panels (loaded dynamically) ── -->
+    <div class="task-panels" id="task-panels"></div>
+
+    <!-- ── Prompt Matrix ─────────────────────────────── -->
+    <fieldset>
+      <legend><strong>2. Prompt Styles</strong></legend>
+      <div class="field-group">
+        <label>User styles</label>
+        <div class="inline-checks">
+          <label><input type="checkbox" name="user_style" value="minimal" checked> Minimal</label>
+          <label><input type="checkbox" name="user_style" value="casual"> Casual</label>
+          <label><input type="checkbox" name="user_style" value="linguistic"> Linguistic</label>
+          <label><input type="checkbox" name="user_style" value="examples"> Examples</label>
+          <label><input type="checkbox" name="user_style" value="rules_math"> Rules / Math</label>
+        </div>
+      </div>
+      <div class="field-group">
+        <label>System styles</label>
+        <div class="inline-checks">
+          <label><input type="checkbox" name="system_style" value="analytical" checked> Analytical</label>
+          <label><input type="checkbox" name="system_style" value="casual"> Casual</label>
+          <label><input type="checkbox" name="system_style" value="adversarial"> Adversarial</label>
+          <label><input type="checkbox" name="system_style" value="none"> None</label>
+        </div>
+      </div>
+      <div class="field-group">
+        <label for="language">Language</label>
+        <select id="language" style="max-width:200px;">
+          <option value="en" selected>English</option>
+          <option value="es">Spanish</option>
+          <option value="fr">French</option>
+          <option value="de">German</option>
+          <option value="zh">Chinese</option>
+          <option value="ua">Ukrainian</option>
+        </select>
+      </div>
+      <small class="text-muted" id="combo-count">Prompt combinations: 1 × 1 = 1</small>
+    </fieldset>
+
+    <!-- ── Global Settings ───────────────────────────── -->
+    <fieldset>
+      <legend><strong>3. Global Settings</strong></legend>
+      <div style="display:grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap:1rem;">
+        <div class="field-group">
+          <label for="cfg-name">Test set name</label>
+          <input type="text" id="cfg-name" value="web_benchmark" required>
+        </div>
+        <div class="field-group">
+          <label for="temperature">Temperature</label>
+          <input type="number" id="temperature" value="0.1" min="0" max="2" step="0.05">
+        </div>
+        <div class="field-group">
+          <label for="max_tokens">Max tokens</label>
+          <input type="number" id="max_tokens" value="2048" min="64" max="16384" step="64">
+        </div>
+        <div class="field-group">
+          <label for="seed">Seed</label>
+          <input type="number" id="seed" value="42">
+        </div>
+        <div class="field-group">
+          <label for="cfg-desc">Description</label>
+          <input type="text" id="cfg-desc" placeholder="Optional description">
+        </div>
+        <div class="field-group" style="display:flex; align-items:end;">
+          <label><input type="checkbox" id="no_think" checked> Disable thinking</label>
+        </div>
+      </div>
+    </fieldset>
+
+    <button type="button" id="btn-generate" onclick="doGenerate()">Generate Test Set</button>
+    <span id="generate-status"></span>
+  </form>
+</details>
+
+<hr>
+
+<details>
+  <summary><strong>Option B: Upload YAML config</strong></summary>
+  <form id="upload-yaml-form" enctype="multipart/form-data" onsubmit="return false;">
+    <div class="field-group">
+      <label for="yaml-file">YAML configuration file</label>
+      <input type="file" id="yaml-file" accept=".yaml,.yml">
+    </div>
+    <button type="button" onclick="uploadYaml()">Upload &amp; Generate</button>
+    <span id="yaml-upload-status"></span>
+  </form>
+</details>
+
+<details>
+  <summary><strong>Option C: Upload pre-generated .json.gz test set</strong></summary>
+  <form id="upload-gz-form" enctype="multipart/form-data" onsubmit="return false;">
+    <div class="field-group">
+      <label for="gz-file">.json.gz test set file</label>
+      <input type="file" id="gz-file" accept=".json.gz,.gz">
+    </div>
+    <button type="button" onclick="uploadGz()">Upload Test Set</button>
+    <span id="gz-upload-status"></span>
+  </form>
+</details>
+
+{% endblock %}
+
+{% block scripts %}
+<script>
+// ── Load plugins & build task checkboxes ──
+(async function() {
+  const resp = await fetch('/api/plugins');
+  const plugins = await resp.json();
+  const container = document.getElementById('task-checkboxes');
+  container.innerHTML = plugins.map(p =>
+    `<label><input type="checkbox" name="tasks" value="${p.task_type}"
+       onchange="toggleTask('${p.task_type}', this.checked)"> ${p.display_name}</label>`
+  ).join('');
+})();
+
+// ── Toggle task config panel ──
+async function toggleTask(taskType, enabled) {
+  const panelsContainer = document.getElementById('task-panels');
+  const existing = panelsContainer.querySelector(`[data-task-type="${taskType}"]`);
+
+  if (!enabled) {
+    if (existing) existing.remove();
+    return;
+  }
+  if (existing) return; // already showing
+
+  // Fetch schema
+  const resp = await fetch(`/api/plugins/${taskType}/schema`);
+  const schema = await resp.json();
+
+  const panel = document.createElement('details');
+  panel.className = 'task-panel';
+  panel.dataset.taskType = taskType;
+  panel.open = true;
+
+  let fieldsHtml = '';
+  for (const f of (schema.fields || [])) {
+    if (f.type === 'number') {
+      fieldsHtml += `<div class="field-group">
+        <label>${f.label}</label>
+        <input type="number" data-param="${f.name}" data-param-type="number"
+               value="${f.default}" min="${f.min || ''}" max="${f.max || ''}" step="${f.step || 1}"
+               style="max-width:150px;">
+      </div>`;
+    } else if (f.type === 'select') {
+      fieldsHtml += `<div class="field-group">
+        <label>${f.label}</label>
+        <select data-param="${f.name}" data-param-type="select" style="max-width:200px;">
+          ${f.options.map(o => `<option value="${o}" ${o === f.default ? 'selected' : ''}>${o}</option>`).join('')}
+        </select>
+      </div>`;
+    } else if (f.type === 'multi-select') {
+      fieldsHtml += `<div class="field-group">
+        <label>${f.label}</label>
+        <div class="inline-checks">
+          ${f.options.map(o => {
+            const checked = (f.default || []).includes(o) ? 'checked' : '';
+            return `<label><input type="checkbox" data-param="${f.name}" data-param-type="multi-select" value="${o}" ${checked}> ${o}</label>`;
+          }).join('')}
+        </div>
+      </div>`;
+    } else if (f.type === 'text') {
+      fieldsHtml += `<div class="field-group">
+        <label>${f.label}${f.help ? ` <small>(${f.help})</small>` : ''}</label>
+        <input type="text" data-param="${f.name}" data-param-type="text"
+               value="${f.default || ''}" style="max-width:250px;">
+      </div>`;
+    }
+  }
+
+  panel.innerHTML = `<summary>${taskType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</summary>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:.8rem;">
+      ${fieldsHtml}
+    </div>`;
+  panelsContainer.appendChild(panel);
+}
+
+// ── Count prompt combinations ──
+document.addEventListener('change', () => {
+  const u = document.querySelectorAll('input[name="user_style"]:checked').length || 1;
+  const s = document.querySelectorAll('input[name="system_style"]:checked').length || 1;
+  const el = document.getElementById('combo-count');
+  if (el) el.textContent = `Prompt combinations: ${u} × ${s} = ${u * s}`;
+});
+
+// ── Generate test set ──
+async function doGenerate() {
+  const btn = document.getElementById('btn-generate');
+  const status = document.getElementById('generate-status');
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+  status.textContent = 'Generating…';
+
+  try {
+    const payload = buildGeneratePayload();
+    if (!payload.tasks.length) {
+      flash('Select at least one task', 'error');
+      return;
+    }
+    const resp = await fetch('/api/testsets/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (resp.ok) {
+      flash(`Test set generated: ${data.filename}`, 'success');
+      status.innerHTML = `✓ <a href="/testsets">${data.filename}</a>`;
+    } else {
+      flash(data.detail || 'Generation failed', 'error');
+      status.textContent = '✗ Failed';
+    }
+  } catch (e) {
+    flash('Network error: ' + e.message, 'error');
+    status.textContent = '✗ Error';
+  } finally {
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+  }
+}
+
+// ── Upload YAML ──
+async function uploadYaml() {
+  const fileInput = document.getElementById('yaml-file');
+  const status = document.getElementById('yaml-upload-status');
+  if (!fileInput.files.length) { flash('Select a YAML file', 'error'); return; }
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  status.textContent = 'Uploading…';
+
+  try {
+    const resp = await fetch('/api/testsets/upload-yaml', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (resp.ok) {
+      flash(`Test set generated from YAML: ${data.filename}`, 'success');
+      status.innerHTML = `✓ <a href="/testsets">${data.filename}</a>`;
+    } else {
+      flash(data.detail || 'Upload failed', 'error');
+      status.textContent = '✗ Failed';
+    }
+  } catch (e) {
+    flash('Network error: ' + e.message, 'error');
+    status.textContent = '✗ Error';
+  }
+}
+
+// ── Upload .gz ──
+async function uploadGz() {
+  const fileInput = document.getElementById('gz-file');
+  const status = document.getElementById('gz-upload-status');
+  if (!fileInput.files.length) { flash('Select a .json.gz file', 'error'); return; }
+
+  const formData = new FormData();
+  formData.append('file', fileInput.files[0]);
+  status.textContent = 'Uploading…';
+
+  try {
+    const resp = await fetch('/api/testsets/upload-gz', { method: 'POST', body: formData });
+    const data = await resp.json();
+    if (resp.ok) {
+      flash(`Test set uploaded: ${data.filename}`, 'success');
+      status.innerHTML = `✓ <a href="/testsets">${data.filename}</a>`;
+    } else {
+      flash(data.detail || 'Upload failed', 'error');
+      status.textContent = '✗ Failed';
+    }
+  } catch (e) {
+    flash('Network error: ' + e.message, 'error');
+    status.textContent = '✗ Error';
+  }
+}
+</script>
+{% endblock %}

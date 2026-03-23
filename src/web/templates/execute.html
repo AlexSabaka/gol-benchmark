@@ -1,0 +1,360 @@
+{% extends "base.html" %}
+{% block title %}Execute — GoL Benchmark{% endblock %}
+{% block content %}
+<h2>Execute Benchmark</h2>
+<p class="text-muted">Select a test set, choose a model provider, configure sampling, then launch.</p>
+
+<form id="execute-form" onsubmit="return false;">
+
+  <!-- ── 1. Test Set ──────────────── -->
+  <fieldset>
+    <legend><strong>1. Test Set</strong></legend>
+    <div class="field-group">
+      <label for="testset-select">Available test sets</label>
+      <select id="testset-select"><option value="">Loading…</option></select>
+    </div>
+  </fieldset>
+
+  <!-- ── 2. Model Provider ──────── -->
+  <fieldset>
+    <legend><strong>2. Model Provider</strong></legend>
+
+    <div class="provider-tabs" style="display:flex; gap:0; margin-bottom:1rem;">
+      <button type="button" class="provider-tab active" data-provider="ollama" onclick="switchProvider('ollama')">Ollama</button>
+      <button type="button" class="provider-tab" data-provider="openai_compatible" onclick="switchProvider('openai_compatible')">OpenAI-Compatible</button>
+      <button type="button" class="provider-tab" data-provider="huggingface" onclick="switchProvider('huggingface')">HuggingFace</button>
+    </div>
+
+    <!-- ── Ollama ── -->
+    <div id="provider-ollama" class="provider-panel">
+      <div style="display:flex; gap:1rem; align-items:end; flex-wrap:wrap;">
+        <div class="field-group" style="flex:1;">
+          <label for="ollama-host">Ollama host</label>
+          <input type="text" id="ollama-host" value="http://localhost:11434" style="min-width:280px;">
+        </div>
+        <button type="button" class="outline" onclick="refreshOllamaModels()">Refresh</button>
+      </div>
+    </div>
+
+    <!-- ── OpenAI-Compatible ── -->
+    <div id="provider-openai_compatible" class="provider-panel" style="display:none;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+        <div class="field-group">
+          <label for="openai-base-url">API Base URL</label>
+          <input type="text" id="openai-base-url" value="https://api.openai.com/v1" placeholder="https://api.groq.com/openai/v1">
+          <small class="text-muted">Works with Groq, OpenRouter, vLLM, Ollama /v1, etc.</small>
+        </div>
+        <div class="field-group">
+          <label for="openai-api-key">API Key <small>(optional for local)</small></label>
+          <input type="password" id="openai-api-key" placeholder="sk-...">
+        </div>
+      </div>
+      <div style="margin-top:.5rem;">
+        <button type="button" class="outline" onclick="refreshOpenAIModels()">Fetch Models</button>
+      </div>
+    </div>
+
+    <!-- ── HuggingFace ── -->
+    <div id="provider-huggingface" class="provider-panel" style="display:none;">
+      <div style="display:grid; grid-template-columns:1fr 1fr; gap:1rem;">
+        <div class="field-group">
+          <label for="hf-search">Search HuggingFace Hub</label>
+          <div style="display:flex; gap:.5rem;">
+            <input type="text" id="hf-search" placeholder="e.g. llama, mistral, qwen..." style="flex:1;">
+            <button type="button" class="outline" onclick="searchHFModels()">Search</button>
+          </div>
+        </div>
+        <div class="field-group">
+          <label for="hf-api-key">HF API Token <small>(optional, for gated models)</small></label>
+          <input type="password" id="hf-api-key" placeholder="hf_...">
+        </div>
+      </div>
+      <div id="hf-search-results" style="margin-top:.5rem;"></div>
+    </div>
+  </fieldset>
+
+  <!-- ── 3. Model Selection ───────── -->
+  <fieldset>
+    <legend><strong>3. Models</strong></legend>
+    <div id="model-checkboxes" class="inline-checks">
+      <p class="text-muted">Select a provider above, then load models.</p>
+    </div>
+    <!-- Manual model entry for OpenAI/HF -->
+    <div id="manual-model-entry" style="display:none; margin-top:.5rem;">
+      <label for="manual-model-names">Additional model name(s) <small>(comma-separated)</small></label>
+      <input type="text" id="manual-model-names" placeholder="gpt-4o, llama-3.1-70b-versatile">
+      <button type="button" class="outline secondary" style="margin-top:.25rem;" onclick="addManualModels()">+ Add</button>
+    </div>
+  </fieldset>
+
+  <!-- ── 4. Sampling ─────────────── -->
+  <fieldset>
+    <legend><strong>4. Sampling</strong></legend>
+    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(160px,1fr)); gap:1rem;">
+      <div class="field-group">
+        <label for="exec-temp">Temperature</label>
+        <input type="number" id="exec-temp" value="0.1" min="0" max="2" step="0.05">
+      </div>
+      <div class="field-group">
+        <label for="exec-tokens">Max tokens</label>
+        <input type="number" id="exec-tokens" value="2048" min="64" max="16384" step="64">
+      </div>
+      <div class="field-group" style="display:flex;align-items:end;">
+        <label><input type="checkbox" id="exec-no-think" checked> Disable thinking</label>
+      </div>
+    </div>
+  </fieldset>
+
+  <button type="button" id="btn-launch" onclick="launchExecution()">🚀 Launch</button>
+</form>
+
+<hr>
+
+<!-- ── Live Job Progress ──────── -->
+<div id="job-progress-area" style="display:none;">
+  <h4>Execution Progress</h4>
+  <div id="job-cards"></div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<style>
+.provider-tabs { border-bottom: 2px solid var(--muted-border-color, #dee2e6); }
+.provider-tab {
+  background: none; border: none; padding: .5rem 1.2rem; cursor: pointer;
+  border-bottom: 2px solid transparent; margin-bottom: -2px;
+  color: var(--muted-color, #6c757d); font-weight: 500;
+}
+.provider-tab.active { border-bottom-color: var(--primary); color: var(--primary); }
+.provider-tab:hover { color: var(--primary); }
+</style>
+<script>
+let currentProvider = 'ollama';
+
+// ── Provider switching ──
+function switchProvider(p) {
+  currentProvider = p;
+  document.querySelectorAll('.provider-tab').forEach(b => b.classList.toggle('active', b.dataset.provider === p));
+  document.querySelectorAll('.provider-panel').forEach(el => el.style.display = 'none');
+  const panel = document.getElementById('provider-' + p);
+  if (panel) panel.style.display = 'block';
+
+  // Show manual model entry for OpenAI/HF
+  document.getElementById('manual-model-entry').style.display = (p !== 'ollama') ? 'block' : 'none';
+
+  // Clear model checkboxes
+  document.getElementById('model-checkboxes').innerHTML = '<p class="text-muted">Click the button above to load models.</p>';
+}
+
+// ── Load test sets ──
+(async function() {
+  const resp = await fetch('/api/testsets');
+  const sets = await resp.json();
+  const sel = document.getElementById('testset-select');
+  sel.innerHTML = sets.map(s =>
+    `<option value="${s.path}">${s.filename} — ${s.test_count} tests, ${(s.task_types||[]).join('/')}</option>`
+  ).join('');
+  const params = new URLSearchParams(window.location.search);
+  const preselect = params.get('testset');
+  if (preselect) {
+    for (const opt of sel.options) {
+      if (opt.textContent.includes(preselect) || opt.value.includes(preselect)) { opt.selected = true; break; }
+    }
+  }
+})();
+
+// ── Ollama models ──
+async function refreshOllamaModels() {
+  const host = document.getElementById('ollama-host').value;
+  const container = document.getElementById('model-checkboxes');
+  container.innerHTML = '<p aria-busy="true">Fetching Ollama models…</p>';
+  try {
+    const resp = await fetch(`/api/models?host=${encodeURIComponent(host)}`);
+    const data = await resp.json();
+    if (data.error) { container.innerHTML = `<p style="color:var(--danger)">${data.error}</p>`; return; }
+    if (!data.models.length) { container.innerHTML = '<p class="text-muted">No models found.</p>'; return; }
+    container.innerHTML = data.models.map(m =>
+      `<label><input type="checkbox" name="models" value="${m.name}"> ${m.display_name}</label>`
+    ).join('');
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger)">Failed to connect: ${e.message}</p>`;
+  }
+}
+// Auto-load Ollama models on page load
+refreshOllamaModels();
+
+// ── OpenAI-compatible models ──
+async function refreshOpenAIModels() {
+  const baseUrl = document.getElementById('openai-base-url').value;
+  const apiKey = document.getElementById('openai-api-key').value;
+  const container = document.getElementById('model-checkboxes');
+  container.innerHTML = '<p aria-busy="true">Fetching models…</p>';
+  try {
+    let url = `/api/models/openai?base_url=${encodeURIComponent(baseUrl)}`;
+    if (apiKey) url += `&api_key=${encodeURIComponent(apiKey)}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.error) { container.innerHTML = `<p style="color:var(--danger)">${data.error}</p>`; return; }
+    if (!data.models.length) { container.innerHTML = '<p class="text-muted">No models found at this endpoint.</p>'; return; }
+    container.innerHTML = data.models.map(m =>
+      `<label><input type="checkbox" name="models" value="${m.name}"> ${m.display_name}</label>`
+    ).join('');
+  } catch (e) {
+    container.innerHTML = `<p style="color:var(--danger)">Failed: ${e.message}</p>`;
+  }
+}
+
+// ── HuggingFace search ──
+async function searchHFModels() {
+  const query = document.getElementById('hf-search').value.trim();
+  if (!query) { flash('Enter a search query', 'error'); return; }
+  const apiKey = document.getElementById('hf-api-key').value;
+  const container = document.getElementById('model-checkboxes');
+  const resultsDiv = document.getElementById('hf-search-results');
+  resultsDiv.innerHTML = '<p aria-busy="true">Searching HuggingFace Hub…</p>';
+
+  try {
+    let url = `/api/models/huggingface/search?query=${encodeURIComponent(query)}`;
+    if (apiKey) url += `&api_key=${encodeURIComponent(apiKey)}`;
+    const resp = await fetch(url);
+    const data = await resp.json();
+    if (data.error) { resultsDiv.innerHTML = `<p style="color:var(--danger)">${data.error}</p>`; return; }
+    if (!data.models.length) { resultsDiv.innerHTML = '<p class="text-muted">No models found.</p>'; return; }
+
+    resultsDiv.innerHTML = `<p class="text-muted">${data.models.length} results — check models to select:</p>`;
+    container.innerHTML = data.models.map(m => {
+      const tags = m.pipeline_tag ? `<small class="text-muted">[${m.pipeline_tag}]</small>` : '';
+      return `<label style="display:block;margin-bottom:.3rem;">
+        <input type="checkbox" name="models" value="${m.id}"> <strong>${m.id}</strong> ${tags}
+        <small class="text-muted">${m.downloads ? '↓' + _fmtNum(m.downloads) : ''} ${m.likes ? '♥' + m.likes : ''}</small>
+      </label>`;
+    }).join('');
+  } catch (e) {
+    resultsDiv.innerHTML = `<p style="color:var(--danger)">Search failed: ${e.message}</p>`;
+  }
+}
+
+function _fmtNum(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'K';
+  return n;
+}
+
+// ── Manual model entry ──
+function addManualModels() {
+  const input = document.getElementById('manual-model-names');
+  const names = input.value.split(',').map(s => s.trim()).filter(Boolean);
+  if (!names.length) return;
+  const container = document.getElementById('model-checkboxes');
+  // Append to existing checkboxes (don't overwrite)
+  const existing = container.querySelector('.text-muted');
+  if (existing) container.innerHTML = '';
+  names.forEach(name => {
+    if (container.querySelector(`input[value="${name}"]`)) return; // skip dupes
+    const lbl = document.createElement('label');
+    lbl.innerHTML = `<input type="checkbox" name="models" value="${name}" checked> ${name}`;
+    container.appendChild(lbl);
+  });
+  input.value = '';
+}
+
+// ── Launch ──
+async function launchExecution() {
+  const testset = document.getElementById('testset-select').value;
+  if (!testset) { flash('Select a test set', 'error'); return; }
+
+  const models = getChecked('models');
+  if (!models.length) { flash('Select at least one model', 'error'); return; }
+
+  const payload = {
+    testset_path: testset,
+    models: models,
+    provider: currentProvider,
+    ollama_host: document.getElementById('ollama-host').value,
+    temperature: Number(document.getElementById('exec-temp').value),
+    max_tokens: Number(document.getElementById('exec-tokens').value),
+    no_think: document.getElementById('exec-no-think').checked,
+    api_key: '',
+    api_base: '',
+  };
+
+  // Provider-specific fields
+  if (currentProvider === 'openai_compatible') {
+    payload.api_base = document.getElementById('openai-base-url').value;
+    payload.api_key = document.getElementById('openai-api-key').value;
+  } else if (currentProvider === 'huggingface') {
+    payload.api_key = document.getElementById('hf-api-key').value;
+  }
+
+  const btn = document.getElementById('btn-launch');
+  btn.disabled = true;
+  btn.setAttribute('aria-busy', 'true');
+
+  try {
+    const resp = await fetch('/api/jobs/run', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(payload),
+    });
+    const data = await resp.json();
+    if (!resp.ok) { flash(data.detail || 'Launch failed', 'error'); return; }
+
+    flash(`Launched ${data.jobs.length} job(s)`, 'success');
+    showJobProgress(data.jobs);
+  } catch (e) {
+    flash('Network error: ' + e.message, 'error');
+  } finally {
+    btn.disabled = false;
+    btn.removeAttribute('aria-busy');
+  }
+}
+
+// ── Show job progress cards with polling ──
+function showJobProgress(jobs) {
+  const area = document.getElementById('job-progress-area');
+  const container = document.getElementById('job-cards');
+  area.style.display = 'block';
+
+  container.innerHTML = jobs.map(j => `
+    <article id="job-${j.job_id}" style="margin-bottom:1rem;">
+      <header><strong>${j.model}</strong> <span class="badge badge-info" id="state-${j.job_id}">pending</span></header>
+      <div class="progress-bar-outer">
+        <div class="progress-bar-inner" id="bar-${j.job_id}" style="width:0%">0%</div>
+      </div>
+      <small class="text-muted" id="info-${j.job_id}">Waiting…</small>
+    </article>
+  `).join('');
+
+  jobs.forEach(j => {
+    pollJob(j.job_id, (data) => {
+      const pct = data.progress_total > 0 ? Math.round(data.progress_current / data.progress_total * 100) : 0;
+      const bar = document.getElementById(`bar-${j.job_id}`);
+      const badge = document.getElementById(`state-${j.job_id}`);
+      const info = document.getElementById(`info-${j.job_id}`);
+      if (bar) { bar.style.width = pct + '%'; bar.textContent = pct + '%'; }
+      if (badge) {
+        badge.textContent = data.state;
+        badge.className = 'badge ' + ({
+          pending: 'badge-muted', running: 'badge-info',
+          completed: 'badge-success', failed: 'badge-danger', cancelled: 'badge-warning'
+        }[data.state] || 'badge-muted');
+      }
+      if (info) {
+        let text = `${data.progress_current}/${data.progress_total} tests`;
+        if (data.elapsed_seconds) text += ` — ${fmtDuration(data.elapsed_seconds)}`;
+        if (data.state === 'completed' && data.result_path) {
+          text += ` — <a href="/results">View results</a>`;
+        }
+        if (data.state === 'failed' && data.error) {
+          text = `Error: ${data.error}`;
+        }
+        info.innerHTML = text;
+      }
+      if (data.state === 'completed') {
+        if (bar) bar.style.background = 'var(--success)';
+      }
+    });
+  });
+}
+</script>
+{% endblock %}

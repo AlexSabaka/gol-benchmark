@@ -24,6 +24,9 @@ import json
 import gzip
 import sys
 import os
+import html as html_mod
+import random as _random
+import re as _re
 import numpy as np
 from datetime import datetime
 from pathlib import Path
@@ -652,416 +655,599 @@ def generate_markdown_report(results: List[Dict], output_path: str, grouped_by_m
     print(f"✓ Report saved: {output_path}")
 
 
+def _html_escape(text) -> str:
+    """Escape text for safe HTML embedding."""
+    if text is None:
+        return ''
+    return html_mod.escape(str(text))
+
+
+def _make_slug(name: str) -> str:
+    """Turn a display name into a safe HTML id slug."""
+    return _re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
+
+
+def _get_shared_css() -> str:
+    """Return the shared CSS used by both grouped and ungrouped reports."""
+    return """
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 0; background: #f5f5f5; }
+        .container { max-width: 1400px; margin: 0 auto; background: white; padding: 0 40px 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .report-header { background: white; padding: 30px 40px 0; max-width: 1400px; margin: 0 auto; border-radius: 8px 8px 0 0; }
+        h1 { color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; margin-top: 0; }
+        h2 { color: #34495e; margin-top: 30px; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; }
+        h3 { color: #7f8c8d; margin-top: 25px; }
+        h4 { color: #7f8c8d; margin-top: 20px; }
+        .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 20px 0; }
+        .metric-card { background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }
+        .metric-card.success { background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }
+        .metric-card.warning { background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }
+        .metric-card.info { background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }
+        .metric-value { font-size: 36px; font-weight: bold; margin: 10px 0; }
+        .metric-label { font-size: 14px; opacity: 0.9; text-transform: uppercase; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }
+        th { background: #3498db; color: white; padding: 12px; text-align: left; font-weight: 600; }
+        td { padding: 12px; border-bottom: 1px solid #ecf0f1; }
+        tr:hover { background: #f8f9fa; }
+        .model-section { background: #f8f9fa; padding: 30px; margin: 20px 0; border-radius: 8px; border-left: 4px solid #3498db; }
+        .badge { display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-right: 8px; }
+        .badge-primary { background: #3498db; color: white; }
+        .badge-success { background: #2ecc71; color: white; }
+        .badge-warning { background: #f39c12; color: white; }
+        .badge-danger { background: #e74c3c; color: white; }
+        .task-card { background: white; padding: 20px; margin: 15px 0; border-radius: 6px; border-left: 3px solid #3498db; }
+        .progress-bar { height: 8px; background: #ecf0f1; border-radius: 4px; overflow: hidden; margin: 10px 0; }
+        .progress-fill { height: 100%; background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); transition: width 0.3s; }
+        code { background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; font-size: 0.9em; }
+        .timestamp { color: #95a5a6; font-size: 14px; }
+        img { max-width: 100%; height: auto; display: block; }
+
+        /* ── Tab navigation ── */
+        .tab-nav { display: flex; flex-wrap: wrap; gap: 4px; border-bottom: 2px solid #ecf0f1; padding-bottom: 0; margin-bottom: 0; position: sticky; top: 0; background: white; z-index: 100; padding-top: 15px; }
+        .tab-btn { padding: 10px 22px; border: none; background: #f0f0f0; color: #7f8c8d; font-size: 14px; font-weight: 600;
+                   cursor: pointer; border-radius: 6px 6px 0 0; transition: all 0.2s; position: relative; bottom: -2px; }
+        .tab-btn:hover { background: #e0e7ff; color: #3498db; }
+        .tab-btn.active { background: #3498db; color: white; }
+        .tab-btn.sample-tab { background: #f9f0ff; color: #8e44ad; }
+        .tab-btn.sample-tab:hover { background: #e8d5f5; }
+        .tab-btn.sample-tab.active { background: #8e44ad; color: white; }
+        .tab-pane { display: none; padding-top: 10px; }
+        .tab-pane.active { display: block; }
+
+        /* ── Sample response cards ── */
+        .samples-section h3 { margin-top: 15px; }
+        .sample-card { border: 1px solid #e0e0e0; border-radius: 8px; margin: 12px 0; overflow: hidden; }
+        .sample-card.success { border-left: 4px solid #2ecc71; }
+        .sample-card.danger { border-left: 4px solid #e74c3c; }
+        .sample-card.warning { border-left: 4px solid #f39c12; }
+        .sample-header { display: flex; align-items: center; gap: 10px; padding: 12px 16px; background: #fafafa; flex-wrap: wrap; }
+        .sample-header .test-id { font-family: 'Courier New', monospace; font-size: 13px; color: #555; }
+        .sample-body { padding: 14px 16px; }
+        .sample-body .field { margin: 6px 0; }
+        .sample-body .field strong { display: inline-block; min-width: 90px; }
+        .collapsible-toggle { cursor: pointer; color: #3498db; font-size: 13px; font-weight: 600; margin-top: 10px; user-select: none; padding: 6px 0; }
+        .collapsible-toggle:hover { color: #2980b9; text-decoration: underline; }
+        .collapsible-content { display: none; margin-top: 10px; }
+        .raw-response { background: #f8f8f8; border: 1px solid #e8e8e8; border-radius: 4px; padding: 14px; font-family: 'Courier New', monospace;
+                        font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 500px; overflow-y: auto; line-height: 1.5; }
+        .prompt-section { margin-top: 12px; }
+        .prompt-section summary { cursor: pointer; font-weight: 600; color: #7f8c8d; font-size: 13px; }
+        .prompt-section pre { background: #f0f4ff; border: 1px solid #d0d8e8; border-radius: 4px; padding: 12px; font-size: 12px;
+                              white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; }
+        .no-samples { color: #95a5a6; font-style: italic; padding: 20px 0; }
+
+        /* ── Chart grid ── */
+        .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 30px; margin: 20px 0; }
+        .chart-card { background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .chart-card h4 { margin-top: 0; }
+
+        /* ── Performance metrics (ungrouped) ── */
+        .performance-metric { background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 4px; }
+        .error-critical { background: #ffe6e6; border: 1px solid #ffcccc; padding: 15px; border-radius: 4px; margin: 10px 0; }
+        .accuracy-high { color: #27ae60; font-weight: bold; }
+        .accuracy-low { color: #e74c3c; font-weight: bold; }
+        .accuracy-med { color: #f39c12; font-weight: bold; }
+        .task-breakdown { margin: 15px 0; }
+        .task-breakdown table { font-size: 0.9em; }
+"""
+
+
+def _get_tab_js() -> str:
+    """Return the JavaScript for tab switching and collapsible sections."""
+    return """
+    <script>
+    function switchTab(tabId) {
+        // Hide all panes, deactivate all buttons
+        document.querySelectorAll('.tab-pane').forEach(function(p) { p.classList.remove('active'); });
+        document.querySelectorAll('.tab-btn').forEach(function(b) { b.classList.remove('active'); });
+        // Show target pane, activate its button
+        var pane = document.getElementById(tabId);
+        if (pane) pane.classList.add('active');
+        var btn = document.querySelector('[data-tab="' + tabId + '"]');
+        if (btn) btn.classList.add('active');
+    }
+    function toggleCollapsible(el) {
+        var content = el.nextElementSibling;
+        if (!content) return;
+        var visible = content.style.display !== 'none';
+        content.style.display = visible ? 'none' : 'block';
+        // Swap arrow
+        var arrow = visible ? '\\u25b6' : '\\u25bc';
+        el.textContent = el.textContent.replace(/[\\u25b6\\u25bc]/, arrow);
+    }
+    </script>
+"""
+
+
+def _render_sample_cards(all_results_for_model: List[Dict], num_correct: int = 5, num_wrong: int = 5) -> str:
+    """Render sample response cards (correct + wrong) for one model."""
+    # Deduplicate results by test_id so repeated entries don't produce identical sample cards
+    seen_ids: Dict[str, Dict] = {}
+    for r in all_results_for_model:
+        tid = r.get('test_id', id(r))
+        seen_ids[tid] = r  # last-wins — keeps one copy per test_id
+    deduped = list(seen_ids.values())
+
+    # Separate correct vs wrong, skip error status results for wrong (show them separately if any)
+    correct = []
+    wrong = []
+    errors = []
+    for r in deduped:
+        if r.get('status') != 'success':
+            errors.append(r)
+        elif r.get('evaluation', {}).get('correct'):
+            correct.append(r)
+        else:
+            wrong.append(r)
+
+    html = ''
+
+    def _card(sample, label_class, label_text):
+        """Build one sample card."""
+        h = ''
+        test_id = _html_escape(sample.get('test_id', '?'))
+        # Detect task type from test_id
+        tid = sample.get('test_id', '')
+        task_badge = ''
+        for tname in ['arithmetic', 'game_of_life', 'gol', 'linda', 'ascii_shapes',
+                       'cellular_automata_1d', 'c14', 'object_tracking', 'sally_anne',
+                       'carwash', 'inverted_cup', 'strawberry', 'measure_comparison', 'grid_tasks']:
+            if tname in tid:
+                nice = tname.replace('_', ' ').title()
+                task_badge = f"<span class='badge badge-primary'>{nice}</span>"
+                break
+
+        duration = sample.get('duration', 0)
+        tokens = sample.get('tokens', {})
+        tok_in = tokens.get('input_tokens', 0)
+        tok_out = tokens.get('output_tokens', 0)
+
+        h += f"<div class='sample-card {label_class}'>\n"
+        h += f"  <div class='sample-header'>\n"
+        h += f"    <span class='badge badge-{label_class}'>{label_text}</span>\n"
+        h += f"    {task_badge}\n"
+        h += f"    <span class='test-id'>{test_id}</span>\n"
+        if duration:
+            h += f"    <span class='badge' style='background:#ecf0f1;color:#555'>{duration:.1f}s</span>\n"
+        if tok_in or tok_out:
+            h += f"    <span class='badge' style='background:#ecf0f1;color:#555'>{tok_in}+{tok_out} tok</span>\n"
+        h += f"  </div>\n"
+
+        h += f"  <div class='sample-body'>\n"
+        if sample.get('status') == 'success':
+            expected = _html_escape(sample['input']['task_params'].get('expected_answer', 'N/A'))
+            parsed = _html_escape(sample['output'].get('parsed_answer', 'N/A'))
+            h += f"    <div class='field'><strong>Expected:</strong> <code>{expected}</code></div>\n"
+            h += f"    <div class='field'><strong>Parsed:</strong> <code>{parsed}</code></div>\n"
+
+            raw = _html_escape(sample['output'].get('raw_response', ''))
+            char_count = len(sample['output'].get('raw_response', ''))
+            h += f"    <div class='collapsible-toggle' onclick='toggleCollapsible(this)'>&#9654; Show full response ({char_count} chars)</div>\n"
+            h += f"    <div class='collapsible-content' style='display:none'>\n"
+            h += f"      <div class='raw-response'>{raw}</div>\n"
+
+            user_prompt = _html_escape(sample['input'].get('user_prompt', ''))
+            sys_prompt = _html_escape(sample['input'].get('system_prompt', ''))
+            if user_prompt:
+                h += f"      <details class='prompt-section'><summary>User prompt</summary><pre>{user_prompt}</pre></details>\n"
+            if sys_prompt:
+                h += f"      <details class='prompt-section'><summary>System prompt</summary><pre>{sys_prompt}</pre></details>\n"
+            h += f"    </div>\n"
+        else:
+            error_msg = _html_escape(sample.get('error', 'Unknown error'))
+            h += f"    <div class='field'><strong>Error:</strong> <code>{error_msg}</code></div>\n"
+        h += f"  </div>\n"
+        h += f"</div>\n"
+        return h
+
+    # Random sample so we get a diverse mix across task types
+    rng = _random.Random(42)  # fixed seed for reproducible reports
+    if len(correct) > num_correct:
+        correct = rng.sample(correct, num_correct)
+    if len(wrong) > num_wrong:
+        wrong = rng.sample(wrong, num_wrong)
+    if len(errors) > 3:
+        errors = rng.sample(errors, 3)
+
+    # Correct samples
+    if correct:
+        html += f"<h3>Correct Responses ({len(correct)} shown)</h3>\n"
+        for s in correct:
+            html += _card(s, 'success', 'Correct')
+    else:
+        html += "<p class='no-samples'>No correct responses in this result set.</p>\n"
+
+    # Wrong samples
+    if wrong:
+        html += f"<h3>Wrong Responses ({len(wrong)} shown)</h3>\n"
+        for s in wrong:
+            html += _card(s, 'danger', 'Wrong')
+    else:
+        html += "<p class='no-samples'>No wrong responses in this result set.</p>\n"
+
+    # Errors (show up to 3)
+    if errors:
+        html += f"<h3>Error Responses ({len(errors)} shown)</h3>\n"
+        for s in errors:
+            html += _card(s, 'warning', 'Error')
+
+    return html
+
+
+def _render_chart_grid(charts_dir, output_path) -> str:
+    """Render chart images as base64-embedded data URIs for self-contained HTML."""
+    import base64 as _b64
+
+    if not charts_dir or not Path(charts_dir).exists():
+        return "<p class='no-samples'>No visualizations generated. Re-run with <code>--visualize</code> to generate charts.</p>\n"
+    chart_files = sorted(Path(charts_dir).glob('*.png'))
+    if not chart_files:
+        return "<p class='no-samples'>No chart images found in the charts directory.</p>\n"
+    html = "<div class='chart-grid'>\n"
+    for chart_file in chart_files:
+        chart_name = _html_escape(chart_file.stem.replace('_', ' ').title())
+        try:
+            img_bytes = chart_file.read_bytes()
+            b64 = _b64.b64encode(img_bytes).decode('ascii')
+            src = f"data:image/png;base64,{b64}"
+        except Exception:
+            src = chart_file.name  # fallback to filename if read fails
+        html += f"  <div class='chart-card'>\n"
+        html += f"    <h4>{chart_name}</h4>\n"
+        html += f"    <img src='{src}' alt='{chart_name}' style='width:100%;height:auto;border-radius:4px;'>\n"
+        html += f"  </div>\n"
+    html += "</div>\n"
+    return html
+
+
 def generate_html_report(results: List[Dict], output_path: str, charts_dir: str = None, grouped_by_model: bool = False):
-    """Generate HTML version of the report with embedded charts and optional model grouping."""
-    
-    # Generate timestamp for consistent use in both HTML and Markdown
+    """Generate interactive tabbed HTML report with sample responses per model."""
+
     timestamp = datetime.now().strftime('%Y-%m-%d %H:%M:%S')
-    
-    # Check if we should group by model
+
+    # ── Grouped mode (multi-model comparison) ──────────────────────────────
     if grouped_by_model and len(results) > 1:
-        # Group results by model
         grouped_results = group_results_by_model(results)
-        model_aggregates = {name: aggregate_model_stats(files) 
-                          for name, files in grouped_results.items()}
-        
-        # Start HTML document
+        model_aggregates = {name: aggregate_model_stats(files)
+                           for name, files in grouped_results.items()}
+        sorted_models = sorted(model_aggregates.items(),
+                               key=lambda x: x[1]['accuracy'], reverse=True)
+
+        # Build tab list: fixed tabs + per-model sample tabs
+        tabs = [
+            ('tab-overview', '📊 Overview'),
+            ('tab-detail',   '📋 Detailed Analysis'),
+            ('tab-viz',      '📈 Visualizations'),
+        ]
+        for model_name, _ in sorted_models:
+            slug = _make_slug(model_name)
+            tabs.append((f'tab-samples-{slug}', f'🔍 {model_name}'))
+
+        # ── Start HTML ──
+        css = _get_shared_css()
         html = f"""<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="UTF-8">
-    <title>Model-Grouped Benchmark Analysis</title>
-    <style>
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; background: #f5f5f5; }}
-        .container {{ max-width: 1400px; margin: 0 auto; background: white; padding: 40px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }}
-        h1 {{ color: #2c3e50; border-bottom: 3px solid #3498db; padding-bottom: 10px; }}
-        h2 {{ color: #34495e; margin-top: 40px; border-bottom: 2px solid #ecf0f1; padding-bottom: 8px; }}
-        h3 {{ color: #7f8c8d; margin-top: 30px; }}
-        .summary-grid {{ display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); gap: 20px; margin: 30px 0; }}
-        .metric-card {{ background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); color: white; padding: 20px; border-radius: 8px; }}
-        .metric-card.success {{ background: linear-gradient(135deg, #11998e 0%, #38ef7d 100%); }}
-        .metric-card.warning {{ background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%); }}
-        .metric-card.info {{ background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%); }}
-        .metric-value {{ font-size: 36px; font-weight: bold; margin: 10px 0; }}
-        .metric-label {{ font-size: 14px; opacity: 0.9; text-transform: uppercase; }}
-        table {{ width: 100%; border-collapse: collapse; margin: 20px 0; box-shadow: 0 2px 3px rgba(0,0,0,0.1); }}
-        th {{ background: #3498db; color: white; padding: 12px; text-align: left; font-weight: 600; }}
-        td {{ padding: 12px; border-bottom: 1px solid #ecf0f1; }}
-        tr:hover {{ background: #f8f9fa; }}
-        .model-section {{ background: #f8f9fa; padding: 30px; margin: 30px 0; border-radius: 8px; border-left: 4px solid #3498db; }}
-        .badge {{ display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px; font-weight: 600; margin-right: 8px; }}
-        .badge-primary {{ background: #3498db; color: white; }}
-        .badge-success {{ background: #2ecc71; color: white; }}
-        .badge-warning {{ background: #f39c12; color: white; }}
-        .badge-danger {{ background: #e74c3c; color: white; }}
-        .task-card {{ background: white; padding: 20px; margin: 15px 0; border-radius: 6px; border-left: 3px solid #3498db; }}
-        .progress-bar {{ height: 8px; background: #ecf0f1; border-radius: 4px; overflow: hidden; margin: 10px 0; }}
-        .progress-fill {{ height: 100%; background: linear-gradient(90deg, #11998e 0%, #38ef7d 100%); transition: width 0.3s; }}
-        code {{ background: #f4f4f4; padding: 2px 6px; border-radius: 3px; font-family: 'Courier New', monospace; }}
-        .timestamp {{ color: #95a5a6; font-size: 14px; }}
-        img {{ max-width: 100%; height: auto; display: block; }}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Model-Grouped Benchmark Analysis</title>
+<style>{css}</style>
 </head>
 <body>
-    <div class="container">
-        <h1>🎯 Model-Grouped Benchmark Analysis</h1>
-        <p class='timestamp'>Generated: {timestamp}</p>
+<div class="report-header">
+  <h1>🎯 Model-Grouped Benchmark Analysis</h1>
+  <p class="timestamp">Generated: {timestamp}</p>
+</div>
+<div class="container">
 """
-        
-        # Overview metrics
+        # ── Tab navigation ──
+        html += "<div class='tab-nav'>\n"
+        for i, (tab_id, tab_label) in enumerate(tabs):
+            active = ' active' if i == 0 else ''
+            extra = ' sample-tab' if tab_id.startswith('tab-samples-') else ''
+            html += f"  <button class='tab-btn{active}{extra}' data-tab='{tab_id}' onclick=\"switchTab('{tab_id}')\">{_html_escape(tab_label)}</button>\n"
+        html += "</div>\n"
+
+        # ═══════════  TAB 1 — OVERVIEW  ═══════════
         total_files = len(results)
         total_models = len(grouped_results)
-        total_tests = sum(agg['total_tests'] for agg in model_aggregates.values())
-        
-        html += f"""        <div class="summary-grid">
-            <div class="metric-card info"><div class="metric-label">Result Files</div><div class="metric-value">{total_files}</div></div>
-            <div class="metric-card"><div class="metric-label">Models Analyzed</div><div class="metric-value">{total_models}</div></div>
-            <div class="metric-card success"><div class="metric-label">Total Tests</div><div class="metric-value">{total_tests}</div></div>
-        </div>
+        total_tests = sum(a['total_tests'] for a in model_aggregates.values())
+
+        html += "<div class='tab-pane active' id='tab-overview'>\n"
+        html += f"""<div class="summary-grid">
+  <div class="metric-card info"><div class="metric-label">Result Files</div><div class="metric-value">{total_files}</div></div>
+  <div class="metric-card"><div class="metric-label">Models Analyzed</div><div class="metric-value">{total_models}</div></div>
+  <div class="metric-card success"><div class="metric-label">Total Tests</div><div class="metric-value">{total_tests}</div></div>
+</div>
+<h2>Model Comparison</h2>
+<table><thead><tr>
+  <th>Model</th><th>Files</th><th>Tests</th><th>Accuracy</th>
+  <th>Parse Errors</th><th>Avg Time</th><th>Tasks</th>
+</tr></thead><tbody>
 """
-        
-        # Model comparison table
-        html += """        <h2>📊 Model Comparison</h2>
-        <table><thead><tr>
-            <th>Model</th><th>Files</th><th>Tests</th><th>Accuracy</th>
-            <th>Parse Errors</th><th>Avg Time</th><th>Tasks</th>
-        </tr></thead><tbody>
+        for model_name, agg in sorted_models:
+            acc = agg['accuracy']
+            badge = 'success' if acc >= 0.8 else 'warning' if acc >= 0.5 else 'danger'
+            task_list = ", ".join(sorted(agg['task_types']))
+            html += f"""<tr>
+  <td><strong>{_html_escape(model_name)}</strong></td>
+  <td><span class='badge badge-primary'>{agg['result_count']}</span></td>
+  <td>{agg['total_tests']}</td>
+  <td><span class='badge badge-{badge}'>{acc:.1%}</span></td>
+  <td>{agg['parse_error_rate']:.1%}</td>
+  <td>{agg['avg_time_per_test']:.2f}s</td>
+  <td><small>{_html_escape(task_list)}</small></td>
+</tr>
 """
-        
-        # Sort by accuracy descending
-        sorted_models = sorted(model_aggregates.items(), 
-                              key=lambda x: x[1]['accuracy'], reverse=True)
-        
-        for model_name, agg_stats in sorted_models:
-            # Determine badge color for accuracy
-            acc = agg_stats['accuracy']
-            if acc >= 0.8:
-                acc_badge = 'success'
-            elif acc >= 0.5:
-                acc_badge = 'warning'
-            else:
-                acc_badge = 'danger'
-            
-            task_list = ", ".join(sorted(agg_stats['task_types']))
-            
-            html += f"""        <tr>
-            <td><strong>{model_name}</strong></td>
-            <td><span class='badge badge-primary'>{agg_stats['result_count']}</span></td>
-            <td>{agg_stats['total_tests']}</td>
-            <td><span class='badge badge-{acc_badge}'>{agg_stats['accuracy']:.1%}</span></td>
-            <td>{agg_stats['parse_error_rate']:.1%}</td>
-            <td>{agg_stats['avg_time_per_test']:.2f}s</td>
-            <td><small>{task_list}</small></td>
-        </tr>
+        html += "</tbody></table>\n"
+        html += "</div>\n"  # close tab-overview
+
+        # ═══════════  TAB 2 — DETAILED MODEL ANALYSIS  ═══════════
+        html += "<div class='tab-pane' id='tab-detail'>\n"
+        for model_name, model_files in sorted(grouped_results.items()):
+            agg = model_aggregates[model_name]
+            html += f"""<div class="model-section">
+  <h3>{_html_escape(model_name)}</h3>
+  <p>Aggregated from <strong>{agg['result_count']}</strong> result file(s)</p>
+  <div class="summary-grid">
+    <div class="metric-card success">
+      <div class="metric-label">Accuracy</div>
+      <div class="metric-value">{agg['accuracy']:.1%}</div>
+      <small>{agg['correct_responses']}/{agg['successful_tests']} correct</small>
+    </div>
+    <div class="metric-card warning">
+      <div class="metric-label">Parse Errors</div>
+      <div class="metric-value">{agg['parse_error_rate']:.1%}</div>
+      <small>{agg['parse_errors']} errors</small>
+    </div>
+    <div class="metric-card info">
+      <div class="metric-label">Avg Time</div>
+      <div class="metric-value">{agg['avg_time_per_test']:.2f}s</div>
+      <small>per test</small>
+    </div>
+  </div>
 """
-        
-        html += """        </tbody></table>
-        <h2>📋 Detailed Model Analysis</h2>
+            if agg['task_breakdown']:
+                html += "  <h4>Performance by Task</h4>\n"
+                for task_type in sorted(agg['task_breakdown'].keys()):
+                    ts = agg['task_breakdown'][task_type]
+                    pct = ts['accuracy'] * 100
+                    html += f"""  <div class="task-card">
+    <strong>{task_type.replace('_', ' ').title()}</strong> — {ts['total']} tests
+    <div class="progress-bar"><div class="progress-fill" style="width:{pct}%"></div></div>
+    <small>Accuracy: <strong>{ts['accuracy']:.1%}</strong> | Parse Errors: {ts['parse_error_rate']:.1%}</small>
+  </div>
 """
-        
-        # Detailed model sections
-        for model_name, model_results in sorted(grouped_results.items()):
-            agg_stats = model_aggregates[model_name]
-            
-            html += f"""        <div class="model-section">
-            <h3>{model_name}</h3>
-            <p>Aggregated from <strong>{agg_stats['result_count']}</strong> result file(s)</p>
-            
-            <div class="summary-grid">
-                <div class="metric-card success">
-                    <div class="metric-label">Accuracy</div>
-                    <div class="metric-value">{agg_stats['accuracy']:.1%}</div>
-                    <small>{agg_stats['correct_responses']}/{agg_stats['successful_tests']} correct</small>
-                </div>
-                
-                <div class="metric-card warning">
-                    <div class="metric-label">Parse Errors</div>
-                    <div class="metric-value">{agg_stats['parse_error_rate']:.1%}</div>
-                    <small>{agg_stats['parse_errors']} errors</small>
-                </div>
-                
-                <div class="metric-card info">
-                    <div class="metric-label">Avg Time</div>
-                    <div class="metric-value">{agg_stats['avg_time_per_test']:.2f}s</div>
-                    <small>per test</small>
-                </div>
-            </div>
-"""
-            
-            # Task breakdown
-            if agg_stats['task_breakdown']:
-                html += "            <h4>Performance by Task</h4>\n"
-                
-                for task_type in sorted(agg_stats['task_breakdown'].keys()):
-                    task_stats = agg_stats['task_breakdown'][task_type]
-                    acc_pct = task_stats['accuracy'] * 100
-                    
-                    html += f"""            <div class="task-card">
-                <strong>{task_type.replace('_', ' ').title()}</strong> - {task_stats['total']} tests
-                <div class="progress-bar">
-                    <div class="progress-fill" style="width: {acc_pct}%"></div>
-                </div>
-                <small>Accuracy: <strong>{task_stats['accuracy']:.1%}</strong> | Parse Errors: {task_stats['parse_error_rate']:.1%}</small>
-            </div>
-"""
-            
-            html += "        </div>\n"  # Close model-section
-        
-        # Include charts if available (for grouped mode)
-        if charts_dir and Path(charts_dir).exists():
-            chart_files = list(Path(charts_dir).glob('*.png'))
-            if chart_files:
-                html += "        <h2>📈 Visualizations</h2>\n"
-                html += "        <div style='display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 30px; margin: 30px 0;'>\n"
-                for chart_file in sorted(chart_files):
-                    chart_name = chart_file.stem.replace('_', ' ').title()
-                    # Calculate relative path from HTML file to chart
-                    html_dir = Path(output_path).parent
-                    try:
-                        rel_path = chart_file.relative_to(html_dir)
-                    except ValueError:
-                        # If relative path fails, use just the chart name
-                        rel_path = chart_file.name
-                    html += f"            <div style='background: white; padding: 20px; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1);'>\n"
-                    html += f"                <h4 style='margin-top: 0;'>{chart_name}</h4>\n"
-                    html += f"                <img src='{rel_path}' alt='{chart_name}' style='width: 100%; height: auto; border-radius: 4px;'>\n"
-                    html += f"            </div>\n"
-                html += "        </div>\n"
-        
-        html += """    </div>
-</body>
-</html>
-"""
-        
-        # Write HTML file
+            # Token stats if available
+            if agg.get('total_input_tokens', 0) > 0:
+                html += "  <h4>Token Usage</h4>\n"
+                html += f"  <div class='performance-metric'><strong>Total Tokens:</strong> {agg.get('total_tokens', 0):,} ({agg.get('total_input_tokens', 0):,} in / {agg.get('total_output_tokens', 0):,} out)</div>\n"
+                html += f"  <div class='performance-metric'><strong>Avg per Test:</strong> {agg.get('avg_input_tokens_per_test', 0):.0f} in / {agg.get('avg_output_tokens_per_test', 0):.0f} out</div>\n"
+
+            html += "</div>\n"  # close model-section
+
+        html += "</div>\n"  # close tab-detail
+
+        # ═══════════  TAB 3 — VISUALIZATIONS  ═══════════
+        html += "<div class='tab-pane' id='tab-viz'>\n"
+        html += _render_chart_grid(charts_dir, output_path)
+        html += "</div>\n"
+
+        # ═══════════  TAB 4..N — PER-MODEL SAMPLES  ═══════════
+        for model_name, model_files in sorted(grouped_results.items()):
+            slug = _make_slug(model_name)
+            # Collect all individual results across all files for this model
+            all_results = []
+            for mf in model_files:
+                all_results.extend(mf.get('results', []))
+
+            html += f"<div class='tab-pane' id='tab-samples-{slug}'>\n"
+            html += f"<h2>Sample Responses — {_html_escape(model_name)}</h2>\n"
+            html += f"<p>Randomly sampled up to 5 correct and 5 wrong responses from {len(all_results)} total tests.</p>\n"
+            html += "<div class='samples-section'>\n"
+            html += _render_sample_cards(all_results)
+            html += "</div>\n"
+            html += "</div>\n"
+
+        # ── Close document ──
+        html += _get_tab_js()
+        html += "</div>\n</body>\n</html>"
+
         output_path_obj = Path(output_path)
         output_path_obj.parent.mkdir(parents=True, exist_ok=True)
-        
         with open(output_path, 'w') as f:
             f.write(html)
-        
         print(f"✓ Model-grouped HTML report saved: {output_path}")
         return
-    
-    # Fall back to original ungrouped HTML report
+
+    # ── Ungrouped mode (single / few result files) ─────────────────────────
     stats = [extract_summary_stats(r) for r in results]
-    
+
+    # Determine model names for sample tabs
+    model_names = []
+    for stat in stats:
+        nm = stat['model_name']
+        if stat.get('quantization'):
+            nm += f" ({stat['quantization']})"
+        if nm not in model_names:
+            model_names.append(nm)
+
+    tabs = [
+        ('tab-overview', '📊 Overview'),
+        ('tab-detail',   '📋 Detailed Analysis'),
+        ('tab-viz',      '📈 Visualizations'),
+    ]
+    for nm in model_names:
+        slug = _make_slug(nm)
+        tabs.append((f'tab-samples-{slug}', f'🔍 {nm}'))
+
+    css = _get_shared_css()
     html = f"""<!DOCTYPE html>
-<html>
+<html lang="en">
 <head>
-    <meta charset="utf-8">
-    <title>Benchmark Analysis Report</title>
-    <style>
-        body {{ font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; margin: 40px; line-height: 1.6; }}
-        .header {{ background: #f4f4f4; padding: 20px; border-radius: 8px; margin-bottom: 30px; }}
-        .summary-table {{ border-collapse: collapse; width: 100%; margin: 20px 0; }}
-        .summary-table th, .summary-table td {{ border: 1px solid #ddd; padding: 12px; text-align: left; }}
-        .summary-table th {{ background-color: #f2f2f2; font-weight: bold; }}
-        .model-section {{ margin: 30px 0; padding: 20px; border: 1px solid #e0e0e0; border-radius: 8px; }}
-        .performance-metric {{ background: #f9f9f9; padding: 10px; margin: 5px 0; border-radius: 4px; }}
-        .error-critical {{ background: #ffe6e6; border: 1px solid #ffcccc; padding: 15px; border-radius: 4px; margin: 10px 0; }}
-        .chart-container {{ text-align: center; margin: 20px 0; }}
-        .chart-container img {{ max-width: 100%; height: auto; border: 1px solid #ddd; border-radius: 4px; }}
-        code {{ background: #f4f4f4; padding: 2px 4px; border-radius: 3px; font-family: 'Courier New', monospace; }}
-        .accuracy-high {{ color: #27ae60; font-weight: bold; }}
-        .accuracy-low {{ color: #e74c3c; font-weight: bold; }}
-        .accuracy-med {{ color: #f39c12; font-weight: bold; }}
-        .task-breakdown {{ margin: 15px 0; }}
-        .task-breakdown table {{ border-collapse: collapse; width: 100%; margin: 10px 0; font-size: 0.9em; }}
-        .task-breakdown th, .task-breakdown td {{ border: 1px solid #ddd; padding: 8px; text-align: left; }}
-        .task-breakdown th {{ background-color: #f8f8f8; font-weight: bold; }}
-    </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Benchmark Analysis Report</title>
+<style>{css}</style>
 </head>
 <body>
-    <div class="header">
-        <h1>Benchmark Analysis Report</h1>
-        <p><strong>Generated:</strong> {timestamp}</p>
-    </div>
+<div class="report-header">
+  <h1>Benchmark Analysis Report</h1>
+  <p class="timestamp">Generated: {timestamp}</p>
+</div>
+<div class="container">
 """
-    
-    # Summary table
-    html += "    <h2>Summary</h2>\n"
-    html += "    <table class='summary-table'>\n"
-    html += "        <tr><th>Model</th><th>Provider</th><th>Task</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th><th>Avg Time</th><th>Avg Tokens</th><th>Duration</th></tr>\n"
-    
+    # ── Tab navigation ──
+    html += "<div class='tab-nav'>\n"
+    for i, (tab_id, tab_label) in enumerate(tabs):
+        active = ' active' if i == 0 else ''
+        extra = ' sample-tab' if tab_id.startswith('tab-samples-') else ''
+        html += f"  <button class='tab-btn{active}{extra}' data-tab='{tab_id}' onclick=\"switchTab('{tab_id}')\">{_html_escape(tab_label)}</button>\n"
+    html += "</div>\n"
+
+    # ═══════════  TAB 1 — OVERVIEW  ═══════════
+    html += "<div class='tab-pane active' id='tab-overview'>\n"
+    html += "<h2>Summary</h2>\n"
+    html += "<table><thead><tr><th>Model</th><th>Provider</th><th>Task</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th><th>Avg Time</th><th>Avg Tokens</th><th>Duration</th></tr></thead><tbody>\n"
+
     for stat in stats:
-        model_display = f"{stat['model_name']}"
+        model_display = _html_escape(stat['model_name'])
         if stat['quantization']:
-            model_display += f" ({stat['quantization']})"
-        
-        # Color-code accuracy
+            model_display += f" ({_html_escape(stat['quantization'])})"
         acc_class = "accuracy-high" if stat['accuracy'] > 0.7 else "accuracy-low" if stat['accuracy'] < 0.3 else "accuracy-med"
-        
-        # Format token count
         avg_tokens = stat.get('avg_input_tokens_per_test', 0) + stat.get('avg_output_tokens_per_test', 0)
-        if avg_tokens >= 1000:
-            tokens_str = f"{avg_tokens/1000:.1f}K"
-        else:
-            tokens_str = f"{avg_tokens:.0f}"
-        
-        html += f"        <tr>"
-        html += f"<td>{model_display}</td>"
-        html += f"<td>{stat['provider']}</td>"
-        html += f"<td>{stat['task_type']}</td>"
+        tokens_str = f"{avg_tokens/1000:.1f}K" if avg_tokens >= 1000 else f"{avg_tokens:.0f}"
+        html += f"<tr><td>{model_display}</td><td>{_html_escape(stat['provider'])}</td><td>{_html_escape(stat['task_type'])}</td>"
         html += f"<td>{stat['successful_tests']}/{stat['total_tests']}</td>"
         html += f"<td class='{acc_class}'>{stat['accuracy']:.1%}</td>"
         html += f"<td>{stat['parse_error_rate']:.1%}</td>"
-        html += f"<td>{stat['avg_time_per_test']:.1f}s</td>"
-        html += f"<td>{tokens_str}</td>"
-        html += f"<td>{stat['duration_seconds']:.0f}s</td>"
-        html += f"</tr>\n"
-    
-    html += "    </table>\n"
-    
-    # Multi-task performance overview if applicable
-    multi_task_results = [s for s in stats if s.get('is_multi_task', False)]
-    if multi_task_results:
-        html += "    <h2>Multi-Task Performance Overview</h2>\n"
-        for stat in stats:
-            if stat['task_breakdown']:
-                html += f"    <h3>{stat['model_name']} Task Breakdown</h3>\n"
-                html += "    <div class='task-breakdown'>\n"
-                html += "        <table>\n"
-                html += "            <tr><th>Task Type</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th></tr>\n"
-                for task_type, task_stats in stat['task_breakdown'].items():
-                    html += f"            <tr>"
-                    html += f"<td>{task_type.replace('_', ' ').title()}</td>"
-                    html += f"<td>{task_stats['total']}</td>"
-                    html += f"<td>{task_stats['accuracy']:.1%}</td>"
-                    html += f"<td>{task_stats['parse_error_rate']:.1%}</td>"
-                    html += f"</tr>\n"
-                html += "        </table>\n"
-                html += "    </div>\n"
-    
-    # Include charts if available
-    if charts_dir and Path(charts_dir).exists():
-        chart_files = list(Path(charts_dir).glob('*.png'))
-        if chart_files:
-            html += "    <h2>Visualizations</h2>\n"
-            for chart_file in sorted(chart_files):
-                chart_name = chart_file.stem.replace('_', ' ').title()
-                # Calculate relative path from HTML file to chart
-                html_dir = Path(output_path).parent
-                try:
-                    rel_path = chart_file.relative_to(html_dir)
-                except ValueError:
-                    # If relative path fails, use just the chart name (assumes same directory)
-                    rel_path = chart_file.name
-                html += f"    <div class='chart-container'>\n"
-                html += f"        <h3>{chart_name}</h3>\n"
-                html += f"        <img src='{rel_path}' alt='{chart_name}'>\n"
-                html += f"    </div>\n"
-    
-    # Detailed sections
+        html += f"<td>{stat['avg_time_per_test']:.1f}s</td><td>{tokens_str}</td><td>{stat['duration_seconds']:.0f}s</td></tr>\n"
+
+    html += "</tbody></table>\n"
+
+    # Multi-task overview
+    for stat in stats:
+        if stat.get('task_breakdown'):
+            html += f"<h3>{_html_escape(stat['model_name'])} Task Breakdown</h3>\n"
+            html += "<div class='task-breakdown'><table><thead><tr><th>Task Type</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th></tr></thead><tbody>\n"
+            for task_type, ts in stat['task_breakdown'].items():
+                html += f"<tr><td>{task_type.replace('_', ' ').title()}</td><td>{ts['total']}</td><td>{ts['accuracy']:.1%}</td><td>{ts['parse_error_rate']:.1%}</td></tr>\n"
+            html += "</tbody></table></div>\n"
+
+    html += "</div>\n"  # close tab-overview
+
+    # ═══════════  TAB 2 — DETAILED ANALYSIS  ═══════════
+    html += "<div class='tab-pane' id='tab-detail'>\n"
+
     for i, (result, stat) in enumerate(zip(results, stats)):
-        html += f"    <div class='model-section'>\n"
-        html += f"        <h2>{stat['model_name']} - {stat['task_type']}</h2>\n"
-        html += f"        <p><strong>Testset:</strong> {stat['testset_name']}</p>\n"
-        html += f"        <p><strong>Provider:</strong> {stat['provider']}</p>\n"
+        html += "<div class='model-section'>\n"
+        html += f"<h2>{_html_escape(stat['model_name'])} — {_html_escape(stat['task_type'])}</h2>\n"
+        html += f"<p><strong>Testset:</strong> {_html_escape(stat['testset_name'] or 'N/A')}</p>\n"
+        html += f"<p><strong>Provider:</strong> {_html_escape(stat['provider'] or 'N/A')}</p>\n"
         if stat['quantization']:
-            html += f"        <p><strong>Quantization:</strong> {stat['quantization']}</p>\n"
-        html += f"        <p><strong>Execution:</strong> {stat['created_at'][:19]} on {stat['hostname']}</p>\n"
-        
-        # Performance metrics
-        html += f"        <h3>Performance</h3>\n"
+            html += f"<p><strong>Quantization:</strong> {_html_escape(stat['quantization'])}</p>\n"
+        created = (stat['created_at'] or '')[:19] or 'N/A'
+        hostname = stat['hostname'] or 'N/A'
+        html += f"<p><strong>Execution:</strong> {_html_escape(created)} on {_html_escape(hostname)}</p>\n"
+
         acc_class = "accuracy-high" if stat['accuracy'] > 0.7 else "accuracy-low" if stat['accuracy'] < 0.3 else "accuracy-med"
-        html += f"        <div class='performance-metric'><strong>Accuracy:</strong> <span class='{acc_class}'>{stat['accuracy']:.2%}</span> ({stat['correct_responses']}/{stat['successful_tests']})</div>\n"
-        html += f"        <div class='performance-metric'><strong>Parse Error Rate:</strong> {stat['parse_error_rate']:.2%} ({stat['parse_errors']}/{stat['successful_tests']})</div>\n"
-        html += f"        <div class='performance-metric'><strong>Success Rate:</strong> {stat['success_rate']:.2%} ({stat['successful_tests']}/{stat['total_tests']})</div>\n"
-        
+        html += "<h3>Performance</h3>\n"
+        html += f"<div class='performance-metric'><strong>Accuracy:</strong> <span class='{acc_class}'>{stat['accuracy']:.2%}</span> ({stat['correct_responses']}/{stat['successful_tests']})</div>\n"
+        html += f"<div class='performance-metric'><strong>Parse Error Rate:</strong> {stat['parse_error_rate']:.2%} ({stat['parse_errors']}/{stat['successful_tests']})</div>\n"
+        html += f"<div class='performance-metric'><strong>Success Rate:</strong> {stat['success_rate']:.2%} ({stat['successful_tests']}/{stat['total_tests']})</div>\n"
         if stat['avg_cell_accuracy'] is not None:
-            html += f"        <div class='performance-metric'><strong>Cell-level Accuracy:</strong> {stat['avg_cell_accuracy']:.2%}</div>\n"
-        
-        html += f"        <div class='performance-metric'><strong>Average Time per Test:</strong> {stat['avg_time_per_test']:.2f} seconds</div>\n"
-        html += f"        <div class='performance-metric'><strong>Total Duration:</strong> {stat['duration_seconds']:.1f} seconds</div>\n"
-        
-        # Token statistics
+            html += f"<div class='performance-metric'><strong>Cell-level Accuracy:</strong> {stat['avg_cell_accuracy']:.2%}</div>\n"
+        html += f"<div class='performance-metric'><strong>Average Time per Test:</strong> {stat['avg_time_per_test']:.2f}s</div>\n"
+        html += f"<div class='performance-metric'><strong>Total Duration:</strong> {stat['duration_seconds']:.1f}s</div>\n"
+
         if stat.get('total_input_tokens', 0) > 0:
-            html += f"        <h3>Token Usage</h3>\n"
-            html += f"        <div class='performance-metric'><strong>Total Input Tokens:</strong> {stat['total_input_tokens']:,}</div>\n"
-            html += f"        <div class='performance-metric'><strong>Total Output Tokens:</strong> {stat['total_output_tokens']:,}</div>\n"
-            html += f"        <div class='performance-metric'><strong>Total Tokens:</strong> {stat['total_tokens']:,}</div>\n"
-            html += f"        <div class='performance-metric'><strong>Avg Input per Test:</strong> {stat['avg_input_tokens_per_test']:.0f}</div>\n"
-            html += f"        <div class='performance-metric'><strong>Avg Output per Test:</strong> {stat['avg_output_tokens_per_test']:.0f}</div>\n"
-        
-        # Task breakdown for multi-task results
+            html += "<h3>Token Usage</h3>\n"
+            html += f"<div class='performance-metric'><strong>Total Input Tokens:</strong> {stat['total_input_tokens']:,}</div>\n"
+            html += f"<div class='performance-metric'><strong>Total Output Tokens:</strong> {stat['total_output_tokens']:,}</div>\n"
+            html += f"<div class='performance-metric'><strong>Total Tokens:</strong> {stat['total_tokens']:,}</div>\n"
+            html += f"<div class='performance-metric'><strong>Avg Input per Test:</strong> {stat['avg_input_tokens_per_test']:.0f}</div>\n"
+            html += f"<div class='performance-metric'><strong>Avg Output per Test:</strong> {stat['avg_output_tokens_per_test']:.0f}</div>\n"
+
         if stat.get('is_multi_task', False) and stat['task_breakdown']:
-            html += f"        <h3>Task-Specific Performance</h3>\n"
-            html += "        <div class='task-breakdown'>\n"
-            html += "            <table>\n"
-            html += "                <tr><th>Task Type</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th></tr>\n"
-            for task_type, task_stats in stat['task_breakdown'].items():
-                html += f"                <tr>"
-                html += f"<td>{task_type.replace('_', ' ').title()}</td>"
-                html += f"<td>{task_stats['total']}</td>"
-                html += f"<td>{task_stats['accuracy']:.1%}</td>"
-                html += f"<td>{task_stats['parse_error_rate']:.1%}</td>"
-                html += f"</tr>\n"
-            html += "        </div>\n"
-        
-        # Error analysis matching Markdown structure
+            html += "<h3>Task-Specific Performance</h3>\n"
+            html += "<div class='task-breakdown'><table><thead><tr><th>Task Type</th><th>Tests</th><th>Accuracy</th><th>Parse Errors</th></tr></thead><tbody>\n"
+            for task_type, ts in stat['task_breakdown'].items():
+                html += f"<tr><td>{task_type.replace('_', ' ').title()}</td><td>{ts['total']}</td><td>{ts['accuracy']:.1%}</td><td>{ts['parse_error_rate']:.1%}</td></tr>\n"
+            html += "</tbody></table></div>\n"
+
+        # Error analysis
         if stat['parse_errors'] > 0 or stat['type_errors'] > 0:
-            html += "        <h3>Error Analysis</h3>\n"
-            
+            html += "<h3>Error Analysis</h3>\n"
             error_types = defaultdict(int)
             for r in result['results']:
-                error_type = r.get('evaluation', {}).get('match_type')
-                if error_type and error_type not in ['exact', 'perfect']:
-                    error_types[error_type] += 1
-            
-            html += "        <ul>\n"
-            for error_type, count in error_types.items():
+                etype = r.get('evaluation', {}).get('match_type')
+                if etype and etype not in ['exact', 'perfect']:
+                    error_types[etype] += 1
+            html += "<ul>\n"
+            for etype, count in error_types.items():
                 rate = count / max(stat['successful_tests'], 1) * 100
-                html += f"            <li><strong>{error_type.replace('_', ' ').title()}</strong>: {count} ({rate:.1f}%)</li>\n"
-            html += "        </ul>\n"
-            
-            # Add specific handling for 100% parse errors
+                html += f"  <li><strong>{etype.replace('_', ' ').title()}</strong>: {count} ({rate:.1f}%)</li>\n"
+            html += "</ul>\n"
             if stat['parse_error_rate'] >= 1.0:
-                html += "        <div class='error-critical'>\n"
-                html += "            <h4>⚠️ Critical Issue: 100% Parse Errors</h4>\n"
-                html += "            <p>All responses failed to parse. This typically indicates:</p>\n"
-                html += "            <ul>\n"
-                html += "                <li>Model output format doesn't match expected pattern</li>\n"
-                html += "                <li>Prompt engineering may need adjustment</li>\n"
-                html += "                <li>Model may require different parsing approach</li>\n"
-                html += "            </ul>\n"
-                html += "        </div>\n"
-        
-        # Sample responses (first few) matching Markdown structure
-        sample_results = result['results'][:3]
-        if sample_results:
-            html += "        <h3>Sample Results</h3>\n"
-            for j, sample in enumerate(sample_results):
-                html += f"        <h4>Test {j+1} (<code>{sample['test_id']}</code>)</h4>\n"
-                html += "        <ul>\n"
-                html += f"            <li><strong>Input:</strong> <code>{sample['input']['user_prompt'][:100]}...</code></li>\n"
-                if sample['status'] == 'success':
-                    expected = sample['input']['task_params'].get('expected_answer', 'N/A')
-                    parsed = sample['output']['parsed_answer']
-                    correct = sample['evaluation']['correct']
-                    html += f"            <li><strong>Expected:</strong> <code>{expected}</code></li>\n"
-                    html += f"            <li><strong>Parsed:</strong> <code>{parsed}</code></li>\n"
-                    html += f"            <li><strong>Correct:</strong> {correct}</li>\n"
-                else:
-                    error_msg = sample.get('error', 'Unknown')
-                    html += f"            <li><strong>Error:</strong> <code>{error_msg}</code></li>\n"
-                html += "        </ul>\n"
-        
-        html += "    </div>\n"
-        
-        # Add separator between models except for the last one
-        if i < len(results) - 1:
-            html += "    <hr style='margin: 40px 0; border: none; border-top: 2px solid #e0e0e0;'>\n"
-    
-    html += "</body>\n</html>"
-    
-    # Write HTML report
+                html += "<div class='error-critical'><h4>⚠️ Critical Issue: 100% Parse Errors</h4>\n"
+                html += "<p>All responses failed to parse. Check prompt format / parsing strategy.</p></div>\n"
+
+        html += "</div>\n"  # close model-section
+
+    html += "</div>\n"  # close tab-detail
+
+    # ═══════════  TAB 3 — VISUALIZATIONS  ═══════════
+    html += "<div class='tab-pane' id='tab-viz'>\n"
+    html += _render_chart_grid(charts_dir, output_path)
+    html += "</div>\n"
+
+    # ═══════════  TAB 4..N — PER-MODEL SAMPLES  ═══════════
+    # Group the raw result dicts by the same model key used for tabs
+    model_result_map = defaultdict(list)
+    for result, stat in zip(results, stats):
+        nm = stat['model_name']
+        if stat.get('quantization'):
+            nm += f" ({stat['quantization']})"
+        model_result_map[nm].extend(result.get('results', []))
+
+    for nm in model_names:
+        slug = _make_slug(nm)
+        all_results = model_result_map.get(nm, [])
+        html += f"<div class='tab-pane' id='tab-samples-{slug}'>\n"
+        html += f"<h2>Sample Responses — {_html_escape(nm)}</h2>\n"
+        html += f"<p>Randomly sampled up to 5 correct and 5 wrong responses from {len(all_results)} total tests.</p>\n"
+        html += "<div class='samples-section'>\n"
+        html += _render_sample_cards(all_results)
+        html += "</div>\n"
+        html += "</div>\n"
+
+    # ── Close document ──
+    html += _get_tab_js()
+    html += "</div>\n</body>\n</html>"
+
     output_path = Path(output_path)
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    
     with open(output_path, 'w') as f:
         f.write(html)
-    
     print(f"✓ HTML report saved: {output_path}")
 
 

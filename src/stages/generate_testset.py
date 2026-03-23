@@ -879,14 +879,15 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
         total_expected = len(test_cases)  # For multi-task, just use actual count
     else:  # Single task
         prompt_configs = len(config['task']['prompt_configs'])
+        gen = config['task'].get('generation', {})
         if task_type == "arithmetic":
-            targets = len(config['task']['generation']['target_accuracies'])
-            per_target = config['task']['generation']['expressions_per_target']
-            total_expected = prompt_configs * targets * per_target
+            targets = gen.get('target_accuracies', gen.get('target_values', gen.get('complexity', [1])))
+            per_target = gen.get('expressions_per_target', gen.get('count', 10))
+            total_expected = prompt_configs * len(targets) * per_target
         elif task_type == "game_of_life":
-            difficulties = len(config['task']['generation']['difficulty_levels'])
-            per_difficulty = config['task']['generation']['grids_per_difficulty']
-            total_expected = prompt_configs * difficulties * per_difficulty
+            difficulties = gen.get('difficulty_levels', ['MEDIUM'])
+            per_difficulty = gen.get('grids_per_difficulty', 10)
+            total_expected = prompt_configs * len(difficulties) * per_difficulty
         else:
             total_expected = len(test_cases)
     
@@ -906,10 +907,10 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
         "format_version": TESTSET_FORMAT_VERSION,
         "metadata": {
             "name": config['metadata']['name'],
-            "version": config['metadata']['version'],
-            "schema_version": config['metadata']['schema_version'],
-            "description": config['metadata']['description'],
-            "created_by": config['metadata']['created_by'],
+            "version": config['metadata'].get('version', '1.0'),
+            "schema_version": config['metadata'].get('schema_version', '1.0.0'),
+            "description": config['metadata'].get('description', ''),
+            "created_by": config['metadata'].get('created_by', 'web_ui'),
             "task_type": metadata_task_type,
             "created_at": datetime.now().isoformat(),
             "config_file": os.path.basename(config_path),

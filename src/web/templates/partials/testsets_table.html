@@ -1,0 +1,33 @@
+{% if items %}
+<table class="compact">
+  <thead>
+    <tr>
+      <th>Filename</th>
+      <th>Tasks</th>
+      <th>Tests</th>
+      <th>Size</th>
+      <th>Created</th>
+      <th>Actions</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for s in items %}
+    {% if not s.get('error') %}
+    <tr>
+      <td><a href="#" onclick="showTestsetDetail('{{ s.filename }}'); return false;">{{ s.filename }}</a></td>
+      <td>{% for t in s.get('task_types', []) %}<span class="chip">{{ t }}</span>{% endfor %}</td>
+      <td>{{ s.get('test_count', '?') }}</td>
+      <td class="text-muted">{{ "%.1f"|format(s.get('size_bytes', 0) / 1024) }} KB</td>
+      <td class="text-muted">{{ s.get('created', '') }}</td>
+      <td>
+        <a href="/execute?testset={{ s.filename }}" role="button" class="outline" style="padding:.2rem .5rem; font-size:.8rem;">Run →</a>
+        <button class="outline secondary" style="padding:.2rem .5rem; font-size:.8rem;" onclick="deleteTestset('{{ s.filename }}')">✕</button>
+      </td>
+    </tr>
+    {% endif %}
+    {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="text-muted">No test sets found. <a href="/configure">Generate one →</a></p>
+{% endif %}

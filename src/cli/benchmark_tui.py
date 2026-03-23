@@ -2061,6 +2061,20 @@ def _extract_result_path(output: str) -> str:
 
 def main():
     """Main TUI entry point."""
+    import warnings
+    warnings.warn(
+        "The terminal TUI is deprecated. Use the web UI instead: python -m src.web",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    console.print(
+        Panel(
+            "[yellow]⚠  The terminal TUI is deprecated.\n"
+            "   Use the web UI instead:[/yellow]  [bold cyan]python -m src.web[/bold cyan]",
+            title="Deprecation Notice",
+            border_style="yellow",
+        )
+    )
     tui = BenchmarkTUI()
     
     while True:

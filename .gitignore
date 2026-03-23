@@ -240,3 +240,4 @@ configs/**/*.yaml
 # Misc
 .DS_Store
 share/*
+/reports

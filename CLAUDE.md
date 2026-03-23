@@ -28,6 +28,10 @@
 ## Quick Commands
 
 ```bash
+# ── Web UI (Recommended) ──
+python -m src.web                # http://127.0.0.1:8000
+python -m src.web --host 0.0.0.0 # LAN-accessible
+
 # Run Game of Life benchmark
 python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty medium --batch-size 20
 
@@ -85,7 +89,13 @@ gol_eval/
 │   ├── models/            # LLM interfaces (Ollama, HuggingFace)
 │   ├── evaluation/        # Result scoring and metrics
 │   ├── benchmarks/        # DEPRECATED: Legacy monolithic scripts
-│   ├── cli/               # CLI tools, TUI, config management
+│   ├── cli/               # CLI tools, TUI (deprecated), config management
+│   ├── web/               # FastAPI + HTMX web UI (replaces TUI)
+│   │   ├── app.py         # FastAPI app factory, page routes
+│   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis)
+│   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor)
+│   │   ├── templates/     # Jinja2 + HTMX templates
+│   │   └── static/        # CSS, JS
 │   ├── visualization/     # Charts, analysis, reporting
 │   └── utils/             # Logging, model discovery
 │
