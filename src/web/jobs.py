@@ -131,7 +131,7 @@ def _run_testset_worker(
             if is_correct:
                 correct += 1
 
-            input_tok = resp.get("tokens_generated", 0)
+            input_tok = resp.get("tokens_input", 0)
             output_tok = resp.get("tokens_generated", 0)
             total_input_tokens += input_tok
             total_output_tokens += output_tok

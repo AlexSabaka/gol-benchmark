@@ -1,13 +1,5 @@
-from abc import ABC, abstractmethod
 from typing import List
 
-class State:
-    pass
-
-class BaseRulesEngine(ABC):
-    @abstractmethod
-    def next_state(current_state: State) -> State:
-        pass
 
 class GameOfLifeEngine:
     """Core Game of Life logic with optimized neighbor counting"""

@@ -2,6 +2,31 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.4.1] - March 24, 2026
+
+### Bug Fixes
+
+- **Token counting**: `src/web/jobs.py` was using `tokens_generated` for both input and output tokens — input now correctly reads `tokens_input`; Ollama interface in `run_testset.py` now passes `prompt_eval_count` as `tokens_input`
+- **API key leak**: Removed debug `print(url)` and `print(headers)` from `src/web/api/models.py` that exposed auth headers to stdout
+- **HuggingFace import guard**: `src/models/HuggingFaceInterface.py` referenced undefined `TRANSFORMERS_AVAILABLE` — wrapped `torch`/`transformers` imports in try/except so the module is importable without those dependencies
+- **HuggingFace return type**: `query_model()` declared `-> Tuple[str, Dict]` but returned bare `str` — now returns `(response, token_stats)` tuple matching the signature and OllamaInterface behavior
+- **Sally-Anne parser signature**: `parse()` used parameter name `metadata` instead of `task_params`, violating the `ResponseParser` base class contract — renamed throughout
+- **Bare except clause**: `src/engine/MathExpressionGenerator.py` used `except:` (catches SystemExit, KeyboardInterrupt) — narrowed to `except ImportError:`
+
+### Dead Code Removal
+
+- **Deleted 6 deprecated benchmark scripts** from `src/benchmarks/`: `gol_eval.py`, `ari_eval.py`, `c14_eval.py`, `gol_eval_matrix.py`, plus `.backup` files (~3,500 lines). Only `linda_eval.py` remains (still imported by linda_fallacy generator)
+- **Removed unused abstract classes** (`State`, `BaseRulesEngine`) from `src/engine/GameOfLifeEngine.py` — never inherited or imported
+- **Removed hardcoded schema fallback** (84 lines): deleted `_TASK_SCHEMAS` dict from `src/web/api/plugins.py` — all 12 plugins implement `get_config_schema()`
+- **Removed commented-out Ollama parameters**: 13 dead config lines from `src/models/OllamaInterface.py`
+
+### Simplification
+
+- **New `safe_enum()` utility** in `src/plugins/parse_utils.py` — replaces try/except enum parsing boilerplate across all 12 generators
+- **Updated all 12 plugin generators** to use `safe_enum()` for `Language`, `PromptStyle`, and `SystemPromptStyle` parsing
+
+---
+
 ## [2.4.0] - March 24, 2026
 
 ### Plugin Configuration Schema Introspection
@@ -29,7 +54,7 @@ All notable changes to the GoL Benchmark project.
 
 #### Web API: Schema Introspection Endpoint
 
-- **`GET /api/plugins/{task_type}/schema`** now introspects `generator.get_config_schema()` first, falling back to deprecated `_TASK_SCHEMAS` dict
+- **`GET /api/plugins/{task_type}/schema`** introspects `generator.get_config_schema()` directly (hardcoded `_TASK_SCHEMAS` fallback removed in v2.4.1)
 - Response includes `fields` array and `groups` list for UI rendering
 
 #### Web UI: Dynamic Collapsible Config Forms

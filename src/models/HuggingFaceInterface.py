@@ -2,11 +2,15 @@ from src.models.BaseModelInterface import BaseModelInterface
 from src.utils.logger import logger
 from src.core.types import BaseTestConfig
 
-import requests
-import torch
-from transformers import AutoModelForCausalLM, AutoTokenizer
-
 from typing import Dict, Tuple
+
+try:
+    import requests
+    import torch
+    from transformers import AutoModelForCausalLM, AutoTokenizer
+    TRANSFORMERS_AVAILABLE = True
+except ImportError:
+    TRANSFORMERS_AVAILABLE = False
 
 
 
@@ -113,7 +117,11 @@ class HuggingFaceInterface(BaseModelInterface):
             response_tokens = outputs[0][len(inputs[0]):]
             response = tokenizer.decode(response_tokens, skip_special_tokens=True)
 
-            return response.strip()
+            token_stats = {
+                "prompt_eval_count": len(inputs[0]),
+                "eval_count": len(response_tokens),
+            }
+            return response.strip(), token_stats
 
         except torch.cuda.OutOfMemoryError as e:
             error_msg = f"Out of memory error for model {model}. Try reducing context length or batch size."

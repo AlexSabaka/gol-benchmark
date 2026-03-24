@@ -9,6 +9,7 @@ import itertools
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from ..base import TestCaseGenerator, TestCase, ConfigField
+from ..parse_utils import safe_enum
 from .scenario_builder import SallyAnneScenarioBuilder
 from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
@@ -165,14 +166,8 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
         
         system_style_str = prompt_config.get('system_style', '')
         language_str = prompt_config.get('language', 'en')
-        try:
-            sys_enum = SystemPromptStyle(system_style_str)
-        except ValueError:
-            sys_enum = SystemPromptStyle.ANALYTICAL
-        try:
-            lang_enum = Language(language_str)
-        except ValueError:
-            lang_enum = Language.EN
+        sys_enum = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
+        lang_enum = safe_enum(Language, language_str, Language.EN)
         system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
 
         return TestCase(

@@ -17,6 +17,7 @@ import random
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+from src.plugins.parse_utils import safe_enum
 from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
@@ -183,10 +184,7 @@ class CarwashGenerator(TestCaseGenerator):
         if user_style == "minimal":
             user_prompt = f"{setup} The carwash is {distance_str}. {question}".strip()
 
-        try:
-            sys_enum = SystemPromptStyle(system_style)
-        except ValueError:
-            sys_enum = SystemPromptStyle.ANALYTICAL
+        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
         system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum)
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 

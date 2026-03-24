@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.4.0** | Last updated: 2026-03-24
+> **Version 2.4.1** | Last updated: 2026-03-24
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 12 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -169,10 +169,16 @@ re_search_last(r'\d+', response)  →  "12" (CORRECT — final answer)
 
 ### The Solution
 
-`src/plugins/parse_utils.py` provides drop-in replacements:
+`src/plugins/parse_utils.py` provides drop-in replacements and shared helpers:
 
 ```python
-from src.plugins.parse_utils import re_search_last, re_findall_last, last_sentences, last_keyword_position
+from src.plugins.parse_utils import (
+    safe_enum, re_search_last, re_findall_last, last_sentences, last_keyword_position
+)
+
+# Parse string to enum with fallback (used by all 12 generators)
+language = safe_enum(Language, language_str, Language.EN)
+system_style = safe_enum(SystemPromptStyle, style_str, SystemPromptStyle.ANALYTICAL)
 
 # Drop-in for re.search() — returns LAST match
 match = re_search_last(r"answer:\s*(\d+)", response)

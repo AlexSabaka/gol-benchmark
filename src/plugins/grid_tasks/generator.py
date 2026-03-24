@@ -20,6 +20,7 @@ except ImportError:
     names = None
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
+from src.plugins.parse_utils import safe_enum
 from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 from src.utils.text_table import create_table
 
@@ -486,14 +487,8 @@ Please provide your answer clearly."""
             
             system_style_str = prompt_config.get('system_style', 'analytical')
             language_str = prompt_config.get('language', 'en')
-            try:
-                sys_enum = SystemPromptStyle(system_style_str)
-            except ValueError:
-                sys_enum = SystemPromptStyle.ANALYTICAL
-            try:
-                lang_enum = Language(language_str)
-            except ValueError:
-                lang_enum = Language.EN
+            sys_enum = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
+            lang_enum = safe_enum(Language, language_str, Language.EN)
             system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
             
             # Create test case

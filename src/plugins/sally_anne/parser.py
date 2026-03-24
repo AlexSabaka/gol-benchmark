@@ -6,7 +6,7 @@ Multi-strategy parser for extracting container answers from model responses.
 
 import re
 import json
-from typing import Optional, Dict, Any
+from typing import Dict, Any, Optional
 from ..base import ResponseParser, ParsedAnswer
 from ..parse_utils import re_search_last
 
@@ -36,14 +36,14 @@ class SallyAnneResponseParser(ResponseParser):
             'pocket': ['pocket', 'coat pocket', 'pants pocket'],
         }
     
-    def parse(self, response: str, metadata: Optional[Dict[str, Any]] = None) -> ParsedAnswer:
+    def parse(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         """
         Parse model response to extract container answer.
-        
+
         Args:
             response: Raw model response text
-            metadata: Optional test case metadata (contains container_a, container_b)
-            
+            task_params: Task parameters (contains container_a, container_b)
+
         Returns:
             ParsedAnswer with extracted container name
         """
@@ -58,19 +58,19 @@ class SallyAnneResponseParser(ResponseParser):
         
         response_clean = response.strip()
         
-        # Get known containers from metadata
+        # Get known containers from task_params
         containers = []
-        if metadata:
-            if metadata.get('container_a'):
-                containers.append(metadata['container_a'].lower())
-            if metadata.get('container_b'):
-                containers.append(metadata['container_b'].lower())
+        if task_params:
+            if task_params.get('container_a'):
+                containers.append(task_params['container_a'].lower())
+            if task_params.get('container_b'):
+                containers.append(task_params['container_b'].lower())
         
         # Strategy 1: LaTeX boxed answer - highest confidence
         parsed, strategy = self._try_boxed_extraction(response_clean)
         if parsed and self._is_valid_container(parsed, containers):
             return ParsedAnswer(
-                value=self._normalize_container(parsed, metadata),
+                value=self._normalize_container(parsed, task_params),
                 raw_response=response_clean,
                 parse_strategy=strategy,
                 confidence=1.0
@@ -80,7 +80,7 @@ class SallyAnneResponseParser(ResponseParser):
         parsed, strategy = self._try_bold_extraction(response_clean)
         if parsed and self._is_valid_container(parsed, containers):
             return ParsedAnswer(
-                value=self._normalize_container(parsed, metadata),
+                value=self._normalize_container(parsed, task_params),
                 raw_response=response_clean,
                 parse_strategy=strategy,
                 confidence=0.95
@@ -90,7 +90,7 @@ class SallyAnneResponseParser(ResponseParser):
         parsed, strategy = self._try_answer_pattern(response_clean, containers)
         if parsed:
             return ParsedAnswer(
-                value=self._normalize_container(parsed, metadata),
+                value=self._normalize_container(parsed, task_params),
                 raw_response=response_clean,
                 parse_strategy=strategy,
                 confidence=0.9
@@ -100,7 +100,7 @@ class SallyAnneResponseParser(ResponseParser):
         parsed, strategy = self._try_look_pattern(response_clean, containers)
         if parsed:
             return ParsedAnswer(
-                value=self._normalize_container(parsed, metadata),
+                value=self._normalize_container(parsed, task_params),
                 raw_response=response_clean,
                 parse_strategy=strategy,
                 confidence=0.85
@@ -110,7 +110,7 @@ class SallyAnneResponseParser(ResponseParser):
         parsed, strategy = self._try_last_sentence(response_clean, containers)
         if parsed:
             return ParsedAnswer(
-                value=self._normalize_container(parsed, metadata),
+                value=self._normalize_container(parsed, task_params),
                 raw_response=response_clean,
                 parse_strategy=strategy,
                 confidence=0.8
@@ -120,14 +120,14 @@ class SallyAnneResponseParser(ResponseParser):
         parsed, strategy = self._try_json_extraction(response_clean)
         if parsed and self._is_valid_container(parsed, containers):
             return ParsedAnswer(
-                value=self._normalize_container(parsed, metadata),
+                value=self._normalize_container(parsed, task_params),
                 raw_response=response_clean,
                 parse_strategy=strategy,
                 confidence=0.75
             )
         
         # Strategy 7: Direct container match
-        parsed, strategy = self._try_direct_container_match(response_clean, containers, metadata)
+        parsed, strategy = self._try_direct_container_match(response_clean, containers, task_params)
         if parsed:
             return ParsedAnswer(
                 value=parsed,
@@ -270,7 +270,7 @@ class SallyAnneResponseParser(ResponseParser):
         
         return None, ""
     
-    def _try_direct_container_match(self, response: str, containers: list, metadata: Dict) -> tuple[Optional[str], str]:
+    def _try_direct_container_match(self, response: str, containers: list, task_params: Dict) -> tuple[Optional[str], str]:
         """
         Count occurrences of each container and use context to pick the answer.
         
@@ -307,17 +307,17 @@ class SallyAnneResponseParser(ResponseParser):
         if scores:
             best = max(scores, key=scores.get)
             if scores[best] > 0:
-                # Normalize to original case from metadata
-                if metadata:
-                    if best == metadata.get('container_a', '').lower():
-                        return metadata['container_a'], "direct_match"
-                    if best == metadata.get('container_b', '').lower():
-                        return metadata['container_b'], "direct_match"
+                # Normalize to original case from task_params
+                if task_params:
+                    if best == task_params.get('container_a', '').lower():
+                        return task_params['container_a'], "direct_match"
+                    if best == task_params.get('container_b', '').lower():
+                        return task_params['container_b'], "direct_match"
                 return best, "direct_match"
         
         return None, ""
     
-    def _normalize_container(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
+    def _normalize_container(self, text: str, task_params: Optional[Dict[str, Any]] = None) -> str:
         """Normalize container name to match expected format (word-boundary safe)."""
         if not text:
             return None
@@ -330,15 +330,15 @@ class SallyAnneResponseParser(ResponseParser):
             if text_lower.startswith(prefix):
                 text_lower = text_lower[len(prefix):].strip()
 
-        # If we have metadata, return the properly-cased container name
+        # If we have task_params, return the properly-cased container name
         # Use word-boundary match to avoid "basket" matching "basketball"
-        if metadata:
-            container_a = metadata.get('container_a', '').lower()
-            container_b = metadata.get('container_b', '').lower()
+        if task_params:
+            container_a = task_params.get('container_a', '').lower()
+            container_b = task_params.get('container_b', '').lower()
 
             if container_a and (text_lower == container_a or re.search(r'\b' + re.escape(container_a) + r'\b', text_lower)):
-                return metadata['container_a']
+                return task_params['container_a']
             if container_b and (text_lower == container_b or re.search(r'\b' + re.escape(container_b) + r'\b', text_lower)):
-                return metadata['container_b']
+                return task_params['container_b']
 
         return text_lower

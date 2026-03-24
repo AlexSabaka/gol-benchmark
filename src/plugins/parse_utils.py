@@ -11,7 +11,18 @@ This module provides drop-in replacements that find the LAST match.
 from __future__ import annotations
 
 import re
-from typing import List, Optional, Sequence
+from enum import Enum
+from typing import List, Optional, Sequence, TypeVar
+
+_E = TypeVar("_E", bound=Enum)
+
+
+def safe_enum(enum_cls: type[_E], value, default: _E) -> _E:
+    """Parse a value to an enum member, returning *default* on failure."""
+    try:
+        return enum_cls(value)
+    except (ValueError, KeyError):
+        return default
 
 
 def re_search_last(

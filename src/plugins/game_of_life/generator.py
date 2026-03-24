@@ -10,6 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
+from src.plugins.parse_utils import safe_enum
 from src.core.PromptEngine import (
     PromptEngine,
     PromptContext,
@@ -113,20 +114,9 @@ class GoLTestCaseGenerator(TestCaseGenerator):
         config_name = prompt_config.get('name', f"{user_style_str}_{system_style_str}")
 
         # Map strings to enums
-        try:
-            language = Language(language_str)
-        except ValueError:
-            language = Language.EN
-
-        try:
-            user_style = PromptStyle(user_style_str)
-        except ValueError:
-            user_style = PromptStyle.LINGUISTIC
-
-        try:
-            system_style = SystemPromptStyle(system_style_str)
-        except ValueError:
-            system_style = SystemPromptStyle.ANALYTICAL
+        language = safe_enum(Language, language_str, Language.EN)
+        user_style = safe_enum(PromptStyle, user_style_str, PromptStyle.LINGUISTIC)
+        system_style = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
 
         # Generate tests for each difficulty level
         for difficulty_str in difficulty_levels:

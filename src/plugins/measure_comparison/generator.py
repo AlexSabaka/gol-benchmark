@@ -38,6 +38,7 @@ from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+from src.plugins.parse_utils import safe_enum
 from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 # =========================================================================
@@ -893,14 +894,8 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         user_template = user_templates.get(user_style, user_templates["casual"])
         user_prompt = user_template.format(question=question).strip()
 
-        try:
-            sys_enum = SystemPromptStyle(system_style)
-        except ValueError:
-            sys_enum = SystemPromptStyle.ANALYTICAL
-        try:
-            lang_enum = Language(language)
-        except ValueError:
-            lang_enum = Language.EN
+        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
+        lang_enum = safe_enum(Language, language, Language.EN)
         system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
 
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt

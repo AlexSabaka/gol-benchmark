@@ -99,5 +99,5 @@ docs/
 
 ---
 
-**Version:** 2.3.0
+**Version:** 2.4.1
 **Last Updated:** March 2026

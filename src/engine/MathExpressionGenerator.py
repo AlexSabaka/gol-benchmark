@@ -3,7 +3,7 @@ from typing import List, Dict, Any, Optional, Tuple
 
 try:
     from src.core.PromptEngine import PromptEngine, Language, create_math_context
-except:
+except ImportError:
     from PromptEngine import PromptEngine, Language, create_math_context
 
 class TreeNode:

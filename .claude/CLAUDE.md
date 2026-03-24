@@ -38,25 +38,6 @@
 python -m src.web                # http://127.0.0.1:8000
 python -m src.web --host 0.0.0.0 # LAN-accessible
 
-# Run Game of Life benchmark
-python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty medium --batch-size 20
-
-# Run Arithmetic benchmark
-python -m src.benchmarks.ari_eval --model llama3.2:3b --difficulty 3
-
-# Run Linda fallacy test
-python -m src.benchmarks.linda_eval --model gemma3:1b --language es --trials 10
-
-# Run C14 cellular automata
-python -m src.benchmarks.c14_eval --model qwen3:4b --rule 110 --steps 5
-
-# Run Carwash Paradox (via 3-stage pipeline — no legacy script)
-# 1) Generate, 2) run, 3) analyze — or use TUI
-python src/cli/benchmark_tui.py  # select 'Carwash Paradox' task
-
-# Interactive benchmark TUI
-python -m src.cli.benchmark_tui
-
 # Run on a remote Ollama instance
 python src/stages/run_testset.py testsets/testset_xyz.json.gz \
     --model qwen3:0.6b --provider ollama \
@@ -100,7 +81,7 @@ gol_eval/
 │   ├── engine/            # Task-specific logic (GoL, Math)
 │   ├── models/            # LLM interfaces (Ollama, HuggingFace)
 │   ├── evaluation/        # Result scoring and metrics
-│   ├── benchmarks/        # DEPRECATED: Legacy monolithic scripts
+│   ├── benchmarks/        # Legacy (only linda_eval.py remains — used by linda plugin)
 │   ├── cli/               # CLI tools, TUI (deprecated), config management
 │   ├── web/               # FastAPI + HTMX web UI (replaces TUI)
 │   │   ├── app.py         # FastAPI app factory, page routes
@@ -129,7 +110,7 @@ gol_eval/
 | **Plugin System (12 plugins)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
-| [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities |
+| [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
 | [src/plugins/game_of_life/](src/plugins/game_of_life/) | GoL plugin module |
 | [src/plugins/arithmetic/](src/plugins/arithmetic/) | ARI plugin module |
 | [src/plugins/linda_fallacy/](src/plugins/linda_fallacy/) | Linda Fallacy plugin module |
@@ -197,6 +178,7 @@ All response parsers follow the principle of searching from the **end** of the m
 
 **Shared utilities** in [`src/plugins/parse_utils.py`](src/plugins/parse_utils.py):
 
+- `safe_enum(enum_cls, value, default)` — parse string to enum with fallback (used by all 12 generators)
 - `re_search_last(pattern, text)` — drop-in replacement for `re.search()` that returns the last match
 - `last_sentences(text, n)` — returns the last N sentences
 - `last_keyword_position(text, keywords)` — position of last keyword occurrence
@@ -308,18 +290,6 @@ All response parsers follow the principle of searching from the **end** of the m
 - Stage 3 (analyze_results.py)
 - Web UI `/configure` page (dynamic form via `get_config_schema()`)
 
-### Legacy Approach (Deprecated)
-
-<details>
-<summary>Click to see legacy monolithic approach (not recommended)</summary>
-
-1. Create evaluation script in `src/benchmarks/new_task_eval.py`
-2. Add to TUI manually
-3. Duplicate parsing/evaluation logic
-
-**Note:** This approach is deprecated. Use the plugin system instead.
-</details>
-
 ### New Model Provider
 
 1. **Create interface** in `src/models/NewProviderInterface.py`:
@@ -421,6 +391,7 @@ from src.plugins.base import (
     BenchmarkPlugin, TestCaseGenerator, ResponseParser, ResultEvaluator,
     TestCase, ParsedAnswer, EvaluationResult, ConfigField
 )
+from src.plugins.parse_utils import safe_enum, re_search_last
 
 # Core
 from src.core.types import GameOfLifeTestConfig, DifficultyLevel
@@ -495,23 +466,13 @@ pytest tests/test_provider_integration.py
 
 ### Manual Testing
 
-```bash
-# Test GoL with known pattern
-python -m src.benchmarks.gol_eval \
-  --model qwen3:0.6b \
-  --difficulty easy \
-  --batch-size 5 \
-  --seed 42 \
-  --no-think \
-  --live-dead-cell-markers "1,0"
+Use the Web UI (`python -m src.web`) or the 3-stage pipeline directly:
 
-# Test ARI with specific targets
-python -m src.benchmarks.ari_eval \
-  --model llama3.2:3b \
-  --target 0 1 2 \
-  --difficulty 2 \
-  --mode expression \
-  --batch-size 10
+```bash
+# Generate a test set, run it, then analyze
+python src/stages/generate_testset.py configs/my_config.yaml
+python src/stages/run_testset.py testsets/testset_xyz.json.gz --model qwen3:0.6b --provider ollama
+python src/stages/analyze_results.py results/
 ```
 
 ---
@@ -593,14 +554,8 @@ from data.conways_life.parser import parse_rle
 
 ### Q: How do I run a quick GoL benchmark?
 
-```bash
-python -m src.benchmarks.gol_eval \
-  --model qwen3:0.6b \
-  --difficulty medium \
-  --batch-size 20 \
-  --no-think \
-  --live-dead-cell-markers "1,0"
-```
+Use the Web UI (`python -m src.web`) — select Game of Life, configure parameters, and run.
+Or use the 3-stage pipeline with a YAML config.
 
 ### Q: How do I add a new difficulty level?
 
@@ -649,12 +604,7 @@ See "New Model Provider" section above. Key steps:
 
 ### Q: How do I reproduce exact benchmark results?
 
-Use `--seed` flag for deterministic random generation:
-```bash
-python -m src.benchmarks.gol_eval --seed 42 --batch-size 20
-```
-
-Same seed + same config = identical test cases.
+Use the `seed` parameter in your YAML config or the Web UI. Same seed + same config = identical test cases.
 
 ---
 
@@ -685,8 +635,8 @@ python --version
 # Check Ollama connection
 ollama list
 
-# Run quick test
-python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty easy --batch-size 1
+# Run quick test via web UI
+python -m src.web
 ```
 
 ---
@@ -727,6 +677,6 @@ pytest tests/
 ---
 
 *Last updated: 2026-03-24*
-*Version: 2.4.0*
-*Key additions: Plugin config schema introspection • ConfigField system • Dynamic web UI forms*
+*Version: 2.4.1*
+*Key additions: Bug fixes • Dead code cleanup (~3,500 lines) • safe_enum() utility • ConfigField system*
 *For questions or issues: Check [README.md](README.md) or create an issue*

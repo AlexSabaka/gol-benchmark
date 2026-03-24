@@ -1,11 +1,7 @@
-"""Benchmark evaluation scripts for different cognitive tasks.
+"""Benchmark evaluation scripts (legacy).
 
-These modules are designed to be executed as scripts using:
-    python -m src.benchmarks.gol_eval
-    python -m src.benchmarks.ari_eval
-    python -m src.benchmarks.linda_eval
-    python -m src.benchmarks.c14_eval
-    python -m src.benchmarks.gol_eval_matrix
+Only linda_eval remains — it exports LindaBenchmark and PersonaTemplate
+which are still used by the plugin system.
 """
 
 __all__ = []

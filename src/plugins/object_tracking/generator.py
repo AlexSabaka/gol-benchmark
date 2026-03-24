@@ -10,6 +10,7 @@ from typing import Any, Dict, List, Optional
 import random
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
+from src.plugins.parse_utils import safe_enum
 from src.plugins.object_tracking.step_builder import StepBuilder, Scenario
 from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
@@ -203,14 +204,8 @@ Provide your answer as a single word indicating the location."""
 
             # Build prompts
             user_prompt = self._build_prompt_text(scenario, user_style_str, question)
-            try:
-                sys_enum = SystemPromptStyle(system_style_str)
-            except ValueError:
-                sys_enum = SystemPromptStyle.ANALYTICAL
-            try:
-                lang_enum = Language(language_str)
-            except ValueError:
-                lang_enum = Language.EN
+            sys_enum = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
+            lang_enum = safe_enum(Language, language_str, Language.EN)
             system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
 
             # Determine difficulty

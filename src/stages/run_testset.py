@@ -105,6 +105,7 @@ class OllamaInterface(ModelInterface):
             
             return {
                 "response": result.get("response", ""),
+                "tokens_input": result.get("prompt_eval_count", 0),
                 "tokens_generated": result.get("eval_count", 0),
                 "duration": end_time - start_time,
                 "model_info": {
