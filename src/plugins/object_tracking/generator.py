@@ -9,8 +9,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 import random
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.plugins.object_tracking.step_builder import StepBuilder, Scenario
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
 # Default vocabulary for test generation
@@ -32,6 +33,7 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
 
     def __init__(self):
         self._step_builder: Optional[StepBuilder] = None
+        self._prompt_engine = PromptEngine()
 
     def _get_step_builder(self, seed: Optional[int] = None) -> StepBuilder:
         """Get or create a StepBuilder with the given seed."""
@@ -114,34 +116,6 @@ Provide your answer as a single word indicating the location."""
         else:  # casual (default)
             steps_text = builder.format_steps_narrative(scenario.steps)
             return f"{steps_text} {question} Give single word answer."
-
-    def _build_system_prompt(self, style: str) -> str:
-        """
-        Build the system prompt based on style.
-
-        Args:
-            style: System prompt style (analytical, casual, adversarial, none)
-
-        Returns:
-            System prompt text
-        """
-        if style == 'none' or style == '':
-            return ''
-
-        elif style == 'analytical':
-            return """You are an expert at spatial reasoning and object tracking.
-When given a sequence of actions, carefully trace the location of objects step by step.
-Pay special attention to:
-- When containers are inverted or flipped, objects fall out
-- After falling, objects stay at that location even if the container moves
-- Distinguish between where the container ends up vs where the object is"""
-
-        elif style == 'adversarial':
-            return """Give precise, single-word answers. No explanations."""
-
-        else:  # casual
-            return """You're helping track where objects end up after a series of actions.
-Give a single word answer for the location."""
 
     def generate_batch(
         self,
@@ -229,7 +203,15 @@ Give a single word answer for the location."""
 
             # Build prompts
             user_prompt = self._build_prompt_text(scenario, user_style_str, question)
-            system_prompt = self._build_system_prompt(system_style_str)
+            try:
+                sys_enum = SystemPromptStyle(system_style_str)
+            except ValueError:
+                sys_enum = SystemPromptStyle.ANALYTICAL
+            try:
+                lang_enum = Language(language_str)
+            except ValueError:
+                lang_enum = Language.EN
+            system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
 
             # Determine difficulty
             difficulty = self._compute_difficulty(scenario, distractor_count)
@@ -287,3 +269,24 @@ Give a single word answer for the location."""
             'sticky_objects': [],
             'post_inversion_moves': [0, 1, 2]
         }
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='distractor_count', label='Distractor count', field_type='multi-select',
+                        default=[0, 1, 2], options=[0, 1, 2, 3, 4]),
+            ConfigField(name='post_inversion_moves', label='Post-inversion moves', field_type='multi-select',
+                        default=[0, 1, 2], options=[0, 1, 2, 3],
+                        help='Number of container moves after object falls'),
+            ConfigField(name='distractor_types', label='Distractor types', field_type='multi-select',
+                        default=list(DEFAULT_DISTRACTOR_TYPES),
+                        options=['irrelevant', 'spatial', 'temporal'], group='advanced'),
+            ConfigField(name='object', label='Objects', field_type='multi-select',
+                        default=list(DEFAULT_OBJECTS), options=list(DEFAULT_OBJECTS),
+                        group='advanced', help='Objects to include in scenarios'),
+            ConfigField(name='container', label='Containers', field_type='multi-select',
+                        default=list(DEFAULT_CONTAINERS), options=list(DEFAULT_CONTAINERS),
+                        group='advanced'),
+            ConfigField(name='sticky_objects', label='Sticky objects', field_type='multi-select',
+                        default=[], options=list(DEFAULT_OBJECTS), group='advanced',
+                        help='Objects that do not fall when container is inverted'),
+        ]

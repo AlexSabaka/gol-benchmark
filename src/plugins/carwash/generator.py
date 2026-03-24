@@ -16,7 +16,8 @@ import itertools
 import random
 from typing import Any, Dict, List, Optional
 
-from src.plugins.base import TestCaseGenerator, TestCase
+from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
 # ---------------------------------------------------------------------------
@@ -73,19 +74,6 @@ QUESTION_VARIANTS = [
 # System-prompt / user-prompt templates
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPTS = {
-    "analytical": (
-        "You are a logical reasoning assistant. "
-        "When answering practical questions, carefully consider the goal and "
-        "all relevant constraints before giving a recommendation."
-    ),
-    "casual": (
-        "You're a helpful friend giving quick, sensible advice on everyday decisions."
-    ),
-    "adversarial": (
-        "Answer questions directly and concisely. Do not over-explain."
-    ),
-}
 
 USER_PROMPT_TEMPLATES = {
     "minimal": "{setup}\n\n{question}",
@@ -99,6 +87,17 @@ USER_PROMPT_TEMPLATES = {
 
 class CarwashGenerator(TestCaseGenerator):
     """Generates Carwash Paradox test cases."""
+
+    def __init__(self):
+        self._prompt_engine = PromptEngine()
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='distances', label='Distances', field_type='multi-select',
+                        default=[d['label'] for d in DISTANCES],
+                        options=[d['label'] for d in DISTANCES], group='advanced',
+                        help='Distance descriptions to include in scenarios'),
+        ]
 
     def generate_batch(
         self,
@@ -184,7 +183,11 @@ class CarwashGenerator(TestCaseGenerator):
         if user_style == "minimal":
             user_prompt = f"{setup} The carwash is {distance_str}. {question}".strip()
 
-        system_prompt = SYSTEM_PROMPTS.get(system_style, SYSTEM_PROMPTS["analytical"])
+        try:
+            sys_enum = SystemPromptStyle(system_style)
+        except ValueError:
+            sys_enum = SystemPromptStyle.ANALYTICAL
+        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum)
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
         task_params = {

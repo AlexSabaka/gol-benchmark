@@ -25,7 +25,8 @@ import string
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.plugins.base import TestCaseGenerator, TestCase
+from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 # ---------------------------------------------------------------------------
 # Word list loader
@@ -125,73 +126,6 @@ QUESTION_TEMPLATES: Dict[str, List[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# System prompts (per style)
-# ---------------------------------------------------------------------------
-
-SYSTEM_PROMPTS: Dict[str, Dict[str, str]] = {
-    "en": {
-        "analytical": (
-            "You are a precise counting assistant. "
-            "When asked to count letters in a word, carefully examine each character "
-            "one by one and provide an exact numerical answer."
-        ),
-        "casual": (
-            "You're a friendly helper. Answer the question with just the number."
-        ),
-        "adversarial": (
-            "Give a direct numerical answer. No explanations."
-        ),
-    },
-    "es": {
-        "analytical": (
-            "Eres un asistente de conteo preciso. "
-            "Cuando se te pida contar letras en una palabra, examina cuidadosamente "
-            "cada carácter uno por uno y proporciona una respuesta numérica exacta."
-        ),
-        "casual": "Eres un ayudante amigable. Responde con solo el número.",
-        "adversarial": "Da una respuesta numérica directa. Sin explicaciones.",
-    },
-    "fr": {
-        "analytical": (
-            "Vous êtes un assistant de comptage précis. "
-            "Lorsqu'on vous demande de compter les lettres dans un mot, "
-            "examinez soigneusement chaque caractère un par un et fournissez "
-            "une réponse numérique exacte."
-        ),
-        "casual": "Vous êtes un assistant sympathique. Répondez avec juste le nombre.",
-        "adversarial": "Donnez une réponse numérique directe. Pas d'explications.",
-    },
-    "de": {
-        "analytical": (
-            "Sie sind ein präziser Zählassistent. "
-            "Wenn Sie gebeten werden, Buchstaben in einem Wort zu zählen, "
-            "untersuchen Sie jedes Zeichen sorgfältig einzeln und geben Sie "
-            "eine exakte numerische Antwort."
-        ),
-        "casual": "Du bist ein freundlicher Helfer. Antworte nur mit der Zahl.",
-        "adversarial": "Gib eine direkte numerische Antwort. Keine Erklärungen.",
-    },
-    "zh": {
-        "analytical": (
-            "你是一个精确的计数助手。"
-            "当被要求计算单词中的字母时，请逐个仔细检查每个字符，"
-            "并提供准确的数字答案。"
-        ),
-        "casual": "你是一个友好的助手。只用数字回答。",
-        "adversarial": "直接给出数字答案。不需要解释。",
-    },
-    "ua": {
-        "analytical": (
-            "Ви — точний помічник для підрахунку. "
-            "Коли вас просять порахувати літери у слові, уважно перевіряйте "
-            "кожен символ один за одним і надайте точну числову відповідь."
-        ),
-        "casual": "Ви — дружній помічник. Відповідайте лише числом.",
-        "adversarial": "Дайте пряму числову відповідь. Без пояснень.",
-    },
-}
-
-# ---------------------------------------------------------------------------
 # User prompt templates (per style)
 # ---------------------------------------------------------------------------
 
@@ -253,6 +187,29 @@ USER_PROMPT_TEMPLATES: Dict[str, Dict[str, str]] = {
 
 class StrawberryGenerator(TestCaseGenerator):
     """Generates letter-counting test cases."""
+
+    def __init__(self):
+        self._prompt_engine = PromptEngine()
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='mode', label='Mode', field_type='select',
+                        default='mixed', options=['real', 'absent_letter', 'random', 'mixed']),
+            ConfigField(name='word_lengths', label='Word length tiers', field_type='multi-select',
+                        default=['short', 'medium', 'long', 'extra_long'],
+                        options=['short', 'medium', 'long', 'extra_long']),
+            ConfigField(name='favor_repeated', label='Favor repeated letters', field_type='boolean',
+                        default=True, group='advanced',
+                        help='Prefer letters that appear more than once'),
+            ConfigField(name='random_word_min', label='Random word min length', field_type='number',
+                        default=4, min_value=2, max_value=20, group='advanced'),
+            ConfigField(name='random_word_max', label='Random word max length', field_type='number',
+                        default=12, min_value=2, max_value=30, group='advanced'),
+            ConfigField(name='mixed_weights', label='Mixed mode weights', field_type='weight_map',
+                        default={"real": 0.6, "absent_letter": 0.2, "random": 0.2},
+                        weight_keys=['real', 'absent_letter', 'random'], group='advanced',
+                        help='Probability weights for mixed mode'),
+        ]
 
     def generate_batch(
         self,
@@ -382,8 +339,8 @@ class StrawberryGenerator(TestCaseGenerator):
         template = rng.choice(templates)
         return template.format(word=word, letter=letter)
 
-    @staticmethod
     def _build_test_case(
+        self,
         idx: int,
         seed: int | None,
         config_name: str,
@@ -401,8 +358,15 @@ class StrawberryGenerator(TestCaseGenerator):
         user_template = user_templates.get(user_style, user_templates["casual"])
         user_prompt = user_template.format(question=question).strip()
 
-        sys_prompts = SYSTEM_PROMPTS.get(language, SYSTEM_PROMPTS["en"])
-        system_prompt = sys_prompts.get(system_style, sys_prompts["analytical"])
+        try:
+            sys_enum = SystemPromptStyle(system_style)
+        except ValueError:
+            sys_enum = SystemPromptStyle.ANALYTICAL
+        try:
+            lang_enum = Language(language)
+        except ValueError:
+            lang_enum = Language.EN
+        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
 
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 

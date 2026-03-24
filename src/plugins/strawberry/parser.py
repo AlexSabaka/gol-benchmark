@@ -19,6 +19,7 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
+from src.plugins.parse_utils import re_search_last
 
 # ---------------------------------------------------------------------------
 # Spelled-out number map (0–20 + common larger ones)
@@ -86,29 +87,29 @@ class StrawberryParser(ResponseParser):
         text = response.strip()
         word_length = (task_params or {}).get("word_length")
 
-        # --- Strategy 1: LaTeX boxed ---
-        boxed = re.search(r"\\boxed\{([^}]+)\}", text)
+        # --- Strategy 1: LaTeX boxed (last match) ---
+        boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
         if boxed:
             val = _try_parse_int(boxed.group(1), word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="boxed", confidence=0.95)
 
-        # --- Strategy 2: Bold ---
-        bold = re.search(r"\*\*([^*]{1,20})\*\*", text)
+        # --- Strategy 2: Bold (last match) ---
+        bold = re_search_last(r"\*\*([^*]{1,20})\*\*", text)
         if bold:
             val = _try_parse_int(bold.group(1), word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="bold", confidence=0.9)
 
-        # --- Strategy 3: Labelled line ---
-        label = re.search(
+        # --- Strategy 3: Labelled line (last match) ---
+        label = re_search_last(
             r"(?:answer|count|result|total|there\s+(?:are|is))\s*[:：]?\s*(\S+)",
             text,
             re.IGNORECASE,
         )
         if not label:
             # "The answer is N" / "the count is N"
-            label = re.search(
+            label = re_search_last(
                 r"the\s+(?:answer|count|result|total)\s+is\s+(\S+)",
                 text,
                 re.IGNORECASE,
@@ -118,8 +119,8 @@ class StrawberryParser(ResponseParser):
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="label_line", confidence=0.88)
 
-        # --- Strategy 3b: "is N" / "are N" at end of sentence ---
-        is_n = re.search(
+        # --- Strategy 3b: "is N" / "are N" at end of sentence (last match) ---
+        is_n = re_search_last(
             r"(?:is|are|=)\s+(\S+)\s*[.!]?\s*$",
             text,
             re.IGNORECASE | re.MULTILINE,
@@ -143,8 +144,8 @@ class StrawberryParser(ResponseParser):
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="first_number", confidence=0.6)
 
-        # --- Strategy 6: Spelled-out number anywhere ---
-        word_match = _WORD_NUM_PATTERN.search(text)
+        # --- Strategy 6: Spelled-out number (last match) ---
+        word_match = re_search_last(_WORD_NUM_PATTERN, text)
         if word_match:
             val = _WORD_TO_INT.get(word_match.group(1).lower())
             if val is not None:

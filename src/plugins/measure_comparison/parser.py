@@ -26,6 +26,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import ResponseParser, ParsedAnswer
+from src.plugins.parse_utils import re_search_last
 
 # ---------------------------------------------------------------------------
 # Unit symbol aliases (normalised form → set of of display variants)
@@ -124,8 +125,9 @@ def _normalise_unit(text: str) -> Optional[str]:
     low = text.lower()
     if low in _ALIAS_TO_CANON:
         return _ALIAS_TO_CANON[low]
-    # Try progressively shorter prefixes
-    for length in range(len(low), 0, -1):
+    # Try progressively shorter prefixes (min 2 chars to avoid
+    # single-letter false positives like "k"→kelvin for "kilometer")
+    for length in range(len(low), 1, -1):
         prefix = low[:length]
         if prefix in _ALIAS_TO_CANON:
             return _ALIAS_TO_CANON[prefix]
@@ -242,8 +244,8 @@ class MeasureComparisonParser(ResponseParser):
         text = response.strip()
         tp = task_params or {}
 
-        # --- Strategy 1: LaTeX boxed ---
-        boxed = re.search(r"\\boxed\{([^}]+)\}", text)
+        # --- Strategy 1: LaTeX boxed (last match) ---
+        boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
         if boxed:
             inner = boxed.group(1).strip()
             result = self._try_resolve(inner, tp)
@@ -253,8 +255,8 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="boxed", confidence=0.95,
                 )
 
-        # --- Strategy 2: Bold ---
-        bold = re.search(r"\*\*([^*]{1,40})\*\*", text)
+        # --- Strategy 2: Bold (last match) ---
+        bold = re_search_last(r"\*\*([^*]{1,40})\*\*", text)
         if bold:
             inner = bold.group(1).strip()
             result = self._try_resolve(inner, tp)
@@ -267,8 +269,8 @@ class MeasureComparisonParser(ResponseParser):
         # --- Strategy 3: Equal keywords ---
         if _EQUAL_KEYWORDS.search(text):
             # Only count as "equal" if the model seems conclusive
-            # (avoid matching "they are not equal")
-            negated = re.search(r"\b(?:not|no|n't|aren'?t|isn'?t)\b.{0,10}" + _EQUAL_KEYWORDS.pattern, text, re.IGNORECASE)
+            # (avoid matching "they are not equal" / "they are definitely not equal")
+            negated = re.search(r"\b(?:not|no|n't|aren'?t|isn'?t)\b.{0,30}" + _EQUAL_KEYWORDS.pattern, text, re.IGNORECASE)
             if not negated:
                 return ParsedAnswer(
                     value="equal", raw_response=text,
@@ -277,15 +279,15 @@ class MeasureComparisonParser(ResponseParser):
 
         # --- Strategy 4: Incomparable keywords ---
         if _INCOMPARABLE_KEYWORDS.search(text):
-            negated = re.search(r"\b(?:not|no|n't)\b.{0,10}" + _INCOMPARABLE_KEYWORDS.pattern, text, re.IGNORECASE)
+            negated = re.search(r"\b(?:not|no|n't)\b.{0,30}" + _INCOMPARABLE_KEYWORDS.pattern, text, re.IGNORECASE)
             if not negated:
                 return ParsedAnswer(
                     value="incomparable", raw_response=text,
                     parse_strategy="keyword_incomparable", confidence=0.90,
                 )
 
-        # --- Strategy 5: Label line ---
-        label = re.search(
+        # --- Strategy 5: Label line (last match) ---
+        label = re_search_last(
             r"(?:answer|result|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
             text,
             re.IGNORECASE | re.MULTILINE,
@@ -300,6 +302,9 @@ class MeasureComparisonParser(ResponseParser):
                 )
 
         # --- Strategy 6: Value+unit match against known options ---
+        # NOTE: Do NOT reverse here. Both options are typically mentioned in
+        # the response (e.g. "876 mg is heavier than 211 mg"). The first
+        # match that corresponds to a known option is the answer being stated.
         vus = _extract_value_units(text)
         for val_str, unit_canon, val_f, raw_match in vus:
             pos = _match_to_option(val_str, unit_canon, tp)
@@ -310,8 +315,8 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="value_unit_match", confidence=0.85,
                 )
 
-        # --- Strategy 7: Position keywords ---
-        pos_m = _POSITION_RE.search(text)
+        # --- Strategy 7: Position keywords (last match) ---
+        pos_m = re_search_last(_POSITION_RE, text)
         if pos_m:
             pos_word = pos_m.group(1).lower()
             pos = self._resolve_position(pos_word)

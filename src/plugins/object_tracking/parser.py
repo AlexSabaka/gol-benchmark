@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
+from src.plugins.parse_utils import re_search_last
 
 
 class ObjectTrackingResponseParser(ResponseParser):
@@ -148,7 +149,7 @@ class ObjectTrackingResponseParser(ResponseParser):
 
     def _strategy_answer_prefix(self, response: str) -> Optional[str]:
         """
-        Look for "Answer: X" or similar patterns.
+        Look for "Answer: X" or similar patterns (last match — end-first).
 
         Handles responses like:
         - "Answer: counter"
@@ -166,7 +167,7 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         response_lower = response.lower()
         for pattern in patterns:
-            match = re.search(pattern, response_lower)
+            match = re_search_last(pattern, response_lower)
             if match:
                 word = match.group(1)
                 if word not in self.stop_words:
@@ -176,14 +177,13 @@ class ObjectTrackingResponseParser(ResponseParser):
 
     def _strategy_sentence_pattern(self, response: str, obj: str) -> Optional[str]:
         """
-        Extract location from sentence patterns about the object.
+        Extract location from sentence patterns about the object (last match — end-first).
 
         Handles responses like:
         - "The grape is on the counter"
         - "The grape remains on the counter"
         - "The grape fell onto the counter"
         """
-        # Escape object for regex
         obj_pattern = re.escape(obj.lower())
 
         patterns = [
@@ -197,7 +197,7 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         response_lower = response.lower()
         for pattern in patterns:
-            match = re.search(pattern, response_lower)
+            match = re_search_last(pattern, response_lower)
             if match:
                 word = match.group(1)
                 if word not in self.stop_words:
@@ -211,28 +211,38 @@ class ObjectTrackingResponseParser(ResponseParser):
         known_locations: List[str]
     ) -> Optional[str]:
         """
-        Find known location words in response.
+        Find known location words in response (last occurrence — end-first).
 
-        Looks for exact matches of locations from the scenario.
+        Looks for exact matches of locations from the scenario,
+        preferring the one that appears latest in the response.
         """
         response_lower = response.lower()
 
-        # Check for exact location matches (prioritize longer matches)
+        best_location = None
+        best_pos = -1
+
+        # Check for exact location matches — find the last occurrence of each
         sorted_locations = sorted(known_locations, key=len, reverse=True)
         for location in sorted_locations:
             loc_lower = location.lower()
-            # Look for word boundary matches
             pattern = r'\b' + re.escape(loc_lower) + r'\b'
-            if re.search(pattern, response_lower):
-                return location
+            m = re_search_last(pattern, response_lower)
+            if m and m.start() > best_pos:
+                best_pos = m.start()
+                best_location = location
 
-        # Also check synonyms
+        if best_location:
+            return best_location
+
+        # Also check synonyms (last occurrence)
         for synonym, canonical in self.location_synonyms.items():
             pattern = r'\b' + re.escape(synonym) + r'\b'
-            if re.search(pattern, response_lower):
-                return canonical
+            m = re_search_last(pattern, response_lower)
+            if m and m.start() > best_pos:
+                best_pos = m.start()
+                best_location = canonical
 
-        return None
+        return best_location
 
     def _strategy_last_word(self, response: str) -> Optional[str]:
         """

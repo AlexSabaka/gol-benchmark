@@ -8,7 +8,7 @@ using persona templates and distractors.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.core.PromptEngine import (
     PromptEngine,
     PromptContext,
@@ -230,3 +230,16 @@ class LindaTestCaseGenerator(TestCaseGenerator):
             'culture_filter': None,
             'personas_per_config': 5,
         }
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='num_options', label='Options per question', field_type='number',
+                        default=8, min_value=3, max_value=10),
+            ConfigField(name='personas_per_config', label='Personas count', field_type='number',
+                        default=5, min_value=1, max_value=50),
+            ConfigField(name='culture_filter', label='Culture filter', field_type='select',
+                        default='', group='advanced',
+                        options=['', 'western', 'east_asian', 'south_asian', 'african',
+                                 'middle_eastern', 'latin_american', 'european'],
+                        help='Filter personas by cultural context (empty = all)'),
+        ]

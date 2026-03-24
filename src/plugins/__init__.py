@@ -40,6 +40,7 @@ from src.plugins.base import (
     TestCase,
     ParsedAnswer,
     EvaluationResult,
+    ConfigField,
 )
 
 __all__ = [
@@ -51,6 +52,7 @@ __all__ = [
     'TestCase',
     'ParsedAnswer',
     'EvaluationResult',
+    'ConfigField',
 ]
 
 

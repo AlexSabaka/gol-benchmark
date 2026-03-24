@@ -8,8 +8,9 @@ import random
 import itertools
 from typing import Dict, List, Any, Optional
 from datetime import datetime
-from ..base import TestCaseGenerator, TestCase
+from ..base import TestCaseGenerator, TestCase, ConfigField
 from .scenario_builder import SallyAnneScenarioBuilder
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
 class SallyAnneTestCaseGenerator(TestCaseGenerator):
@@ -18,6 +19,7 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
     def __init__(self):
         """Initialize generator with scenario builder."""
         self.scenario_builder = SallyAnneScenarioBuilder()
+        self._prompt_engine = PromptEngine()
     
     def generate_batch(
         self,
@@ -161,14 +163,26 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
             task_params['observer'] = scenario['observer']['name']
             task_params['observer_gender'] = scenario['observer']['gender']
         
+        system_style_str = prompt_config.get('system_style', '')
+        language_str = prompt_config.get('language', 'en')
+        try:
+            sys_enum = SystemPromptStyle(system_style_str)
+        except ValueError:
+            sys_enum = SystemPromptStyle.ANALYTICAL
+        try:
+            lang_enum = Language(language_str)
+        except ValueError:
+            lang_enum = Language.EN
+        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
+
         return TestCase(
             test_id=test_id,
             task_type='sally_anne',
             config_name=config_name,
             prompts={
-                'system': '',  # Will be set by prompt engine
+                'system': system_prompt,
                 'user': prompt,
-                'full': prompt,
+                'full': f"{system_prompt}\n\n{prompt}" if system_prompt else prompt,
             },
             task_params=task_params,
             prompt_metadata={
@@ -184,3 +198,21 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
     def get_task_type(self) -> str:
         """Return task type identifier."""
         return "sally_anne"
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='cases_per_config', label='Cases per config', field_type='number',
+                        default=5, min_value=1, max_value=200),
+            ConfigField(name='distractor_count', label='Distractor count', field_type='number',
+                        default=0, min_value=0, max_value=5,
+                        help='Number of distractor elements in the scenario'),
+            ConfigField(name='include_observer', label='Include observer', field_type='boolean',
+                        default=False, group='advanced',
+                        help='Add a third-party observer to the scenario'),
+            ConfigField(name='objects', label='Objects', field_type='text',
+                        default='marble,ball,toy,book,keys', group='advanced',
+                        help='Comma-separated list of objects'),
+            ConfigField(name='leave_activities', label='Leave activities', field_type='text',
+                        default='goes for a walk,goes outside,leaves the room,goes to the kitchen',
+                        group='advanced', help='Comma-separated departure activities'),
+        ]

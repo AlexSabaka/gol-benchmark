@@ -133,6 +133,71 @@
   ).join('');
 })();
 
+// ── Render a single field to HTML ──
+function renderField(f) {
+  const tooltip = f.help ? ` title="${f.help}"` : '';
+  const helpTag = f.help ? ` <small class="text-muted">(${f.help})</small>` : '';
+
+  if (f.type === 'number') {
+    return `<div class="field-group">
+      <label${tooltip}>${f.label}</label>
+      <input type="number" data-param="${f.name}" data-param-type="number"
+             value="${f.default}" min="${f.min ?? ''}" max="${f.max ?? ''}" step="${f.step || 1}"
+             style="max-width:150px;">
+    </div>`;
+  } else if (f.type === 'select') {
+    return `<div class="field-group">
+      <label${tooltip}>${f.label}</label>
+      <select data-param="${f.name}" data-param-type="select" style="max-width:200px;">
+        ${(f.options||[]).map(o => `<option value="${o}" ${String(o) === String(f.default) ? 'selected' : ''}>${o || '(none)'}</option>`).join('')}
+      </select>
+    </div>`;
+  } else if (f.type === 'multi-select') {
+    return `<div class="field-group">
+      <label${tooltip}>${f.label}</label>
+      <div class="inline-checks">
+        ${(f.options||[]).map(o => {
+          const checked = (f.default || []).includes(o) ? 'checked' : '';
+          return `<label><input type="checkbox" data-param="${f.name}" data-param-type="multi-select" value="${o}" ${checked}> ${o}</label>`;
+        }).join('')}
+      </div>
+    </div>`;
+  } else if (f.type === 'text') {
+    return `<div class="field-group">
+      <label>${f.label}${helpTag}</label>
+      <input type="text" data-param="${f.name}" data-param-type="text"
+             value="${f.default || ''}" style="max-width:300px;">
+    </div>`;
+  } else if (f.type === 'boolean') {
+    return `<div class="field-group" style="display:flex; align-items:end;">
+      <label${tooltip}><input type="checkbox" data-param="${f.name}" data-param-type="boolean"
+             ${f.default ? 'checked' : ''}> ${f.label}</label>
+    </div>`;
+  } else if (f.type === 'range') {
+    return `<div class="field-group">
+      <label${tooltip}>${f.label}</label>
+      <div class="range-pair">
+        <input type="number" data-param="${f.name}" data-param-type="range" data-range-pos="min"
+               value="${f.range_min_default ?? f.default?.[0] ?? ''}" min="${f.min ?? ''}" max="${f.max ?? ''}" step="${f.step || 1}">
+        <span>&ndash;</span>
+        <input type="number" data-param="${f.name}" data-param-type="range" data-range-pos="max"
+               value="${f.range_max_default ?? f.default?.[1] ?? ''}" min="${f.min ?? ''}" max="${f.max ?? ''}" step="${f.step || 1}">
+      </div>
+    </div>`;
+  } else if (f.type === 'weight_map') {
+    const keys = f.weight_keys || Object.keys(f.default || {});
+    const defaults = f.default || {};
+    return `<div class="field-group">
+      <label${tooltip}>${f.label}${helpTag}</label>
+      <div class="weight-map-group">
+        ${keys.map(k => `<label>${k} <input type="number" data-param="${f.name}" data-param-type="weight_map"
+           data-weight-key="${k}" value="${defaults[k] ?? 0}" step="0.05" min="0" max="1"></label>`).join('')}
+      </div>
+    </div>`;
+  }
+  return '';
+}
+
 // ── Toggle task config panel ──
 async function toggleTask(taskType, enabled) {
   const panelsContainer = document.getElementById('task-panels');
@@ -147,51 +212,30 @@ async function toggleTask(taskType, enabled) {
   // Fetch schema
   const resp = await fetch(`/api/plugins/${taskType}/schema`);
   const schema = await resp.json();
+  const fields = schema.fields || [];
+
+  // Split fields into basic and advanced groups
+  const basicFields = fields.filter(f => !f.group || f.group === 'basic');
+  const advancedFields = fields.filter(f => f.group === 'advanced');
 
   const panel = document.createElement('details');
   panel.className = 'task-panel';
   panel.dataset.taskType = taskType;
   panel.open = true;
 
-  let fieldsHtml = '';
-  for (const f of (schema.fields || [])) {
-    if (f.type === 'number') {
-      fieldsHtml += `<div class="field-group">
-        <label>${f.label}</label>
-        <input type="number" data-param="${f.name}" data-param-type="number"
-               value="${f.default}" min="${f.min || ''}" max="${f.max || ''}" step="${f.step || 1}"
-               style="max-width:150px;">
-      </div>`;
-    } else if (f.type === 'select') {
-      fieldsHtml += `<div class="field-group">
-        <label>${f.label}</label>
-        <select data-param="${f.name}" data-param-type="select" style="max-width:200px;">
-          ${f.options.map(o => `<option value="${o}" ${o === f.default ? 'selected' : ''}>${o}</option>`).join('')}
-        </select>
-      </div>`;
-    } else if (f.type === 'multi-select') {
-      fieldsHtml += `<div class="field-group">
-        <label>${f.label}</label>
-        <div class="inline-checks">
-          ${f.options.map(o => {
-            const checked = (f.default || []).includes(o) ? 'checked' : '';
-            return `<label><input type="checkbox" data-param="${f.name}" data-param-type="multi-select" value="${o}" ${checked}> ${o}</label>`;
-          }).join('')}
-        </div>
-      </div>`;
-    } else if (f.type === 'text') {
-      fieldsHtml += `<div class="field-group">
-        <label>${f.label}${f.help ? ` <small>(${f.help})</small>` : ''}</label>
-        <input type="text" data-param="${f.name}" data-param-type="text"
-               value="${f.default || ''}" style="max-width:250px;">
-      </div>`;
-    }
+  let html = `<summary>${taskType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</summary>`;
+  html += `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:.8rem;">`;
+  html += basicFields.map(renderField).join('');
+  html += `</div>`;
+
+  if (advancedFields.length) {
+    html += `<details class="advanced-toggle"><summary><small>Advanced options</small></summary>`;
+    html += `<div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:.8rem; margin-top:.5rem;">`;
+    html += advancedFields.map(renderField).join('');
+    html += `</div></details>`;
   }
 
-  panel.innerHTML = `<summary>${taskType.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}</summary>
-    <div style="display:grid; grid-template-columns:repeat(auto-fit, minmax(180px,1fr)); gap:.8rem;">
-      ${fieldsHtml}
-    </div>`;
+  panel.innerHTML = html;
   panelsContainer.appendChild(panel);
 }
 

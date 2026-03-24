@@ -8,7 +8,7 @@ using Wolfram rule numbers.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.core.PromptEngine import (
     PromptEngine,
     PromptContext,
@@ -190,3 +190,17 @@ class C14TestCaseGenerator(TestCaseGenerator):
             'boundary': 'wrap',
             'tests_per_rule': 10,
         }
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='rules', label='Rule numbers', field_type='multi-select',
+                        default=[110, 30, 90], options=[30, 54, 60, 90, 110, 150, 182]),
+            ConfigField(name='tests_per_rule', label='Cases per rule', field_type='number',
+                        default=10, min_value=1, max_value=200),
+            ConfigField(name='width', label='Grid width', field_type='number',
+                        default=16, min_value=5, max_value=50),
+            ConfigField(name='steps', label='Steps', field_type='number',
+                        default=1, min_value=1, max_value=20),
+            ConfigField(name='boundary', label='Boundary condition', field_type='select',
+                        default='wrap', options=['wrap', 'dead', 'alive'], group='advanced'),
+        ]

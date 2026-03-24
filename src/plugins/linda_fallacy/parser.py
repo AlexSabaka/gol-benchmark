@@ -200,7 +200,11 @@ class LindaResponseParser(ResponseParser):
         return rankings[:10]
 
     def _deduplicate_rankings(self, rankings: List[str]) -> List[str]:
-        """Remove exact and fuzzy duplicates from rankings."""
+        """Remove exact and fuzzy duplicates from rankings.
+
+        Uses word-level Jaccard similarity (not character-level) so that
+        "bank teller" and "bank" are not treated as near-duplicates.
+        """
         final = []
         seen_exact = set()
         seen_normalized = set()
@@ -209,25 +213,37 @@ class LindaResponseParser(ResponseParser):
             if ranking in seen_exact:
                 continue
 
-            normalized = re.sub(r'[^a-zA-Z0-9]', '', ranking.lower())
+            normalized = re.sub(r'[^a-zA-Z0-9\s]', '', ranking.lower()).strip()
             if len(normalized) < 5:
                 continue
 
-            # Check for fuzzy duplicates
+            norm_words = set(normalized.split())
+
+            # Check for fuzzy duplicates using word-level Jaccard
             is_duplicate = False
             for existing in final:
-                existing_norm = re.sub(r'[^a-zA-Z0-9]', '', existing.lower())
-                if normalized in existing_norm or existing_norm in normalized:
-                    similarity = len(set(normalized) & set(existing_norm)) / len(set(normalized) | set(existing_norm))
+                existing_norm = re.sub(r'[^a-zA-Z0-9\s]', '', existing.lower()).strip()
+                existing_words = set(existing_norm.split())
+
+                # Substring containment at word level
+                if norm_words <= existing_words or existing_words <= norm_words:
+                    is_duplicate = True
+                    break
+
+                # Word-level Jaccard similarity
+                union = norm_words | existing_words
+                if union:
+                    similarity = len(norm_words & existing_words) / len(union)
                     if similarity > 0.85:
                         is_duplicate = True
                         break
 
-            if is_duplicate or normalized in seen_normalized:
+            norm_key = re.sub(r'[^a-zA-Z0-9]', '', normalized)
+            if is_duplicate or norm_key in seen_normalized:
                 continue
 
             final.append(ranking)
             seen_exact.add(ranking)
-            seen_normalized.add(normalized)
+            seen_normalized.add(norm_key)
 
         return final[:10]

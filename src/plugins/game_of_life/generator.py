@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.core.PromptEngine import (
     PromptEngine,
     PromptContext,
@@ -224,3 +224,19 @@ class GoLTestCaseGenerator(TestCaseGenerator):
             'grids_per_difficulty': 10,
             'cell_markers': ['1', '0'],
         }
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='difficulty_levels', label='Difficulty', field_type='multi-select',
+                        default=['MEDIUM'], options=['EASY', 'MEDIUM', 'HARD', 'NIGHTMARE']),
+            ConfigField(name='grids_per_difficulty', label='Grids per difficulty', field_type='number',
+                        default=10, min_value=1, max_value=200),
+            ConfigField(name='density', label='Cell density', field_type='number',
+                        default=0.5, min_value=0.1, max_value=0.9, step=0.05),
+            ConfigField(name='known_patterns_ratio', label='Known patterns ratio', field_type='number',
+                        default=0.3, min_value=0.0, max_value=1.0, step=0.1, group='advanced',
+                        help='Ratio of test cases using known GoL patterns vs random grids'),
+            ConfigField(name='cell_markers', label='Cell markers', field_type='text',
+                        default='1,0', group='advanced',
+                        help='Live,dead cell markers (comma-separated)'),
+        ]

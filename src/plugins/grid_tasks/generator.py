@@ -19,7 +19,8 @@ try:
 except ImportError:
     names = None
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 from src.utils.text_table import create_table
 
 
@@ -377,7 +378,10 @@ class QuestionFactory:
 
 class GridTasksTestCaseGenerator(TestCaseGenerator):
     """Generate test cases for grid tasks."""
-    
+
+    def __init__(self):
+        self._prompt_engine = PromptEngine()
+
     def get_default_config(self) -> Dict[str, Any]:
         return {
             'min_rows': 2,
@@ -389,7 +393,30 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
             'table_style': 'unicode',
             'cases_per_config': 10,
         }
-    
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='cases_per_config', label='Cases per config', field_type='number',
+                        default=10, min_value=1, max_value=200),
+            ConfigField(name='min_rows', label='Min rows', field_type='number',
+                        default=2, min_value=2, max_value=20),
+            ConfigField(name='max_rows', label='Max rows', field_type='number',
+                        default=20, min_value=2, max_value=50),
+            ConfigField(name='min_cols', label='Min columns', field_type='number',
+                        default=2, min_value=2, max_value=10),
+            ConfigField(name='max_cols', label='Max columns', field_type='number',
+                        default=10, min_value=2, max_value=20),
+            ConfigField(name='data_types', label='Data types', field_type='multi-select',
+                        default=['sales', 'hr', 'grades', 'inventory'],
+                        options=['sales', 'hr', 'grades', 'inventory']),
+            ConfigField(name='question_types', label='Question types', field_type='multi-select',
+                        default=['cell_lookup', 'row_sum', 'column_count', 'max_min'],
+                        options=['cell_lookup', 'row_sum', 'column_count', 'filter_count', 'max_min']),
+            ConfigField(name='table_style', label='Table style', field_type='select',
+                        default='unicode', group='advanced',
+                        options=['unicode', 'mysql', 'gfm', 'reddit', 'plain', 'html']),
+        ]
+
     def generate_batch(
         self,
         config: Dict[str, Any],
@@ -457,7 +484,17 @@ Question: {question}
 
 Please provide your answer clearly."""
             
-            system_prompt = "You are a helpful assistant that can read and analyze tabular data."
+            system_style_str = prompt_config.get('system_style', 'analytical')
+            language_str = prompt_config.get('language', 'en')
+            try:
+                sys_enum = SystemPromptStyle(system_style_str)
+            except ValueError:
+                sys_enum = SystemPromptStyle.ANALYTICAL
+            try:
+                lang_enum = Language(language_str)
+            except ValueError:
+                lang_enum = Language.EN
+            system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
             
             # Create test case
             test_case = TestCase(

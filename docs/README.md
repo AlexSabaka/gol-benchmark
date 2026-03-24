@@ -1,33 +1,66 @@
 # GoL Benchmark Documentation
 
-Documentation for the GoL (Game of Life) Benchmark Suite - a procedural benchmark for testing LLM reasoning capabilities across structured cognitive tasks.
+Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 12 structured cognitive tasks.
 
-## Quick Navigation
+---
 
-### Getting Started
-
-| Document | Description |
-|----------|-------------|
-| [Architecture Overview](architecture/SYSTEM_OVERVIEW.md) | Understand the system design |
-| [3-Stage Pipeline](architecture/THREE_STAGE_PIPELINE.md) | Modern test execution architecture |
-| [Source Code Organization](implementation/SOURCE_CODE_ORGANIZATION.md) | Navigate the codebase |
-
-### For Developers
+## Start Here
 
 | Document | Description |
 |----------|-------------|
-| [TUI System](implementation/TUI_SYSTEM.md) | Interactive benchmark interface |
-| [Model Providers](architecture/MODEL_PROVIDERS.md) | Provider architecture |
-| [File Management](implementation/FILE_MANAGEMENT.md) | Path manager and file organization |
-| [Prompt Engine](implementation/prompt-engine/) | Multilingual prompt generation |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 12 tasks, research findings, quick start |
+| [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) | Plugin system reference, per-plugin docs, adding new plugins |
 
-### Research & Findings
+---
+
+## Architecture
 
 | Document | Description |
 |----------|-------------|
-| [Quantization Study](research/quantization/) | AceMath quantization analysis |
-| [Prompt Analysis](research/prompt-analysis/) | Prompt engineering study |
-| [Model Catalog](research/MODEL_CATALOG.md) | Available models reference |
+| [architecture/SYSTEM_OVERVIEW.md](architecture/SYSTEM_OVERVIEW.md) | System design and component diagram |
+| [architecture/THREE_STAGE_PIPELINE.md](architecture/THREE_STAGE_PIPELINE.md) | 3-stage pipeline (generate → run → analyze) |
+| [architecture/MODEL_PROVIDERS.md](architecture/MODEL_PROVIDERS.md) | Ollama, HuggingFace, OpenAI-compatible providers |
+
+## Prompt Engine
+
+| Document | Description |
+|----------|-------------|
+| [prompt-engine/SYSTEM_PROMPTS.md](prompt-engine/SYSTEM_PROMPTS.md) | System prompt styles (analytical, casual, adversarial) |
+| [prompt-engine/USER_PROMPTS_GOL.md](prompt-engine/USER_PROMPTS_GOL.md) | Game of Life user prompt templates |
+| [prompt-engine/USER_PROMPTS_MATH.md](prompt-engine/USER_PROMPTS_MATH.md) | Arithmetic user prompt templates |
+| [prompt-engine/USER_PROMPTS_LINDA.md](prompt-engine/USER_PROMPTS_LINDA.md) | Linda Fallacy user prompt templates |
+| [prompt-engine/MIGRATION_GUIDE.md](prompt-engine/MIGRATION_GUIDE.md) | Prompt engine migration guide |
+
+## Research
+
+| Document | Description |
+|----------|-------------|
+| [research/quantization/EXECUTIVE_SUMMARY.md](research/quantization/EXECUTIVE_SUMMARY.md) | Q2_K beats F16 — quantization study |
+| [research/quantization/DETAILED_REPORT.md](research/quantization/DETAILED_REPORT.md) | Full quantization analysis |
+| [research/prompt-analysis/RESULTS_REPORT.md](research/prompt-analysis/RESULTS_REPORT.md) | Prompt engineering study — model personalities |
+| [research/prompt-analysis/VISUALIZATIONS_GUIDE.md](research/prompt-analysis/VISUALIZATIONS_GUIDE.md) | Charts and visualization guide |
+| [research/MODEL_CATALOG.md](research/MODEL_CATALOG.md) | Available models reference |
+
+---
+
+## Benchmark Tasks (12 plugins)
+
+| Task | Plugin | Answer Type |
+|------|--------|-------------|
+| Conway's Game of Life | `game_of_life` | 2D grid |
+| Arithmetic Expressions | `arithmetic` | Number |
+| Linda Conjunction Fallacy | `linda_fallacy` | Probability ranking |
+| 1D Cellular Automata | `cellular_automata_1d` | 1D binary array |
+| ASCII Shapes | `ascii_shapes` | Dimensions / count / boolean |
+| Object Tracking (Grape Test) | `object_tracking` | Location name |
+| Sally-Anne (Theory of Mind) | `sally_anne` | Container name |
+| Carwash Paradox | `carwash` | Always "drive" |
+| Inverted Cup | `inverted_cup` | "flip" |
+| Strawberry (Letter Counting) | `strawberry` | Integer |
+| Measure Comparison | `measure_comparison` | Measurement / "equal" / "incomparable" |
+| Grid Tasks (Table Reasoning) | `grid_tasks` | Varies |
+
+See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for detailed per-plugin documentation.
 
 ---
 
@@ -35,103 +68,36 @@ Documentation for the GoL (Game of Life) Benchmark Suite - a procedural benchmar
 
 ```
 docs/
-├── README.md                 # This file
-├── architecture/             # System design documents
+├── README.md                   # This file
+├── PROJECT_OVERVIEW.md         # Comprehensive project overview
+├── PLUGIN_GUIDE.md             # Plugin system guide & reference
+├── architecture/               # System design
 │   ├── SYSTEM_OVERVIEW.md
 │   ├── MODEL_PROVIDERS.md
 │   └── THREE_STAGE_PIPELINE.md
-├── implementation/           # Developer documentation
-│   ├── SOURCE_CODE_ORGANIZATION.md
-│   ├── TUI_SYSTEM.md
-│   ├── FILE_MANAGEMENT.md
-│   └── prompt-engine/
-│       ├── SYSTEM_PROMPTS.md
-│       ├── USER_PROMPTS_GOL.md
-│       ├── USER_PROMPTS_MATH.md
-│       ├── USER_PROMPTS_LINDA.md
-│       └── MIGRATION_GUIDE.md
-├── research/                 # Research findings
+├── prompt-engine/              # Prompt template reference
+│   ├── SYSTEM_PROMPTS.md
+│   ├── USER_PROMPTS_GOL.md
+│   ├── USER_PROMPTS_MATH.md
+│   ├── USER_PROMPTS_LINDA.md
+│   └── MIGRATION_GUIDE.md
+├── research/                   # Research findings
 │   ├── MODEL_CATALOG.md
-│   ├── quantization/
-│   │   ├── EXECUTIVE_SUMMARY.md
-│   │   ├── DETAILED_REPORT.md
-│   │   └── FULL_ANALYSIS.md
-│   └── prompt-analysis/
-│       ├── RESULTS_REPORT.md
-│       ├── VISUALIZATIONS_GUIDE.md
-│       └── FULL_ANALYSIS.md
-├── images/                   # Charts and visualizations
-│   ├── acemath_quantization/
-│   └── original_gemma3_qwen3/
-└── _archive/                 # Superseded documents
-```
-
----
-
-## Key Documents by Topic
-
-| Topic | Primary Document |
-|-------|------------------|
-| System Architecture | [SYSTEM_OVERVIEW.md](architecture/SYSTEM_OVERVIEW.md) |
-| 3-Stage Pipeline | [THREE_STAGE_PIPELINE.md](architecture/THREE_STAGE_PIPELINE.md) |
-| Code Organization | [SOURCE_CODE_ORGANIZATION.md](implementation/SOURCE_CODE_ORGANIZATION.md) |
-| Quantization Research | [EXECUTIVE_SUMMARY.md](research/quantization/EXECUTIVE_SUMMARY.md) |
-| Prompt Engineering | [RESULTS_REPORT.md](research/prompt-analysis/RESULTS_REPORT.md) |
-| System Prompts | [SYSTEM_PROMPTS.md](implementation/prompt-engine/SYSTEM_PROMPTS.md) |
-
----
-
-## Benchmark Tasks
-
-| Task | Description | User Prompts |
-|------|-------------|--------------|
-| **GoL** | Conway's Game of Life | [USER_PROMPTS_GOL.md](implementation/prompt-engine/USER_PROMPTS_GOL.md) |
-| **ARI** | Arithmetic expressions | [USER_PROMPTS_MATH.md](implementation/prompt-engine/USER_PROMPTS_MATH.md) |
-| **Linda** | Conjunction fallacy | [USER_PROMPTS_LINDA.md](implementation/prompt-engine/USER_PROMPTS_LINDA.md) |
-| **C14** | Cellular automata | (Uses GoL prompts) |
-
----
-
-## Key Research Findings
-
-### Quantization Study
-- **Q2_K (2-bit) beats F16** - 2-bit extreme quantization outperforms full precision by +6.18%
-- 87.5% model compression with accuracy improvement
-
-### Prompt Engineering
-- **Prompt choice matters 4x more than quantization**
-- 44+ percentage point swings from prompt engineering alone
-- Match system prompt style to model personality:
-  - Qwen = Adversarial
-  - Gemma = Analytical
-  - Llama = Balanced
-
----
-
-## Quick Commands
-
-```bash
-# Run Game of Life benchmark
-python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty medium
-
-# Run interactive TUI
-python -m src.cli.benchmark_tui
-
-# Run 3-stage pipeline
-python src/stages/generate_testset.py configs/testsets/example.yaml
-python src/stages/run_testset.py testsets/testset_*.json.gz --model qwen3:0.6b
-python src/stages/analyze_results.py results/*.json.gz
+│   ├── quantization/           # Q2_K vs F16 study
+│   └── prompt-analysis/        # Prompt engineering study
+├── images/                     # Charts and visualizations
+└── _archive/                   # Superseded documents (25 files)
 ```
 
 ---
 
 ## Related Resources
 
-- [Main README](../README.md) - Project overview and quick start
-- [CLAUDE.md](../CLAUDE.md) - AI agent instructions
-- [CHANGELOG](../CHANGELOG.md) - Version history
+- [Main README](../README.md) — Project overview and quick start
+- [CLAUDE.md](../.claude/CLAUDE.md) — AI agent instructions
+- [CHANGELOG](../CHANGELOG.md) — Version history
 
 ---
 
-**Version:** 2.0
-**Last Updated:** January 2026
+**Version:** 2.3.0
+**Last Updated:** March 2026

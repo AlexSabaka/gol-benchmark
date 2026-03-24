@@ -8,6 +8,7 @@ import re
 import json
 from typing import Optional, Dict, Any
 from ..base import ResponseParser, ParsedAnswer
+from ..parse_utils import re_search_last
 
 
 class SallyAnneResponseParser(ResponseParser):
@@ -105,8 +106,8 @@ class SallyAnneResponseParser(ResponseParser):
                 confidence=0.85
             )
         
-        # Strategy 5: First sentence container mention
-        parsed, strategy = self._try_first_sentence(response_clean, containers)
+        # Strategy 5: Last sentence container mention (end-first)
+        parsed, strategy = self._try_last_sentence(response_clean, containers)
         if parsed:
             return ParsedAnswer(
                 value=self._normalize_container(parsed, metadata),
@@ -145,39 +146,39 @@ class SallyAnneResponseParser(ResponseParser):
         )
     
     def _is_valid_container(self, text: str, containers: list) -> bool:
-        """Check if text contains a valid container name."""
+        """Check if text contains a valid container name (word-boundary match)."""
         if not text:
             return False
         text_lower = text.lower().strip()
-        
+
         # Direct match
         if text_lower in containers:
             return True
-        
-        # Check if any container is in the text
+
+        # Check if any container appears as a whole word in the text
         for container in containers:
-            if container in text_lower:
+            if re.search(r'\b' + re.escape(container) + r'\b', text_lower):
                 return True
-        
+
         # Check synonyms
-        for canonical, synonyms in self.container_synonyms.items():
+        for synonyms in self.container_synonyms.values():
             if text_lower in [s.lower() for s in synonyms]:
                 return True
-        
+
         return False
     
     def _try_boxed_extraction(self, response: str) -> tuple[Optional[str], str]:
-        """Try to extract answer from LaTeX \\boxed{} format."""
+        """Try to extract answer from LaTeX \\boxed{} format (last match)."""
         patterns = [
             (r'\\boxed\{\\text\{([^}]+)\}\}', 'boxed_text'),
             (r'\\boxed\{([^}]+)\}', 'boxed'),
         ]
-        
+
         for pattern, strategy in patterns:
-            match = re.search(pattern, response)
+            match = re_search_last(pattern, response)
             if match:
                 return match.group(1).strip(), strategy
-        
+
         return None, ""
     
     def _try_bold_extraction(self, response: str) -> tuple[Optional[str], str]:
@@ -195,29 +196,29 @@ class SallyAnneResponseParser(ResponseParser):
         return None, ""
     
     def _try_answer_pattern(self, response: str, containers: list) -> tuple[Optional[str], str]:
-        """Try to extract answer from 'Answer:' pattern."""
+        """Try to extract answer from 'Answer:' pattern (last match)."""
         response_lower = response.lower()
-        
+
         # Pattern: "Answer: [container]" or "**Answer:** [container]"
         patterns = [
             r'\*?\*?answer\*?\*?\s*:\s*(?:the\s+)?(\w+)',
             r'answer\s+is\s+(?:the\s+)?(\w+)',
             r'answer\s+is\s+(?:the\s+)?["\']?(\w+)["\']?',
         ]
-        
+
         for pattern in patterns:
-            match = re.search(pattern, response_lower)
+            match = re_search_last(pattern, response_lower)
             if match:
                 answer = match.group(1).strip()
                 if answer in containers or self._is_valid_container(answer, containers):
                     return answer, "answer_pattern"
-        
+
         return None, ""
     
     def _try_look_pattern(self, response: str, containers: list) -> tuple[Optional[str], str]:
-        """Try to extract from 'will look in/for the [container]' patterns."""
+        """Try to extract from 'will look in/for the [container]' patterns (last match)."""
         response_lower = response.lower()
-        
+
         patterns = [
             r'will\s+(?:naturally\s+)?look\s+(?:for\s+(?:the\s+\w+\s+)?)?in\s+the\s+(\w+)',
             r'will\s+(?:naturally\s+)?look\s+for\s+(?:his|her|the|their)\s+\w+\s+in\s+(?:the\s+)?(\w+)',
@@ -228,32 +229,30 @@ class SallyAnneResponseParser(ResponseParser):
             r'he\s+will\s+look\s+in\s+the\s+(\w+)',
             r'she\s+will\s+look\s+in\s+the\s+(\w+)',
         ]
-        
+
         for pattern in patterns:
-            match = re.search(pattern, response_lower)
+            match = re_search_last(pattern, response_lower)
             if match:
                 answer = match.group(1).strip()
                 if answer in containers:
                     return answer, "look_pattern"
-        
+
         return None, ""
     
-    def _try_first_sentence(self, response: str, containers: list) -> tuple[Optional[str], str]:
-        """Try to extract container from the first sentence."""
-        # Get first sentence (up to first period, question mark, or newline)
-        first_sent_match = re.match(r'^[^.!?\n]+', response.strip())
-        if not first_sent_match:
-            return None, ""
-        
-        first_sentence = first_sent_match.group(0).lower()
-        
-        # Check which container is mentioned in first sentence
-        for container in containers:
-            if container in first_sentence:
-                # Make sure it's in a context like "in the X" or "the X"
-                if re.search(rf'(?:in\s+the\s+|the\s+)\*?\*?{re.escape(container)}\*?\*?', first_sentence):
-                    return container, "first_sentence"
-        
+    def _try_last_sentence(self, response: str, containers: list) -> tuple[Optional[str], str]:
+        """Try to extract container from the last sentence (end-first)."""
+        # Split into sentences and check from end
+        sentences = re.split(r'[.!?\n]+', response.strip())
+        for sent in reversed(sentences):
+            sent_lower = sent.strip().lower()
+            if not sent_lower:
+                continue
+            for container in containers:
+                if re.search(r'\b' + re.escape(container) + r'\b', sent_lower):
+                    # Make sure it's in a context like "in the X" or "the X"
+                    if re.search(rf'(?:in\s+the\s+|the\s+)\*?\*?{re.escape(container)}\*?\*?', sent_lower):
+                        return container, "last_sentence"
+
         return None, ""
     
     def _try_json_extraction(self, response: str) -> tuple[Optional[str], str]:
@@ -319,28 +318,27 @@ class SallyAnneResponseParser(ResponseParser):
         return None, ""
     
     def _normalize_container(self, text: str, metadata: Optional[Dict[str, Any]] = None) -> str:
-        """
-        Normalize container name to match expected format.
-        """
+        """Normalize container name to match expected format (word-boundary safe)."""
         if not text:
             return None
-        
+
         text_lower = text.lower().strip()
-        
+
         # Remove common prefixes
         prefixes = ['the ', 'a ', 'an ', 'in ', 'at ']
         for prefix in prefixes:
             if text_lower.startswith(prefix):
                 text_lower = text_lower[len(prefix):].strip()
-        
+
         # If we have metadata, return the properly-cased container name
+        # Use word-boundary match to avoid "basket" matching "basketball"
         if metadata:
             container_a = metadata.get('container_a', '').lower()
             container_b = metadata.get('container_b', '').lower()
-            
-            if text_lower == container_a or container_a in text_lower:
+
+            if container_a and (text_lower == container_a or re.search(r'\b' + re.escape(container_a) + r'\b', text_lower)):
                 return metadata['container_a']
-            if text_lower == container_b or container_b in text_lower:
+            if container_b and (text_lower == container_b or re.search(r'\b' + re.escape(container_b) + r'\b', text_lower)):
                 return metadata['container_b']
-        
+
         return text_lower

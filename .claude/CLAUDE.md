@@ -9,12 +9,18 @@
 
 **GoL Benchmark** is a procedural benchmark suite for testing LLM reasoning capabilities across structured cognitive tasks:
 
-- **Game of Life (GoL)**: Conway's cellular automaton - predict next grid state
+- **Game of Life (GoL)**: Conway's cellular automaton — predict next grid state
 - **Arithmetic (ARI)**: Math expression parsing and evaluation
 - **Linda Fallacy**: Cognitive bias testing (conjunction fallacy)
 - **Cellular Automata (C14)**: Configurable rule-based pattern evolution
+- **ASCII Shapes**: Spatial reasoning on ASCII art (dimensions, counts, positions)
+- **Object Tracking**: Physical state tracking through container inversions (grape test)
+- **Sally-Anne**: Theory of Mind — false belief reasoning
 - **Carwash Paradox**: Practical-goal-tracking test — walk or drive? (answer: always drive)
 - **Inverted Cup**: Spatial-orientation reasoning — sealed top / open bottom cup (answer: flip it)
+- **Strawberry**: Letter counting in words ("How many R's in strawberry?")
+- **Measure Comparison**: Quantity comparison with units and conversion traps
+- **Grid Tasks**: Table reasoning — cell lookups, row sums, column counts
 
 ### Key Characteristics
 
@@ -70,16 +76,22 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (v2.2.0 — 7 plugins)
+│   ├── plugins/           # Plugin-based benchmark system (12 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
+│   │   ├── parse_utils.py # End-first parsing utilities
 │   │   ├── game_of_life/  # GoL plugin (generator, parser, evaluator)
 │   │   ├── arithmetic/    # ARI plugin
 │   │   ├── linda_fallacy/ # Linda plugin
 │   │   ├── cellular_automata_1d/  # C14 plugin
 │   │   ├── ascii_shapes/  # ASCII Shapes plugin
+│   │   ├── object_tracking/ # Object Tracking (Grape Test) plugin
+│   │   ├── sally_anne/    # Sally-Anne false belief test plugin
 │   │   ├── carwash/       # Carwash Paradox plugin (v2.2.0)
-│   │   └── inverted_cup/  # Inverted Cup plugin (v2.2.0)
+│   │   ├── inverted_cup/  # Inverted Cup plugin (v2.2.0)
+│   │   ├── strawberry/    # Letter counting plugin
+│   │   ├── measure_comparison/ # Quantity comparison plugin
+│   │   └── grid_tasks/    # Table reasoning plugin
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
 │   │   ├── generate_testset.py  # Stage 1: YAML → test sets
 │   │   ├── run_testset.py       # Stage 2: Execute tests
@@ -114,16 +126,22 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (v2.2.0)** | |
-| [src/plugins/base.py](src/plugins/base.py) | Abstract base classes for all plugins |
+| **Plugin System (12 plugins)** | |
+| [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
-| [src/plugins/game_of_life/](src/plugins/game_of_life/) | GoL plugin module (generator, parser, evaluator) |
+| [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities |
+| [src/plugins/game_of_life/](src/plugins/game_of_life/) | GoL plugin module |
 | [src/plugins/arithmetic/](src/plugins/arithmetic/) | ARI plugin module |
 | [src/plugins/linda_fallacy/](src/plugins/linda_fallacy/) | Linda Fallacy plugin module |
 | [src/plugins/cellular_automata_1d/](src/plugins/cellular_automata_1d/) | C14 plugin module |
 | [src/plugins/ascii_shapes/](src/plugins/ascii_shapes/) | ASCII Shapes plugin module |
-| [src/plugins/carwash/](src/plugins/carwash/) | Carwash Paradox plugin (v2.2.0) |
-| [src/plugins/inverted_cup/](src/plugins/inverted_cup/) | Inverted Cup plugin (v2.2.0) |
+| [src/plugins/object_tracking/](src/plugins/object_tracking/) | Object Tracking (Grape Test) plugin |
+| [src/plugins/sally_anne/](src/plugins/sally_anne/) | Sally-Anne false belief test plugin |
+| [src/plugins/carwash/](src/plugins/carwash/) | Carwash Paradox plugin |
+| [src/plugins/inverted_cup/](src/plugins/inverted_cup/) | Inverted Cup plugin |
+| [src/plugins/strawberry/](src/plugins/strawberry/) | Letter counting plugin |
+| [src/plugins/measure_comparison/](src/plugins/measure_comparison/) | Quantity comparison plugin |
+| [src/plugins/grid_tasks/](src/plugins/grid_tasks/) | Table reasoning plugin |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
@@ -173,6 +191,26 @@ BaseTestConfig (ABC)
 
 ---
 
+### 6. End-First Parsing Convention
+
+All response parsers follow the principle of searching from the **end** of the model response toward the start. LLMs reason through problems first and give final answers at the end — using `re.search()` (which finds the first match) systematically extracts intermediate values instead of final answers.
+
+**Shared utilities** in [`src/plugins/parse_utils.py`](src/plugins/parse_utils.py):
+
+- `re_search_last(pattern, text)` — drop-in replacement for `re.search()` that returns the last match
+- `last_sentences(text, n)` — returns the last N sentences
+- `last_keyword_position(text, keywords)` — position of last keyword occurrence
+
+**Key exceptions where end-first does NOT apply:**
+
+- `measure_comparison` value+unit matching — both options are mentioned, the answer is identified by which matches, not position
+- `inverted_cup` classification — if "flip" is mentioned anywhere, the model understood the key insight (correct answer); "wrong" keywords alongside flip are just creative alternatives
+- `linda_fallacy` — extracts ordered rankings, not single answers
+
+**Validated**: Re-parsed 1,933 results across 33 files. Zero true regressions from end-first changes. Carwash accuracy improved from 14.3% to 27.6% (+13pp).
+
+---
+
 ## Adding New Features
 
 ### New Benchmark Task (Plugin System - v2.1.0)
@@ -215,12 +253,20 @@ BaseTestConfig (ABC)
 
 3. **Create `generator.py`** (test case generation):
    ```python
-   from src.plugins.base import TestCaseGenerator, TestCase
+   from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
 
    class NewTaskGenerator(TestCaseGenerator):
        def generate_batch(self, config, prompt_config, count, seed):
            # Generate test cases
            return [TestCase(...), ...]
+
+       def get_config_schema(self) -> list[ConfigField]:
+           # Return field descriptors for the web UI config form
+           return [
+               ConfigField(name='count', label='Number of cases', field_type='number',
+                           default=10, min_value=1, max_value=200),
+               # ... more fields (types: number, select, multi-select, text, boolean, range, weight_map)
+           ]
    ```
 
 4. **Create `parser.py`** (response parsing with multi-strategy):
@@ -260,6 +306,7 @@ BaseTestConfig (ABC)
 - Stage 1 (generate_testset.py)
 - Stage 2 (run_testset.py)
 - Stage 3 (analyze_results.py)
+- Web UI `/configure` page (dynamic form via `get_config_schema()`)
 
 ### Legacy Approach (Deprecated)
 
@@ -368,11 +415,11 @@ BaseTestConfig (ABC)
 After reorganization, use these import patterns:
 
 ```python
-# Plugin System (NEW in v2.1.0)
-from src.plugins import PluginRegistry
+# Plugin System
+from src.plugins import PluginRegistry, ConfigField
 from src.plugins.base import (
     BenchmarkPlugin, TestCaseGenerator, ResponseParser, ResultEvaluator,
-    TestCase, ParsedAnswer, EvaluationResult
+    TestCase, ParsedAnswer, EvaluationResult, ConfigField
 )
 
 # Core
@@ -670,15 +717,16 @@ pytest tests/
 
 ## Additional Resources
 
-- **Plugin System**: [docs/PLUGIN_SYSTEM_REFACTORING.md](docs/PLUGIN_SYSTEM_REFACTORING.md) - NEW v2.1.0
-- **Architecture**: [docs/03_ARCHITECTURE/SYSTEM_OVERVIEW.md](docs/03_ARCHITECTURE/SYSTEM_OVERVIEW.md)
-- **Research Reports**: [docs/05_RESEARCH/](docs/05_RESEARCH/)
-- **Full Documentation Index**: [docs/INDEX.md](docs/INDEX.md)
+- **Project Overview**: [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) — Architecture, tasks, research findings, quick start
+- **Plugin Guide**: [docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md) — Plugin reference, end-first parsing, adding new plugins
+- **Architecture**: [docs/architecture/SYSTEM_OVERVIEW.md](docs/architecture/SYSTEM_OVERVIEW.md)
+- **Research — Quantization**: [docs/research/quantization/EXECUTIVE_SUMMARY.md](docs/research/quantization/EXECUTIVE_SUMMARY.md)
+- **Research — Prompt Analysis**: [docs/research/prompt-analysis/RESULTS_REPORT.md](docs/research/prompt-analysis/RESULTS_REPORT.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
 
 ---
 
-*Last updated: 2026-02-21*
-*Version: 2.2.0*
-*Key additions: Carwash Paradox + Inverted Cup plugins • Remote Ollama support • Token counting in pipeline*
+*Last updated: 2026-03-24*
+*Version: 2.4.0*
+*Key additions: Plugin config schema introspection • ConfigField system • Dynamic web UI forms*
 *For questions or issues: Check [README.md](README.md) or create an issue*

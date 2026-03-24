@@ -189,10 +189,21 @@ class ArithmeticResponseParser(ResponseParser):
     def _strategy_last_number(self, response: str) -> Optional[float]:
         """
         Strategy 4: Extract the last number in the response.
+
+        Skips numbers that appear in percentage/confidence contexts
+        (e.g. "I'm 99% confident") to avoid false positives.
         """
-        all_numbers = re.findall(r'[+-]?(?:[0-9]*[.])?[0-9]+', response)
-        if all_numbers:
-            for num_str in reversed(all_numbers):
+        all_matches = list(re.finditer(r'[+-]?(?:[0-9]*[.])?[0-9]+', response))
+        if all_matches:
+            for m in reversed(all_matches):
+                num_str = m.group()
+                # Skip if followed by % or in a confidence context
+                after = response[m.end():m.end() + 10]
+                before = response[max(0, m.start() - 25):m.start()]
+                if re.match(r'\s*%', after):
+                    continue
+                if re.search(r'(?:confident|certain|sure|probability|chance)\s*$', before, re.IGNORECASE):
+                    continue
                 try:
                     return float(num_str)
                 except ValueError:

@@ -22,7 +22,9 @@ async def list_plugins():
     ]
 
 
-# Field schema definitions for each task type — drives the dynamic config forms.
+# DEPRECATED: Hardcoded field schemas — kept as fallback for plugins that have
+# not yet implemented get_config_schema() on their generator.  Remove once all
+# 12 plugins are migrated (they are now).
 _TASK_SCHEMAS: dict = {
     "arithmetic": {
         "fields": [
@@ -111,6 +113,24 @@ _TASK_SCHEMAS: dict = {
 
 @router.get("/{task_type}/schema")
 async def plugin_schema(task_type: str):
-    """Return the configuration schema for a given task type."""
-    schema = _TASK_SCHEMAS.get(task_type, {"fields": []})
-    return {"task_type": task_type, **schema}
+    """Return the configuration schema for a given task type.
+
+    Introspects the plugin generator's get_config_schema() first,
+    falling back to _TASK_SCHEMAS for backward compatibility.
+    """
+    plugin = PluginRegistry.get(task_type)
+    if plugin is None:
+        return {"task_type": task_type, "fields": [], "groups": []}
+
+    generator = plugin.get_generator()
+    schema_fields = generator.get_config_schema()
+
+    if schema_fields:
+        fields = [f.to_dict() for f in schema_fields]
+        groups = list(dict.fromkeys(f.group for f in schema_fields))
+        return {"task_type": task_type, "fields": fields, "groups": groups}
+
+    # Fallback to hardcoded schemas (deprecated — remove once all plugins
+    # implement get_config_schema)
+    fallback = _TASK_SCHEMAS.get(task_type, {"fields": []})
+    return {"task_type": task_type, **fallback}

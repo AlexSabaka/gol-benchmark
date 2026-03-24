@@ -139,6 +139,61 @@ class EvaluationResult:
         }
 
 
+@dataclass
+class ConfigField:
+    """
+    Describes a single configurable field for a plugin generator.
+
+    Used by the web UI to dynamically render configuration forms.
+    Each generator returns a list of these from get_config_schema().
+    """
+    name: str               # Config dict key (matches what generate_batch reads)
+    label: str              # Human-readable label for the UI
+    field_type: str         # "number" | "select" | "multi-select" | "text" | "boolean" | "range" | "weight_map"
+    default: Any            # Default value
+    help: str = ""          # Tooltip / help text
+    group: str = "basic"    # "basic" (visible) or "advanced" (collapsed)
+    # Number fields
+    min_value: Optional[float] = None
+    max_value: Optional[float] = None
+    step: Optional[float] = None
+    # Select / multi-select fields
+    options: Optional[List[Any]] = None
+    # Range fields (for tuple-like min/max pairs, e.g. width_range)
+    range_min_default: Optional[float] = None
+    range_max_default: Optional[float] = None
+    # Weight map fields (for dicts like mixed_weights)
+    weight_keys: Optional[List[str]] = None
+
+    def to_dict(self) -> Dict[str, Any]:
+        """Serialize to JSON-friendly dict for the API."""
+        d: Dict[str, Any] = {
+            "name": self.name,
+            "label": self.label,
+            "type": self.field_type,
+            "default": self.default,
+        }
+        if self.help:
+            d["help"] = self.help
+        if self.group != "basic":
+            d["group"] = self.group
+        if self.min_value is not None:
+            d["min"] = self.min_value
+        if self.max_value is not None:
+            d["max"] = self.max_value
+        if self.step is not None:
+            d["step"] = self.step
+        if self.options is not None:
+            d["options"] = self.options
+        if self.range_min_default is not None:
+            d["range_min_default"] = self.range_min_default
+        if self.range_max_default is not None:
+            d["range_max_default"] = self.range_max_default
+        if self.weight_keys is not None:
+            d["weight_keys"] = self.weight_keys
+        return d
+
+
 class TestCaseGenerator(ABC):
     """
     Abstract base class for test case generators.
@@ -179,6 +234,19 @@ class TestCaseGenerator(ABC):
         Override this to provide sensible defaults.
         """
         return {}
+
+    def get_config_schema(self) -> List['ConfigField']:
+        """
+        Return structured field descriptors for this generator's configuration.
+
+        Override this to provide UI-friendly metadata for all configurable
+        options. The web UI uses this to dynamically render configuration forms.
+        If not overridden, the API falls back to hardcoded schemas.
+
+        Returns:
+            List of ConfigField objects describing each config parameter.
+        """
+        return []
 
 
 class ResponseParser(ABC):

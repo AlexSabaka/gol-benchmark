@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List, Optional, Union
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import re_search_last
 
 
 class AsciiShapesResponseParser(ResponseParser):
@@ -78,7 +79,7 @@ class AsciiShapesResponseParser(ResponseParser):
         ]
 
     def _parse_dimensions(self, response: str, response_lower: str) -> ParsedAnswer:
-        """Parse dimensions answer (WxH format)."""
+        """Parse dimensions answer (WxH format, last match — end-first)."""
         dimension_patterns = [
             r'(\d+)\s*[x×✕✖]\s*(\d+)',  # "8x5", "8 × 5" (includes Unicode multiplication)
             r'(\d+)\s*by\s*(\d+)',  # "8 by 5"
@@ -91,7 +92,7 @@ class AsciiShapesResponseParser(ResponseParser):
         ]
 
         for pattern in dimension_patterns:
-            match = re.search(pattern, response_lower)
+            match = re_search_last(pattern, response_lower)
             if match:
                 try:
                     width = int(match.group(1))
@@ -104,7 +105,7 @@ class AsciiShapesResponseParser(ResponseParser):
                 except ValueError:
                     continue
 
-        # Fallback: find two numbers
+        # Fallback: find last two numbers
         all_numbers = re.findall(r'\d+', response)
         if len(all_numbers) == 2:
             try:
@@ -124,7 +125,7 @@ class AsciiShapesResponseParser(ResponseParser):
         )
 
     def _parse_count(self, response: str, response_lower: str) -> ParsedAnswer:
-        """Parse count answer (numeric)."""
+        """Parse count answer (numeric, last match — end-first)."""
         count_patterns = [
             r'(?:answer|count|total|number)\s*:?\s*(\d+)',
             r'(?:there are|there\'s|has)\s*(\d+)',
@@ -133,7 +134,7 @@ class AsciiShapesResponseParser(ResponseParser):
         ]
 
         for pattern in count_patterns:
-            match = re.search(pattern, response_lower)
+            match = re_search_last(pattern, response_lower)
             if match:
                 try:
                     return ParsedAnswer(
@@ -144,12 +145,12 @@ class AsciiShapesResponseParser(ResponseParser):
                 except ValueError:
                     continue
 
-        # Fallback: find any single number
+        # Fallback: take the last number (end-first)
         all_numbers = re.findall(r'\d+', response)
-        if len(all_numbers) == 1:
+        if all_numbers:
             try:
                 return ParsedAnswer(
-                    value=int(all_numbers[0]),
+                    value=int(all_numbers[-1]),
                     raw_response=response,
                     parse_strategy='count_fallback'
                 )
@@ -187,24 +188,21 @@ class AsciiShapesResponseParser(ResponseParser):
                 parse_strategy='position_boolean'
             )
 
-        # Ambiguous - check which appears first/last
+        # Ambiguous — use last occurrence to determine final stance (end-first)
+        # Use END position of phrases so "not present" (ending at 69) beats
+        # the "present" substring within it (at 62).
         if has_positive and has_negation:
-            # If negation comes after positive, likely negative
-            for neg in negative_words:
-                if neg in response_lower:
-                    neg_pos = response_lower.find(neg)
-                    for pos in positive_words:
-                        if pos in response_lower:
-                            pos_pos = response_lower.find(pos)
-                            if neg_pos > pos_pos:
-                                return ParsedAnswer(
-                                    value=False,
-                                    raw_response=response,
-                                    parse_strategy='position_boolean'
-                                )
-
+            last_neg_end = max(
+                (response_lower.rfind(neg) + len(neg) for neg in negative_words if neg in response_lower),
+                default=-1,
+            )
+            last_pos_end = max(
+                (response_lower.rfind(pos) + len(pos) for pos in positive_words if pos in response_lower),
+                default=-1,
+            )
+            # Whichever ends later is the model's final answer
             return ParsedAnswer(
-                value=True,
+                value=last_pos_end > last_neg_end,
                 raw_response=response,
                 parse_strategy='position_boolean'
             )

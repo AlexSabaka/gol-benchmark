@@ -164,15 +164,16 @@ class GoLResponseParser(ResponseParser):
         Strategy 2: Look for grid sections marked with keywords.
 
         Searches for markers like 'next:', 'result:', 'grid:', 'state:'
-        and attempts to parse the grid following them.
+        scanning from the END of the response (end-first principle).
         """
         lines = response.strip().split('\n')
         grid_markers = ['next:', 'result:', 'grid:', 'state:', 'generation:', 'output:']
 
         for marker in grid_markers:
+            # Find the LAST occurrence of this marker (end-first)
             marker_idx = -1
-            for i, line in enumerate(lines):
-                if marker in line.lower():
+            for i in range(len(lines) - 1, -1, -1):
+                if marker in lines[i].lower():
                     marker_idx = i
                     break
 
@@ -206,12 +207,13 @@ class GoLResponseParser(ResponseParser):
         """
         Strategy 3: Find any rectangular pattern of 0s and 1s.
 
-        Scans through the response looking for any sequence of lines
-        that contain the expected number of binary digits.
+        Scans from the END of the response (end-first principle) looking
+        for any sequence of lines with the expected number of binary digits.
         """
         lines = response.strip().split('\n')
 
-        for start_idx in range(len(lines) - expected_rows + 1):
+        # Scan from end to start
+        for start_idx in range(len(lines) - expected_rows, -1, -1):
             candidate_lines = lines[start_idx:start_idx + expected_rows]
 
             grid = []

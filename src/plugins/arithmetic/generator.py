@@ -8,7 +8,7 @@ complexity levels and target values.
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.core.PromptEngine import (
     PromptEngine,
     PromptContext,
@@ -183,3 +183,15 @@ class ArithmeticTestCaseGenerator(TestCaseGenerator):
             'expressions_per_target': 10,
             'mode': 'expression',
         }
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='complexity', label='Complexity levels', field_type='multi-select',
+                        default=[2, 3], options=[1, 2, 3, 4, 5]),
+            ConfigField(name='expressions_per_target', label='Expressions per target', field_type='number',
+                        default=10, min_value=1, max_value=500),
+            ConfigField(name='target_values', label='Target values', field_type='text',
+                        default='1,2,3,4,5', help='Comma-separated target result values'),
+            ConfigField(name='mode', label='Mode', field_type='select',
+                        default='expression', options=['expression', 'equation']),
+        ]

@@ -4,12 +4,12 @@ Carwash Paradox – Response Parser
 Extracts the model's answer (drive / walk / other) from free-form text using
 multiple strategies, ordered by specificity.
 
-Resolution strategy:
+Resolution strategy (all prefer the LAST match — end-first principle):
  1. Explicit boxed answer: \\boxed{drive} / \\boxed{walk}
  2. Bold / header answer: **drive** / **walk**
  3. Keyword "Answer:" / "Recommendation:" / "Decision:" line
- 4. Direct keyword search — looks for the first strong signal word
- 5. Sentence-level: first sentence that mentions drive / walk
+ 4. Direct keyword search — looks for the last strong signal word
+ 5. Last sentences that mention drive / walk
  6. Fallback: raw response snippet
 
 Match values returned:
@@ -23,6 +23,7 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
+from src.plugins.parse_utils import re_search_last, last_sentences
 
 # ---------------------------------------------------------------------------
 # Keyword sets
@@ -51,35 +52,52 @@ WALK_KEYWORDS = [
     r"\bpedestrian\b",
 ]
 
-# negative tokens that flip a "walk" match (e.g. "don't walk")
-NEGATION = re.compile(
+# Negative tokens that flip a "walk" match (e.g. "don't walk")
+WALK_NEGATION = re.compile(
     r"\b(don'?t|do not|shouldn'?t|should not|no need to|not necessary to)\s+walk\b",
+    re.IGNORECASE,
+)
+
+# Negative tokens that flip a "drive" match (e.g. "don't drive")
+DRIVE_NEGATION = re.compile(
+    r"\b(don'?t|do not|shouldn'?t|should not|no need to|not necessary to)\s+drive\b",
     re.IGNORECASE,
 )
 
 
 def _score(text: str) -> Optional[str]:
-    """Return 'drive', 'walk', or None based on keyword presence."""
+    """Return 'drive', 'walk', or None based on keyword presence.
+
+    When both keywords are present, the one whose **last** occurrence is later
+    in the text wins (end-first principle: the model's final recommendation).
+    """
     t = text.lower()
     has_drive = any(re.search(kw, t) for kw in DRIVE_KEYWORDS)
     has_walk = any(re.search(kw, t) for kw in WALK_KEYWORDS)
-    negated_walk = bool(NEGATION.search(t))
+    negated_walk = bool(WALK_NEGATION.search(t))
+    negated_drive = bool(DRIVE_NEGATION.search(t))
 
-    if has_drive and (not has_walk or negated_walk):
+    # Apply negations
+    if has_drive and negated_drive:
+        has_drive = False
+    if has_walk and negated_walk:
+        has_walk = False
+
+    if has_drive and not has_walk:
         return "drive"
-    if has_walk and not has_drive and not negated_walk:
+    if has_walk and not has_drive:
         return "walk"
-    if has_drive and has_walk and not negated_walk:
-        # Both present — check which one comes first as the recommendation
-        drive_pos = min(
-            (m.start() for kw in DRIVE_KEYWORDS for m in [re.search(kw, t)] if m),
-            default=len(t),
+    if has_drive and has_walk:
+        # Both present — last occurrence wins (end-first principle)
+        drive_pos = max(
+            (m.start() for kw in DRIVE_KEYWORDS for m in re.finditer(kw, t)),
+            default=-1,
         )
-        walk_pos = min(
-            (m.start() for kw in WALK_KEYWORDS for m in [re.search(kw, t)] if m),
-            default=len(t),
+        walk_pos = max(
+            (m.start() for kw in WALK_KEYWORDS for m in re.finditer(kw, t)),
+            default=-1,
         )
-        return "drive" if drive_pos < walk_pos else "walk"
+        return "drive" if drive_pos > walk_pos else "walk"
     return None
 
 
@@ -103,22 +121,22 @@ class CarwashParser(ResponseParser):
 
         text = response.strip()
 
-        # --- Strategy 1: LaTeX boxed ---
-        boxed = re.search(r"\\boxed\{([^}]+)\}", text, re.IGNORECASE)
+        # --- Strategy 1: LaTeX boxed (last match) ---
+        boxed = re_search_last(r"\\boxed\{([^}]+)\}", text, re.IGNORECASE)
         if boxed:
             result = _score(boxed.group(1))
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="boxed", confidence=0.95)
 
-        # --- Strategy 2: Bold / header formatting ---
-        bold = re.search(r"\*\*([^*]{1,50})\*\*", text)
+        # --- Strategy 2: Bold / header formatting (last match) ---
+        bold = re_search_last(r"\*\*([^*]{1,50})\*\*", text)
         if bold:
             result = _score(bold.group(1))
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="bold", confidence=0.9)
 
-        # --- Strategy 3: Labelled answer line ---
-        label_match = re.search(
+        # --- Strategy 3: Labelled answer line (last match) ---
+        label_match = re_search_last(
             r"(?:answer|recommendation|decision|verdict|conclusion|my\s+(?:advice|recommendation))\s*[:：]\s*([^\n.]{1,120})",
             text,
             re.IGNORECASE,
@@ -128,8 +146,8 @@ class CarwashParser(ResponseParser):
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_line", confidence=0.88)
 
-        # --- Strategy 4: First sentence / strong recommendation phrasing ---
-        strong_intro = re.search(
+        # --- Strategy 4: Strong recommendation phrasing (last match) ---
+        strong_intro = re_search_last(
             r"(?:you\s+should|i\s+(?:would|recommend|suggest)|definitely|clearly|obviously|"
             r"the\s+(?:answer|best\s+option|right\s+choice)\s+is|go\s+(?:ahead\s+and)?)\s+([^\n.]{1,80})",
             text,
@@ -145,12 +163,11 @@ class CarwashParser(ResponseParser):
         if result:
             return ParsedAnswer(value=result, raw_response=text, parse_strategy="full_text", confidence=0.7)
 
-        # --- Strategy 6: First 3 sentences ---
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-        for sent in sentences[:3]:
+        # --- Strategy 6: Last 3 sentences (end-first) ---
+        for sent in reversed(last_sentences(text, n=5)):
             result = _score(sent)
             if result:
-                return ParsedAnswer(value=result, raw_response=text, parse_strategy="first_sentences", confidence=0.6)
+                return ParsedAnswer(value=result, raw_response=text, parse_strategy="last_sentences", confidence=0.6)
 
         # --- Fallback ---
         return ParsedAnswer(

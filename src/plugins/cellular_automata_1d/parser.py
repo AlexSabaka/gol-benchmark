@@ -8,6 +8,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import re_search_last
 
 
 class C14ResponseParser(ResponseParser):
@@ -125,14 +126,14 @@ class C14ResponseParser(ResponseParser):
         return None
 
     def _strategy_marker_search(self, response: str, expected_size: int) -> Optional[List[int]]:
-        """Strategy 1: Look for explicit markers."""
+        """Strategy 1: Look for explicit markers (last match — end-first)."""
         marker_patterns = [
             r'(?:final\s+answer|next\s+state|next\s+row|next|answer|result)\s*:?\s*(.+?)(?:\n|$)',
             r'(?:the\s+)?(?:next|resulting|final)\s+(?:state|row|generation)\s+(?:is|=|:)?\s*(.+?)(?:\n|$)',
         ]
 
         for pattern in marker_patterns:
-            match = re.search(pattern, response, re.IGNORECASE | re.DOTALL)
+            match = re_search_last(pattern, response, re.IGNORECASE | re.DOTALL)
             if match:
                 extracted = match.group(1).strip()
                 parsed = self._extract_state(extracted, expected_size)
@@ -157,11 +158,12 @@ class C14ResponseParser(ResponseParser):
         return None
 
     def _strategy_code_block(self, response: str, expected_size: int) -> Optional[List[int]]:
-        """Strategy 3: Extract from code blocks."""
+        """Strategy 3: Extract from code blocks (last block first — end-first)."""
         code_block_pattern = r'```(?:python|text)?\s*\n?(.+?)\n?```'
         code_matches = re.findall(code_block_pattern, response, re.DOTALL)
 
-        for code in code_matches:
+        # Prefer last code block (end-first principle)
+        for code in reversed(code_matches):
             parsed = self._extract_state(code, expected_size)
             if parsed:
                 return parsed
@@ -169,11 +171,18 @@ class C14ResponseParser(ResponseParser):
         return None
 
     def _strategy_digit_extraction(self, response: str, expected_size: int) -> Optional[List[int]]:
-        """Strategy 4: Extract all 0s and 1s from response."""
+        """Strategy 4: Extract 0s and 1s from response (from end — end-first).
+
+        Takes digits from the end of the response since models often echo
+        the input state first and provide the output state last.
+        """
         all_digits = re.findall(r'\b[01]\b', response)
 
         if len(all_digits) >= 8:
-            # Cap at 64 cells max
-            return [int(d) for d in all_digits[:min(64, len(all_digits))]]
+            # Take from end, cap at expected_size or 64
+            take = min(expected_size, 64) if expected_size > 0 else min(64, len(all_digits))
+            if len(all_digits) >= take:
+                return [int(d) for d in all_digits[-take:]]
+            return [int(d) for d in all_digits]
 
         return None

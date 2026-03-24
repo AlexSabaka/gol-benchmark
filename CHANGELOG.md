@@ -2,6 +2,75 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.4.0] - March 24, 2026
+
+### Plugin Configuration Schema Introspection
+
+#### ConfigField System (`src/plugins/base.py`)
+
+- **New `ConfigField` dataclass** — structured field descriptors for plugin configuration with 7 field types: `number`, `select`, `multi-select`, `text`, `boolean`, `range`, `weight_map`
+- **New `get_config_schema()` method** on `TestCaseGenerator` — returns `List[ConfigField]` describing all configurable parameters
+- **Basic/Advanced field grouping** — fields tagged with `group="basic"` or `group="advanced"` for collapsible UI sections
+
+#### All 12 Generators Implement `get_config_schema()`
+
+- `game_of_life`: 5 fields (difficulty, grids, density, known patterns, cell markers)
+- `arithmetic`: 4 fields (complexity, expressions per target, target values, mode)
+- `cellular_automata_1d`: 5 fields (rules, cases per rule, width, steps, boundary)
+- `linda_fallacy`: 3 fields (options, personas, culture filter)
+- `ascii_shapes`: 6 fields (question types, width/height range, symbols, labels, filled ratio)
+- `object_tracking`: 6 fields (distractors, moves, types, objects, containers, sticky)
+- `sally_anne`: 5 fields (cases, distractors, observer, objects, activities)
+- `carwash`: 1 field (distances)
+- `inverted_cup`: 1 field (description styles)
+- `strawberry`: 6 fields (mode, word lengths, favor repeated, min/max, mixed weights)
+- `measure_comparison`: 10 fields (format, comparison type, direction, categories, traps, weights)
+- `grid_tasks`: 8 fields (cases, rows, cols, data types, question types, table style)
+
+#### Web API: Schema Introspection Endpoint
+
+- **`GET /api/plugins/{task_type}/schema`** now introspects `generator.get_config_schema()` first, falling back to deprecated `_TASK_SCHEMAS` dict
+- Response includes `fields` array and `groups` list for UI rendering
+
+#### Web UI: Dynamic Collapsible Config Forms
+
+- **New field renderers** in `configure.html` for `boolean`, `range`, and `weight_map` types
+- **Field grouping**: basic fields visible by default, advanced fields in collapsed `<details>` sub-section
+- **`buildGeneratePayload()`** extended to collect `boolean`, `range`, and `weight_map` values
+- **CSS additions**: `.advanced-toggle`, `.range-pair`, `.weight-map-group` styles
+
+#### Tests
+
+- **New `tests/plugins/test_config_schema.py`** — 9 test cases covering `ConfigField.to_dict()` serialization, all-plugins schema validation, field type/name checks, and JSON round-trip
+
+---
+
+## [2.3.0] - March 24, 2026
+
+### Documentation Overhaul
+
+#### New Documentation
+
+- **`docs/PROJECT_OVERVIEW.md`** — Comprehensive project overview covering mission, architecture (3-stage pipeline, plugin system, web UI), all 12 benchmark tasks, model providers, prompt engineering system, key research findings, and known quirks
+- **`docs/PLUGIN_GUIDE.md`** — Complete plugin system guide with base class reference, auto-discovery docs, end-first parsing convention, detailed reference for all 12 plugins, step-by-step new-plugin tutorial with working code, integration points, and testing guidance
+
+#### Documentation Reorganization
+
+- **Archived 20 obsolete docs** to `docs/_archive/`: implementation logs, bug fix summaries, and deprecated references (ASCII_SHAPES_IMPLEMENTATION, C14_*, SALLY_ANNE_*, TUI_SYSTEM, SOURCE_CODE_ORGANIZATION, etc.)
+- **Flattened `docs/implementation/prompt-engine/`** to `docs/prompt-engine/` — removed empty nesting
+- **Updated `docs/README.md`** — Rewritten as clean navigation hub reflecting current structure and all 12 plugins
+- **Updated `CLAUDE.md`** — Corrected plugin count (7 → 12), added new plugin references, added new documentation links
+- **Updated `CHANGELOG.md`** — Added documentation overhaul entry
+
+#### CLAUDE.md Corrections
+
+- Fixed plugin count from "7 plugins" to "12 plugins" in directory structure
+- Added missing plugins to directory structure: object_tracking, sally_anne, strawberry, measure_comparison, grid_tasks
+- Added `parse_utils.py` to directory structure
+- Updated Additional Resources section with new docs
+
+---
+
 ## [2.2.0] - February 21, 2026
 
 ### New Plugins – Practical Reasoning Traps

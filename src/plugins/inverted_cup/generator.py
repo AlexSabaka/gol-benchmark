@@ -15,7 +15,8 @@ import itertools
 import random
 from typing import Any, Dict, List
 
-from src.plugins.base import TestCaseGenerator, TestCase
+from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
 # ---------------------------------------------------------------------------
@@ -65,19 +66,6 @@ EXTRA_CONTEXTS = [
 # Prompt templates
 # ---------------------------------------------------------------------------
 
-SYSTEM_PROMPTS = {
-    "analytical": (
-        "You are a precise reasoning assistant. "
-        "When asked practical questions about physical objects, "
-        "reason carefully about their orientation and function."
-    ),
-    "casual": (
-        "You're a helpful, down-to-earth friend offering quick practical advice."
-    ),
-    "adversarial": (
-        "Give a direct, no-nonsense answer. No lengthy explanations."
-    ),
-}
 
 USER_PROMPT_TEMPLATES = {
     "minimal": "{source} {description} {extra}{question}",
@@ -91,6 +79,17 @@ USER_PROMPT_TEMPLATES = {
 
 class InvertedCupGenerator(TestCaseGenerator):
     """Generates Inverted Cup test cases."""
+
+    def __init__(self):
+        self._prompt_engine = PromptEngine()
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='description_styles', label='Description styles', field_type='multi-select',
+                        default=[d[1] for d in DESCRIPTION_STYLES],
+                        options=[d[1] for d in DESCRIPTION_STYLES], group='advanced',
+                        help='Which cup description styles to include'),
+        ]
 
     def generate_batch(
         self,
@@ -163,7 +162,11 @@ class InvertedCupGenerator(TestCaseGenerator):
             question=question,
         ).strip()
 
-        system_prompt = SYSTEM_PROMPTS.get(system_style, SYSTEM_PROMPTS["analytical"])
+        try:
+            sys_enum = SystemPromptStyle(system_style)
+        except ValueError:
+            sys_enum = SystemPromptStyle.ANALYTICAL
+        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum)
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
         task_params = {

@@ -7,13 +7,13 @@ The correct action is to flip / turn the cup over.
 Wrong answers include: drilling a hole, cutting, returning, leaving it,
 using it as-is (impossible), etc.
 
-Resolution strategy:
+Resolution strategy (all prefer the LAST match — end-first principle):
  1. Boxed answer  \\boxed{...}
  2. Bold / header formatting  **...**
  3. Labelled answer line  (Answer: / Action: / Solution: ...)
  4. Strong recommendation phrasing
  5. Full-text keyword scan
- 6. First-sentences scan
+ 6. Last-sentences scan
  7. Fallback → "wrong"
 """
 from __future__ import annotations
@@ -22,6 +22,7 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
+from src.plugins.parse_utils import re_search_last, last_sentences
 
 # ---------------------------------------------------------------------------
 # Keyword sets
@@ -62,6 +63,16 @@ WRONG_PATTERNS = [
 ]
 
 
+def _last_pos(patterns: list[str], text: str) -> int:
+    """Return the position of the **last** occurrence of any pattern, or -1."""
+    best = -1
+    for p in patterns:
+        for m in re.finditer(p, text):
+            if m.start() > best:
+                best = m.start()
+    return best
+
+
 def _has_flip(text: str) -> bool:
     t = text.lower()
     return any(re.search(p, t) for p in FLIP_PATTERNS)
@@ -73,9 +84,19 @@ def _has_wrong(text: str) -> bool:
 
 
 def _classify(text: str) -> Optional[str]:
-    if _has_flip(text):
+    """Classify text as 'flip', 'wrong', or None.
+
+    If flip is mentioned at all, the model demonstrates the key insight
+    (the correct answer IS to flip). "Wrong" patterns like "drill a hole"
+    may appear alongside flip as creative alternatives but don't negate
+    the correct understanding. So flip takes priority when both are present.
+    """
+    has_f = _has_flip(text)
+    has_w = _has_wrong(text)
+
+    if has_f:
         return "flip"
-    if _has_wrong(text):
+    if has_w:
         return "wrong"
     return None
 
@@ -100,22 +121,22 @@ class InvertedCupParser(ResponseParser):
 
         text = response.strip()
 
-        # --- Strategy 1: LaTeX boxed ---
-        boxed = re.search(r"\\boxed\{([^}]+)\}", text, re.IGNORECASE)
+        # --- Strategy 1: LaTeX boxed (last match) ---
+        boxed = re_search_last(r"\\boxed\{([^}]+)\}", text, re.IGNORECASE)
         if boxed:
             result = _classify(boxed.group(1))
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="boxed", confidence=0.95)
 
-        # --- Strategy 2: Bold ---
-        bold = re.search(r"\*\*([^*]{1,80})\*\*", text)
+        # --- Strategy 2: Bold (last match) ---
+        bold = re_search_last(r"\*\*([^*]{1,80})\*\*", text)
         if bold:
             result = _classify(bold.group(1))
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="bold", confidence=0.9)
 
-        # --- Strategy 3: Labelled answer line ---
-        label_match = re.search(
+        # --- Strategy 3: Labelled answer line (last match) ---
+        label_match = re_search_last(
             r"(?:answer|action|solution|recommendation|suggestion|step\s+1|first(?:ly)?)\s*[:：]\s*([^\n.]{1,150})",
             text,
             re.IGNORECASE,
@@ -125,8 +146,8 @@ class InvertedCupParser(ResponseParser):
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_line", confidence=0.88)
 
-        # --- Strategy 4: Strong recommendation sentence ---
-        strong = re.search(
+        # --- Strategy 4: Strong recommendation sentence (last match) ---
+        strong = re_search_last(
             r"(?:you\s+(?:should|need\s+to|just\s+need\s+to|can)|simply|just|all\s+you\s+(?:need\s+to\s+do|have\s+to\s+do)(?:\s+is)?|the\s+(?:solution|answer|fix)\s+is\s+to)\s+([^\n.]{1,100})",
             text,
             re.IGNORECASE,
@@ -141,12 +162,11 @@ class InvertedCupParser(ResponseParser):
         if result:
             return ParsedAnswer(value=result, raw_response=text, parse_strategy="full_text", confidence=0.7)
 
-        # --- Strategy 6: First sentences ---
-        sentences = re.split(r"(?<=[.!?])\s+", text)
-        for sent in sentences[:4]:
+        # --- Strategy 6: Last sentences (end-first) ---
+        for sent in reversed(last_sentences(text, n=5)):
             result = _classify(sent)
             if result:
-                return ParsedAnswer(value=result, raw_response=text, parse_strategy="first_sentences", confidence=0.6)
+                return ParsedAnswer(value=result, raw_response=text, parse_strategy="last_sentences", confidence=0.6)
 
         # --- Fallback ---
         return ParsedAnswer(

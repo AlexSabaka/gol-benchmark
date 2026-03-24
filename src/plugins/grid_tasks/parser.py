@@ -10,6 +10,7 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import re_search_last
 
 
 class GridTasksResponseParser(ResponseParser):
@@ -25,7 +26,7 @@ class GridTasksResponseParser(ResponseParser):
             'code_block',       # ```answer```
             'quoted',           # "answer" or 'answer'
             'last_line',        # Last non-empty line
-            'first_number',     # First numeric value
+            'last_number',      # Last numeric value
         ]
     
     def parse(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
@@ -61,7 +62,7 @@ class GridTasksResponseParser(ResponseParser):
             ('code_block', self._try_code_block),
             ('quoted', self._try_quoted),
             ('last_line', self._try_last_line),
-            ('first_number', self._try_first_number),
+            ('last_number', self._try_last_number),
         ]
         
         for strategy_name, strategy_func in strategies:
@@ -85,23 +86,19 @@ class GridTasksResponseParser(ResponseParser):
         )
     
     def _try_boxed_latex(self, response: str) -> Optional[Dict[str, Any]]:
-        """Try to extract answer from LaTeX \\boxed{} notation."""
-        # Pattern: \boxed{answer}
+        """Try to extract answer from LaTeX \\boxed{} notation (last match)."""
         pattern = r'\\boxed\{([^}]+)\}'
-        match = re.search(pattern, response)
+        match = re_search_last(pattern, response)
         if match:
             value = match.group(1).strip()
             return {'value': self._normalize_value(value), 'confidence': 1.0}
         return None
     
     def _try_bold_markdown(self, response: str) -> Optional[Dict[str, Any]]:
-        """Try to extract answer from **bold** markdown."""
-        # Pattern: **answer**
+        """Try to extract answer from **bold** markdown (last match — end-first)."""
         pattern = r'\*\*([^*]+)\*\*'
         matches = re.findall(pattern, response)
         if matches:
-            # For grid tasks, the answer is usually the FIRST bold text
-            # (e.g., "**Alice Smith** has the highest revenue...")
             # Filter out common non-answer bold items
             non_answer_patterns = [
                 r'^\$[\d,]+',        # Dollar amounts like $8,678.19
@@ -111,33 +108,32 @@ class GridTasksResponseParser(ResponseParser):
                 r'^Note:?',          # Notes
                 r'^Warning:?',       # Warnings
             ]
-            
-            for match in matches:
+
+            # Iterate from end (end-first principle)
+            for match in reversed(matches):
                 match_stripped = match.strip()
-                # Skip if it matches a non-answer pattern
                 is_non_answer = any(re.match(p, match_stripped) for p in non_answer_patterns)
                 if not is_non_answer and len(match_stripped) > 1:
                     return {'value': self._normalize_value(match_stripped), 'confidence': 0.95}
-            
-            # If all matches were filtered, take the first one anyway
-            value = matches[0].strip()
+
+            # If all matches were filtered, take the last one anyway
+            value = matches[-1].strip()
             return {'value': self._normalize_value(value), 'confidence': 0.85}
         return None
     
     def _try_answer_pattern(self, response: str) -> Optional[Dict[str, Any]]:
-        """Try to extract answer from common patterns like 'Answer: X' or 'The answer is X'."""
+        """Try to extract answer from common patterns (last match — end-first)."""
         patterns = [
             r'(?:^|\n)Answer:\s*([^\n]+)',
             r'(?:^|\n)The answer is:?\s*([^\n]+)',
             r'(?:^|\n)Final answer:\s*([^\n]+)',
             r'(?:^|\n)Result:\s*([^\n]+)',
         ]
-        
+
         for pattern in patterns:
-            match = re.search(pattern, response, re.IGNORECASE)
+            match = re_search_last(pattern, response, re.IGNORECASE)
             if match:
                 value = match.group(1).strip()
-                # Remove trailing punctuation
                 value = value.rstrip('.,;!')
                 return {'value': self._normalize_value(value), 'confidence': 0.9}
         return None
@@ -203,11 +199,10 @@ class GridTasksResponseParser(ResponseParser):
             return {'value': self._normalize_value(value), 'confidence': 0.7}
         return None
     
-    def _try_first_number(self, response: str) -> Optional[Dict[str, Any]]:
-        """Extract the first numeric value (useful for numeric questions)."""
-        # Pattern: number (integer or decimal)
+    def _try_last_number(self, response: str) -> Optional[Dict[str, Any]]:
+        """Extract the last numeric value (end-first principle)."""
         pattern = r'-?\d+(?:\.\d+)?'
-        match = re.search(pattern, response)
+        match = re_search_last(pattern, response)
         if match:
             value = match.group(0)
             return {'value': self._normalize_value(value), 'confidence': 0.6}

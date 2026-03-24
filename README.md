@@ -22,33 +22,20 @@ Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, b
 
 ## What Gets Tested?
 
-### 1. **Game of Life (GoL)** 🕹️
-
-Conway's cellular automaton rules — can models predict the next grid state?
-
-### 2. **Arithmetic Expression Evaluation (Ari)** 🧮
-
-Math expression parsing and solving with varying complexity levels.
-
-### 3. **Linda Conjunction Fallacy** 🧠
-
-Classic Tversky & Kahneman cognitive bias test — do models fall for probabilistic reasoning traps?
-
-### 4. **Cellular Automata (C14)** 🔄
-
-Pattern evolution testing (similar to GoL but configurable rules).
-
-### 5. **Math Equation Generation (MEG)** 📐
-
-Procedural equation generation for benchmarking symbolic reasoning.
-
-### 6. **Carwash Paradox** 🚗
-
-"The carwash is only 50 m away — should you walk or drive?" Correct answer is always **drive** (car must be physically present). Tests whether models track the *goal* of a trip rather than optimising naively for short distances.
-
-### 7. **Inverted Cup** 🥤
-
-A cup with a sealed top and open bottom — how do you use it? Correct answer is **flip it over**. Tests spatial/physical orientation reasoning. Models often suggest drilling, cutting, or returning the cup instead of the obvious solution.
+| # | Task | What It Tests |
+| --- | ------ | --------------- |
+| 1 | **Game of Life (GoL)** | Conway's cellular automaton — predict next grid state |
+| 2 | **Arithmetic (ARI)** | Math expression parsing and evaluation |
+| 3 | **Linda Conjunction Fallacy** | Cognitive bias — conjunction fallacy detection |
+| 4 | **Cellular Automata 1D (C14)** | Wolfram 1D rule application (rules 0–255) |
+| 5 | **ASCII Shapes** | Spatial reasoning on ASCII art (dimensions, counts, positions) |
+| 6 | **Object Tracking** | Physical state tracking through container inversions |
+| 7 | **Sally-Anne Test** | Theory of Mind — false belief reasoning |
+| 8 | **Carwash Paradox** | Practical goal tracking — walk or drive? (always drive) |
+| 9 | **Inverted Cup** | Spatial orientation — sealed top/open bottom cup (flip it) |
+| 10 | **Strawberry** | Letter counting in words ("How many R's in strawberry?") |
+| 11 | **Measure Comparison** | Quantity comparison with units and conversion traps |
+| 12 | **Grid Tasks** | Table reasoning — cell lookups, row sums, column counts |
 
 ---
 
@@ -73,29 +60,45 @@ pip install -r requirements.txt
 ollama serve
 
 # (Optional) use a remote Ollama instance
-# Pass --ollama-host http://remote-host:11434 to run_testset.py,
-# or configure the host interactively in the TUI.
+# Pass --ollama-host http://remote-host:11434 to run_testset.py
 ```
 
 ### Run Your First Benchmark
 
 **Web UI (Recommended)**
+
 ```bash
 # Start the web UI for configuration, execution, and analysis
 python -m src.web
 # Open http://127.0.0.1:8000 in your browser
 ```
 
-**CLI Examples**
+**CLI — 3-Stage Pipeline**
+
 ```bash
-# Game of Life - Easy difficulty with qwen3
-python gol_eval.py --difficulty medium --temperature 0.25 --ctx-len 4096 --num-predict 2048 --top-k 40 --min-k 1 --min-p 0.05 --prompt-style linguistic --live-dead-cell-markers 1,0 --prompt-language en --model qwen3:0.6b gemma3:1b --batch-size=20 --seed=42 --known-patterns-ratio=1.0 --density=.50 --no-think
+# Stage 1: Generate test set from YAML config
+python src/stages/generate_testset.py configs/my_benchmark.yaml
 
-# Arithmetic expressions with multiple models
-python ari_eval.py --model qwen3:0.6b llama3.2:3b --difficulty 3 --batch-size 10
+# Stage 2: Run against a model
+python src/stages/run_testset.py testsets/testset_*.json.gz \
+    --model qwen3:0.6b --provider ollama
 
-# Linda fallacy test in Spanish
-python linda_eval.py --models llama3.2:3b --language es --trials 10
+# Stage 3: Analyze results
+python src/stages/analyze_results.py results/*.json.gz --visualize
+```
+
+**CLI — Legacy Benchmark Scripts**
+
+```bash
+# Game of Life
+python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty medium \
+    --batch-size 20 --no-think --live-dead-cell-markers "1,0"
+
+# Arithmetic
+python -m src.benchmarks.ari_eval --model llama3.2:3b --difficulty 3 --batch-size 10
+
+# Linda fallacy in Spanish
+python -m src.benchmarks.linda_eval --model gemma3:1b --language es --trials 10
 ```
 
 ---
@@ -241,16 +244,29 @@ All analysis reports and visualizations have been organized in the `docs/` direc
 
 ## Configuration Options
 
-### Global Parameters
+### Key Parameters
 
 ```bash
-python gol_eval.py --help
-python ari_eval.py --help
-python с14_eval.py --help
-python linda_eval.py --help
+# Prompt styles (user prompt)
+--prompt-style minimal|casual|linguistic|examples|rules_math
 
-# TODO: Add concrete usage examples
+# System prompt styles
+--system-prompt-style analytical|casual|adversarial|none
+
+# Languages
+--prompt-language en|es|fr|de|zh|ua
+
+# Cell markers (GoL only — NEVER use emoji!)
+--live-dead-cell-markers "1,0"
+
+# Disable chain-of-thought (recommended for structured tasks)
+--no-think
+
+# Reproducibility
+--seed 42
 ```
+
+See [CLAUDE.md](.claude/CLAUDE.md) for full configuration reference.
 
 ---
 
@@ -271,21 +287,18 @@ This is a **personal experiment**, but if you're curious and want to:
 
 ### ✅ Completed
 
-- [x] Refactor prompts into coherent prompt engine (PromptEngine v1.0)
-- [x] Add visual result dashboards (9 comprehensive visualizations)
-- [x] Systematic analysis of prompt engineering effects
-- [x] Document model personalities and reasoning patterns
-- [x] Plugin-based benchmark architecture (v2.1.0) — 7 tasks auto-discovered
+- [x] Plugin-based benchmark architecture — 12 tasks with auto-discovery (v2.1.0+)
 - [x] 3-stage pipeline: generate → execute → analyze
-- [x] Remote Ollama support (`--ollama-host`)
+- [x] FastAPI + HTMX web UI with dynamic plugin config forms (v2.4.0)
+- [x] Plugin config schema introspection (`ConfigField` system)
+- [x] PromptEngine with 6 languages, 5 user styles, 4 system styles
+- [x] Remote Ollama + OpenAI-compatible + HuggingFace providers
 - [x] Token counting throughout pipeline
-- [x] Carwash Paradox plugin (practical-goal-tracking test)
-- [x] Inverted Cup plugin (spatial-orientation reasoning test)
+- [x] End-first parsing convention across all parsers
 
 ### 🔄 In Progress
 
 - [ ] Cross-lingual/cross-cultural generation problems
-- [ ] OpenAI API integration for testing closed models (GPT-4, Claude, Gemini)
 
 ### 📋 Planned
 

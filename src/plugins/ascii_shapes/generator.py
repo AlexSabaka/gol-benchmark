@@ -9,7 +9,7 @@ from datetime import datetime
 from turtle import shape
 from typing import Any, Dict, List, Optional
 
-from src.plugins.base import TestCase, TestCaseGenerator
+from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.core.PromptEngine import (
     PromptEngine,
     PromptContext,
@@ -243,3 +243,25 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
             'coordinate_labels': False,
             'filled_ratio': 0.7,
         }
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='question_types', label='Question types', field_type='multi-select',
+                        default=['dimensions', 'count', 'position'],
+                        options=['dimensions', 'count', 'position']),
+            ConfigField(name='width_range', label='Width range', field_type='range',
+                        default=[3, 10], range_min_default=3, range_max_default=10,
+                        min_value=1, max_value=50, help='Min and max width of generated shapes'),
+            ConfigField(name='height_range', label='Height range', field_type='range',
+                        default=[3, 8], range_min_default=3, range_max_default=8,
+                        min_value=1, max_value=50, help='Min and max height of generated shapes'),
+            ConfigField(name='symbols', label='Symbols', field_type='multi-select',
+                        default=['*', '#', 'X'], options=['*', '#', 'X', 'O', '+', '@'],
+                        group='advanced'),
+            ConfigField(name='coordinate_labels', label='Coordinate labels', field_type='boolean',
+                        default=False, group='advanced',
+                        help='Add coordinate labels to the shape grid'),
+            ConfigField(name='filled_ratio', label='Filled ratio', field_type='number',
+                        default=0.7, min_value=0.0, max_value=1.0, step=0.1, group='advanced',
+                        help='Probability shapes are filled vs outline'),
+        ]

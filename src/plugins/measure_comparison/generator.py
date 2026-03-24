@@ -37,7 +37,8 @@ import random
 from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
 
-from src.plugins.base import TestCaseGenerator, TestCase
+from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 # =========================================================================
 # Unit System
@@ -289,86 +290,6 @@ QUESTION_TEMPLATES: Dict[str, List[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# System prompts  {lang: {style: prompt}}
-# ---------------------------------------------------------------------------
-
-SYSTEM_PROMPTS: Dict[str, Dict[str, str]] = {
-    "en": {
-        "analytical": (
-            "You are a precise measurement comparison assistant. "
-            "When asked to compare two quantities, carefully convert units "
-            "if necessary and provide the correct answer. "
-            "If the quantities are equal, say 'equal'. "
-            "If they cannot be compared (different physical dimensions), "
-            "say 'incomparable'."
-        ),
-        "casual": (
-            "You're a helpful assistant. Compare the two measurements "
-            "and tell me which one is bigger (or smaller). "
-            "Just give the answer."
-        ),
-        "adversarial": (
-            "Answer with just the winning measurement. "
-            "No explanations, no working."
-        ),
-    },
-    "es": {
-        "analytical": (
-            "Eres un asistente preciso de comparación de medidas. "
-            "Cuando se te pida comparar dos cantidades, convierte las unidades "
-            "cuidadosamente si es necesario y proporciona la respuesta correcta. "
-            "Si las cantidades son iguales, di 'igual'. "
-            "Si no se pueden comparar, di 'incomparable'."
-        ),
-        "casual": "Eres un asistente útil. Compara las dos medidas y dime cuál es mayor. Solo da la respuesta.",
-        "adversarial": "Responde solo con la medida ganadora. Sin explicaciones.",
-    },
-    "fr": {
-        "analytical": (
-            "Vous êtes un assistant précis de comparaison de mesures. "
-            "Lorsqu'on vous demande de comparer deux quantités, convertissez "
-            "soigneusement les unités si nécessaire et fournissez la bonne réponse. "
-            "Si les quantités sont égales, dites 'égal'. "
-            "Si elles ne peuvent pas être comparées, dites 'incomparable'."
-        ),
-        "casual": "Vous êtes un assistant utile. Comparez les deux mesures et dites-moi laquelle est plus grande. Juste la réponse.",
-        "adversarial": "Répondez uniquement avec la mesure gagnante. Pas d'explications.",
-    },
-    "de": {
-        "analytical": (
-            "Sie sind ein präziser Vergleichsassistent für Maßeinheiten. "
-            "Wenn Sie gebeten werden, zwei Mengen zu vergleichen, konvertieren Sie "
-            "die Einheiten sorgfältig, falls nötig, und geben Sie die richtige Antwort. "
-            "Wenn die Mengen gleich sind, sagen Sie 'gleich'. "
-            "Wenn sie nicht vergleichbar sind, sagen Sie 'nicht vergleichbar'."
-        ),
-        "casual": "Du bist ein hilfreicher Assistent. Vergleiche die beiden Messungen und sag mir, welche größer ist. Nur die Antwort.",
-        "adversarial": "Antworte nur mit der größeren Messung. Keine Erklärungen.",
-    },
-    "zh": {
-        "analytical": (
-            "你是一个精确的测量比较助手。"
-            "当被要求比较两个数量时，如有必要请仔细换算单位，并提供正确答案。"
-            "如果数量相等，请说'相等'。"
-            "如果无法比较（不同物理量纲），请说'无法比较'。"
-        ),
-        "casual": "你是一个helpful助手。比较两个测量值，告诉我哪个更大。只给答案。",
-        "adversarial": "只回答更大的那个测量值。不要解释。",
-    },
-    "ua": {
-        "analytical": (
-            "Ви — точний помічник для порівняння вимірювань. "
-            "Коли вас просять порівняти дві величини, уважно перетворіть одиниці "
-            "за потреби та надайте правильну відповідь. "
-            "Якщо величини рівні, скажіть 'рівні'. "
-            "Якщо їх неможливо порівняти, скажіть 'непорівнянні'."
-        ),
-        "casual": "Ви — корисний помічник. Порівняйте два вимірювання і скажіть, яке більше. Тільки відповідь.",
-        "adversarial": "Відповідайте лише більшим вимірюванням. Без пояснень.",
-    },
-}
-
-# ---------------------------------------------------------------------------
 # User prompt templates  {lang: {style: template}}
 # Placeholder: {question}
 # ---------------------------------------------------------------------------
@@ -438,6 +359,39 @@ USER_PROMPT_TEMPLATES: Dict[str, Dict[str, str]] = {
 
 class MeasureComparisonGenerator(TestCaseGenerator):
     """Generates measurement-comparison test cases."""
+
+    def __init__(self):
+        self._prompt_engine = PromptEngine()
+
+    def get_config_schema(self) -> List[ConfigField]:
+        return [
+            ConfigField(name='number_format', label='Number format', field_type='select',
+                        default='mixed', options=['integer', 'decimal', 'fraction', 'mixed']),
+            ConfigField(name='comparison_type', label='Comparison type', field_type='select',
+                        default='all', options=['same_unit', 'mixed_unit', 'equal', 'incomparable', 'all']),
+            ConfigField(name='question_direction', label='Question direction', field_type='select',
+                        default='mixed', options=['bigger', 'smaller', 'mixed']),
+            ConfigField(name='unit_categories', label='Unit categories', field_type='multi-select',
+                        default=['length', 'mass', 'temperature', 'volume', 'speed', 'time'],
+                        options=['length', 'mass', 'temperature', 'volume', 'speed', 'time']),
+            ConfigField(name='decimal_trap_ratio', label='Decimal trap ratio', field_type='number',
+                        default=0.3, min_value=0.0, max_value=1.0, step=0.05, group='advanced',
+                        help='Proportion of decimal questions with adversarial digit traps'),
+            ConfigField(name='close_value_ratio', label='Close value ratio', field_type='number',
+                        default=0.2, min_value=0.0, max_value=1.0, step=0.05, group='advanced',
+                        help='Proportion of same-unit questions with very close values'),
+            ConfigField(name='value_order', label='Value order', field_type='select',
+                        default='random', options=['random', 'bigger_first', 'smaller_first'],
+                        group='advanced'),
+            ConfigField(name='fraction_max_denominator', label='Max fraction denominator', field_type='number',
+                        default=16, min_value=2, max_value=100, group='advanced'),
+            ConfigField(name='max_decimal_places', label='Max decimal places', field_type='number',
+                        default=3, min_value=1, max_value=10, group='advanced'),
+            ConfigField(name='type_weights', label='Type weights', field_type='weight_map',
+                        default={"same_unit": 0.4, "mixed_unit": 0.3, "equal": 0.15, "incomparable": 0.15},
+                        weight_keys=['same_unit', 'mixed_unit', 'equal', 'incomparable'],
+                        group='advanced', help='Probability weights when comparison_type is "all"'),
+        ]
 
     def generate_batch(
         self,
@@ -939,8 +893,15 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         user_template = user_templates.get(user_style, user_templates["casual"])
         user_prompt = user_template.format(question=question).strip()
 
-        sys_prompts = SYSTEM_PROMPTS.get(language, SYSTEM_PROMPTS["en"])
-        system_prompt = sys_prompts.get(system_style, sys_prompts["analytical"])
+        try:
+            sys_enum = SystemPromptStyle(system_style)
+        except ValueError:
+            sys_enum = SystemPromptStyle.ANALYTICAL
+        try:
+            lang_enum = Language(language)
+        except ValueError:
+            lang_enum = Language.EN
+        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
 
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 

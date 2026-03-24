@@ -87,12 +87,14 @@ function buildGeneratePayload() {
 
     // Collect generation params from inputs inside this panel
     const generation = {};
+    const seen = new Set();
     panel.querySelectorAll('[data-param]').forEach(input => {
       const key = input.dataset.param;
       const ptype = input.dataset.paramType || 'number';
 
       if (ptype === 'multi-select') {
-        // checkboxes with same data-param
+        if (seen.has(key)) return; // collect once per key
+        seen.add(key);
         const vals = Array.from(panel.querySelectorAll(`[data-param="${key}"]:checked`)).map(c => {
           const v = c.value;
           return isNaN(v) ? v : Number(v);
@@ -100,6 +102,15 @@ function buildGeneratePayload() {
         generation[key] = vals;
       } else if (ptype === 'number') {
         generation[key] = Number(input.value);
+      } else if (ptype === 'boolean') {
+        generation[key] = input.checked;
+      } else if (ptype === 'range') {
+        if (!generation[key]) generation[key] = [null, null];
+        const pos = input.dataset.rangePos;
+        generation[key][pos === 'min' ? 0 : 1] = Number(input.value);
+      } else if (ptype === 'weight_map') {
+        if (!generation[key]) generation[key] = {};
+        generation[key][input.dataset.weightKey] = Number(input.value);
       } else {
         generation[key] = input.value;
       }
