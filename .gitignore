@@ -178,6 +178,9 @@ include/
 .dmypy.json
 dmypy.json
 
+# IntelliJ IDEA
+.idea/
+
 # Pyre type checker
 .pyre/
 
@@ -241,3 +244,4 @@ configs/**/*.yaml
 .DS_Store
 share/*
 /reports
+*.png
