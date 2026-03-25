@@ -17,8 +17,16 @@ src/plugins/
 ├── linda_fallacy/             # Linda: conjunction fallacy detection
 ├── cellular_automata_1d/      # C14: state evolution
 ├── ascii_shapes/              # Shapes: dimensions/count/position
+├── object_tracking/           # Object Tracking: grape test
+├── sally_anne/                # Sally-Anne: false belief reasoning
 ├── carwash/                   # Carwash Paradox: goal-tracking test
-└── inverted_cup/              # Inverted Cup: spatial orientation test
+├── inverted_cup/              # Inverted Cup: spatial orientation test
+├── strawberry/                # Strawberry: character-level reasoning (6 sub-types)
+├── measure_comparison/        # Measure Comparison: quantity comparison with units
+├── grid_tasks/                # Grid Tasks: table reasoning
+├── time_arithmetic/           # Time Arithmetic: temporal reasoning & impossible dates
+├── misquote/                  # Misquote Attribution: sycophancy detection
+└── false_premise/             # False Premise: dangerous/impossible premise detection
 ```
 
 **Benefits:**
@@ -67,8 +75,16 @@ src/
 │   ├── linda_fallacy/  # Linda plugin (conjunction fallacy detection)
 │   ├── cellular_automata_1d/  # C14 plugin (state evolution)
 │   ├── ascii_shapes/   # Shapes plugin (dimensions/count/position)
+│   ├── object_tracking/ # Object Tracking plugin (grape test)
+│   ├── sally_anne/     # Sally-Anne plugin (false belief)
 │   ├── carwash/        # Carwash Paradox plugin (goal-tracking test)
-│   └── inverted_cup/   # Inverted Cup plugin (spatial orientation test)
+│   ├── inverted_cup/   # Inverted Cup plugin (spatial orientation test)
+│   ├── strawberry/     # Strawberry plugin (character-level reasoning, 6 sub-types)
+│   ├── measure_comparison/ # Measure Comparison plugin
+│   ├── grid_tasks/     # Grid Tasks plugin (table reasoning)
+│   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
+│   ├── misquote/       # Misquote Attribution plugin (sycophancy detection)
+│   └── false_premise/  # False Premise plugin (dangerous/impossible premise detection)
 ├── stages/             # 3-Stage Pipeline Scripts (uses plugins)
 │   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
 │   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
@@ -81,9 +97,10 @@ src/
 │   ├── TestGenerator.py# Test case generation with pattern support
 │   └── PROMPT_STYLES.py# Prompt style definitions
 ├── models/             # Model provider interfaces
-│   ├── BaseModelInterface.py  # Abstract interface + create_interface() factory
-│   ├── OllamaInterface.py     # Local Ollama implementation
-│   └── HuggingFaceInterface.py# HuggingFace implementation
+│   ├── BaseModelInterface.py  # ModelInterface base class
+│   ├── OllamaInterface.py     # Ollama (urllib-based, no ollama package needed)
+│   ├── HuggingFaceInterface.py# HuggingFace Transformers (CUDA/MPS/CPU)
+│   └── OpenAICompatibleInterface.py # OpenAI-compatible API (Groq, OpenRouter, vLLM, etc.)
 ├── engine/             # Task-specific engines
 │   ├── GameOfLifeEngine.py    # Conway's Game of Life rules
 │   └── MathExpressionGenerator.py # Arithmetic expression generation
@@ -251,11 +268,15 @@ evaluation = evaluate_result(parsed_answer, expected_answer, task_type)
 
 ### **Model Interface Pattern** 
 ```python
-# Always use the factory function (backward compatible)
-from src.models.BaseModelInterface import create_interface
+# Use the factory function
+from src.models import create_model_interface
 
-interface = create_interface(config)  # Returns OllamaInterface or HuggingFaceInterface
-response_data = interface.query(prompt, query_params)
+interface = create_model_interface("ollama", "qwen3:0.6b", ollama_host="http://localhost:11434")
+result = interface.query(prompt, {"temperature": 0.1, "max_tokens": 2048, "system_prompt": "..."})
+# result = {"response": "...", "tokens_generated": 42, "duration": 1.2, "model_info": {...}}
+
+# Or import directly
+from src.models import OllamaInterface, HuggingFaceInterface, OpenAICompatibleInterface
 ```
 
 ## Testing & Validation
@@ -314,6 +335,8 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Cellular Automata 1D**: Expected 50-80% accuracy (Stage 1 complete, Stage 2 pending)
 - **Carwash Paradox**: Expected 30-70% accuracy (many models fall for the proximity trap)
 - **Inverted Cup**: Expected 60-90% accuracy (the flip answer is usually obvious)
+- **Time Arithmetic**: Expected 50-80% accuracy (noon/midnight traps and impossible dates are the hardest)
+- **Misquote Attribution**: Expected 40-70% accuracy (authority/constraint framings are the hardest sycophancy traps)
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
@@ -368,11 +391,11 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.2.0 (February 21, 2026)
+**Version**: 2.6.0 (March 25, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery
 - Modern 3-stage architecture with enhanced parsing and analytics
-- 7 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Carwash Paradox, Inverted Cup
+- 15 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise
 - Remote Ollama support (`--ollama-host`)
 - Token counting throughout pipeline

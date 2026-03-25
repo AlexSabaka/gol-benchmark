@@ -1,79 +1,66 @@
-from src.models.BaseModelInterface import BaseModelInterface
-from src.utils.logger import logger
-from src.core.types import BaseTestConfig
+"""Ollama model interface using only the standard library (urllib)."""
 
-import ollama
-from typing import Dict, Optional, Tuple
+import json
+import time
+import urllib.request
+from typing import Any, Dict
 
-class OllamaInterface(BaseModelInterface):
-    """Enhanced interface for communicating with Ollama with better error handling"""
+from src.models.BaseModelInterface import ModelInterface
 
-    def __init__(self, config: BaseTestConfig):
-        super().__init__(config)
-        self.client = ollama.Client()
 
-        # Test connection
+class OllamaInterface(ModelInterface):
+    """Interface for Ollama's ``/api/generate`` endpoint.
+
+    Uses :mod:`urllib` so there is no dependency on the ``ollama`` package.
+    """
+
+    def __init__(self, model_name: str, base_url: str = "http://localhost:11434"):
+        self.model_name = model_name
+        self.base_url = base_url.rstrip("/")
+
+    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
+        data = {
+            "model": self.model_name,
+            "prompt": prompt,
+            "stream": False,
+            "options": {
+                "temperature": params.get("temperature", 0.1),
+                "top_k": params.get("top_k", 40),
+                "top_p": params.get("top_p", 0.9),
+                "min_p": params.get("min_p", 0.05),
+                "num_predict": params.get("max_tokens", 2048),
+            },
+        }
+
+        if params.get("system_prompt"):
+            data["system"] = params["system_prompt"]
+
+        start_time = time.time()
         try:
-            self.client.list()
+            request_data = json.dumps(data).encode("utf-8")
+            req = urllib.request.Request(
+                f"{self.base_url}/api/generate",
+                data=request_data,
+                headers={"Content-Type": "application/json"},
+            )
+
+            with urllib.request.urlopen(req, timeout=params.get("timeout_seconds", 120)) as resp:
+                result = json.loads(resp.read().decode("utf-8"))
+
+            end_time = time.time()
+
+            return {
+                "response": result.get("response", ""),
+                "tokens_input": result.get("prompt_eval_count", 0),
+                "tokens_generated": result.get("eval_count", 0),
+                "duration": end_time - start_time,
+                "model_info": {"name": self.model_name, "provider": "ollama"},
+            }
+
         except Exception as e:
-            logger.error(f"Failed to connect to Ollama: {e}")
-            raise RuntimeError("Ollama server not running. Start with 'ollama serve'") from e
-
-    def preload_models(self) -> None:
-        """Preload models to reduce latency"""
-        pass  # Placeholder for potential future implementation
-
-    def supports_reasoning(self, model: str) -> bool:
-        """Check if the model supports reasoning based on its name"""
-        try:
-            model_info = self.client.show(model)
-            capabilities = model_info.capabilities
-            return 'thinking' in capabilities
-        except Exception as e:
-            logger.warning(f"Could not retrieve model info for {model}: {e}")
-            return False
-
-    def query_model(self, model: str, prompt: str, system: str) -> Tuple[str, Dict[str, int]]:
-        """Send prompt to Ollama with comprehensive error handling"""
-        for retry in range(3):
-            try:
-                response = self.client.generate(
-                    model=model,
-                    system=system,
-                    prompt=prompt,
-                    think=None if self.config.no_think is None else True if self.supports_reasoning(model) and not self.config.no_think else False,
-                    options={
-                        'temperature': self.config.temperature,
-                        'seed': self.config.seed,
-                        'top_k': self.config.top_k,
-                        'min_k': self.config.min_k,
-                        'min_p': self.config.min_p,
-                        'num_ctx': self.config.ctx_len,
-                        'num_predict': self.config.num_predict,
-                        "num_keep": 20,
-                        "use_mmap": True,
-                        "num_thread": 8
-                    }
-                )
-                
-                stats = {
-                    'total_duration':  response['total_duration'],
-                    'load_duration': response['load_duration'],
-                    'prompt_eval_count': response['prompt_eval_count'],
-                    'prompt_eval_duration': response['prompt_eval_duration'],
-                    'eval_count': response['eval_count'],
-                    'eval_duration': response['eval_duration'],
-                }
-                
-                return response['response'].strip(), stats
-
-            except ollama.ResponseError as e:
-                error_msg = f"Ollama API error for model {model}: {e}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg) from e
-                # continue
-            except RuntimeError as e:
-                error_msg = f"Unexpected error querying model {model}: {e}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg) from e
-                # continue
+            end_time = time.time()
+            return {
+                "error": str(e),
+                "duration": end_time - start_time,
+                "model_info": {"name": self.model_name, "provider": "ollama"},
+            }

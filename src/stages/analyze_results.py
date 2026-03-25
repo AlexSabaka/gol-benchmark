@@ -82,6 +82,7 @@ TASK_COLORS = {
     'grid_tasks': '#8e44ad',           # Dark purple
     'strawberry': '#e74c3c',           # Red (like a strawberry)
     'measure_comparison': '#2980b9',   # Blue (measurement)
+    'misquote': '#c0392b',             # Dark red (misattribution)
     'multi-task': '#95a5a6',           # Light gray
 }
 
@@ -234,6 +235,12 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'measure_comparison'
         elif '_grid_tasks' in test_id or test_id.startswith('grid_tasks_'):
             task_type = 'grid_tasks'
+        elif '_time_arithmetic' in test_id or test_id.startswith('time_arithmetic_'):
+            task_type = 'time_arithmetic'
+        elif '_misquote' in test_id or test_id.startswith('misquote_'):
+            task_type = 'misquote'
+        elif '_false_premise' in test_id or test_id.startswith('false_premise_'):
+            task_type = 'false_premise'
         
         task_stats[task_type]['total'] += 1
         
@@ -810,7 +817,8 @@ def _render_sample_cards(all_results_for_model: List[Dict], num_correct: int = 5
         task_badge = ''
         for tname in ['arithmetic', 'game_of_life', 'gol', 'linda', 'ascii_shapes',
                        'cellular_automata_1d', 'c14', 'object_tracking', 'sally_anne',
-                       'carwash', 'inverted_cup', 'strawberry', 'measure_comparison', 'grid_tasks']:
+                       'carwash', 'inverted_cup', 'strawberry', 'measure_comparison', 'grid_tasks',
+                       'misquote']:
             if tname in tid:
                 nice = tname.replace('_', ' ').title()
                 task_badge = f"<span class='badge badge-primary'>{nice}</span>"

@@ -47,223 +47,16 @@ RESULTS_FORMAT_VERSION = "1.0.0"
 
 
 # ============================================================================
-# MODEL INTERFACES (minimal implementations)
+# MODEL INTERFACES — canonical implementations live in src/models/
 # ============================================================================
-
-class ModelInterface:
-    """Abstract base for model interfaces."""
-    
-    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
-        """Query model and return response."""
-        raise NotImplementedError
-
-
-class OllamaInterface(ModelInterface):
-    """Minimal Ollama interface."""
-    
-    def __init__(self, model_name: str, base_url: str = "http://localhost:11434"):
-        self.model_name = model_name
-        self.base_url = base_url
-    
-    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
-        """Query Ollama model."""
-        import urllib.request
-        import urllib.parse
-        
-        # Prepare request data
-        data = {
-            "model": self.model_name,
-            "prompt": prompt,
-            "stream": False,
-            "options": {
-                "temperature": params.get("temperature", 0.1),
-                "top_k": params.get("top_k", 40),
-                "top_p": params.get("top_p", 0.9),
-                "min_p": params.get("min_p", 0.05),
-                "num_predict": params.get("max_tokens", 2048),
-            }
-        }
-        
-        # Add system prompt if available
-        if "system_prompt" in params:
-            data["system"] = params["system_prompt"]
-        
-        # Make request
-        start_time = time.time()
-        try:
-            request_data = json.dumps(data).encode('utf-8')
-            request = urllib.request.Request(
-                f"{self.base_url}/api/generate",
-                data=request_data,
-                headers={"Content-Type": "application/json"}
-            )
-            
-            with urllib.request.urlopen(request, timeout=params.get("timeout_seconds", 120)) as response:
-                result = json.loads(response.read().decode('utf-8'))
-                
-            end_time = time.time()
-            
-            return {
-                "response": result.get("response", ""),
-                "tokens_input": result.get("prompt_eval_count", 0),
-                "tokens_generated": result.get("eval_count", 0),
-                "duration": end_time - start_time,
-                "model_info": {
-                    "name": self.model_name,
-                    "provider": "ollama"
-                }
-            }
-        
-        except Exception as e:
-            end_time = time.time()
-            return {
-                "error": str(e),
-                "duration": end_time - start_time,
-                "model_info": {
-                    "name": self.model_name,
-                    "provider": "ollama"
-                }
-            }
-
-
-class HuggingFaceInterface(ModelInterface):
-    """Minimal HuggingFace interface."""
-    
-    def __init__(self, model_name: str):
-        self.model_name = model_name
-        
-        # Import transformers (optional dependency)
-        try:
-            from transformers import AutoTokenizer, AutoModelForCausalLM
-            import torch
-            
-            self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-            self.model = AutoModelForCausalLM.from_pretrained(
-                model_name,
-                torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
-                device_map="auto" if torch.cuda.is_available() else None
-            )
-            self.device = "cuda" if torch.cuda.is_available() else "cpu"
-            
-        except ImportError:
-            raise ImportError("HuggingFace interface requires 'transformers' and 'torch' packages")
-    
-    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
-        """Query HuggingFace model."""
-        import torch
-        
-        start_time = time.time()
-        try:
-            # Combine system + user prompt
-            if "system_prompt" in params:
-                full_prompt = f"{params['system_prompt']}\\n\\n{prompt}"
-            else:
-                full_prompt = prompt
-                
-            # Tokenize
-            inputs = self.tokenizer(full_prompt, return_tensors="pt")
-            if self.device == "cuda":
-                inputs = {k: v.to(self.device) for k, v in inputs.items()}
-            
-            # Generate
-            with torch.no_grad():
-                outputs = self.model.generate(
-                    **inputs,
-                    max_new_tokens=params.get("max_tokens", 2048),
-                    temperature=params.get("temperature", 0.1),
-                    top_k=params.get("top_k", 40),
-                    top_p=params.get("top_p", 0.9),
-                    do_sample=params.get("temperature", 0.1) > 0,
-                    pad_token_id=self.tokenizer.eos_token_id
-                )
-            
-            # Decode response (only new tokens)
-            response_tokens = outputs[0][inputs["input_ids"].shape[1]:]
-            response = self.tokenizer.decode(response_tokens, skip_special_tokens=True)
-            
-            end_time = time.time()
-            
-            return {
-                "response": response.strip(),
-                "tokens_generated": len(response_tokens),
-                "duration": end_time - start_time,
-                "model_info": {
-                    "name": self.model_name,
-                    "provider": "huggingface"
-                }
-            }
-            
-        except Exception as e:
-            end_time = time.time()
-            return {
-                "error": str(e),
-                "duration": end_time - start_time,
-                "model_info": {
-                    "name": self.model_name,
-                    "provider": "huggingface"
-                }
-            }
-
-
-class OpenAICompatibleInterface(ModelInterface):
-    """Interface for any OpenAI-compatible API (Groq, OpenRouter, vLLM, etc.)."""
-
-    def __init__(self, model_name: str, base_url: str = "http://localhost:11434/v1",
-                 api_key: str = ""):
-        self.model_name = model_name
-        self.base_url = base_url.rstrip("/")
-        self.api_key = api_key
-
-    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
-        import urllib.request
-
-        messages = []
-        if params.get("system_prompt"):
-            messages.append({"role": "system", "content": params["system_prompt"]})
-        messages.append({"role": "user", "content": prompt})
-
-        data = {
-            "model": self.model_name,
-            "messages": messages,
-            "temperature": params.get("temperature", 0.1),
-            "max_tokens": params.get("max_tokens", 2048),
-            "stream": False,
-        }
-
-        headers = {"Content-Type": "application/json"}
-        if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
-
-        start_time = time.time()
-        try:
-            request_data = json.dumps(data).encode("utf-8")
-            req = urllib.request.Request(
-                f"{self.base_url}/chat/completions",
-                data=request_data,
-                headers=headers,
-            )
-            with urllib.request.urlopen(req, timeout=params.get("timeout_seconds", 120)) as resp:
-                result = json.loads(resp.read().decode("utf-8"))
-
-            end_time = time.time()
-            choice = result.get("choices", [{}])[0]
-            text = choice.get("message", {}).get("content", "")
-            usage = result.get("usage", {})
-
-            return {
-                "response": text,
-                "tokens_generated": usage.get("completion_tokens", 0),
-                "tokens_input": usage.get("prompt_tokens", 0),
-                "duration": end_time - start_time,
-                "model_info": {"name": self.model_name, "provider": "openai_compatible"},
-            }
-        except Exception as e:
-            end_time = time.time()
-            return {
-                "error": str(e),
-                "duration": end_time - start_time,
-                "model_info": {"name": self.model_name, "provider": "openai_compatible"},
-            }
+from src.models import (  # noqa: E402
+    OllamaInterface,
+    HuggingFaceInterface,
+    OpenAICompatibleInterface,
+    create_model_interface,
+)
+# Re-export for backward compatibility (web/jobs.py used to import from here)
+ModelInterface = OllamaInterface.__bases__[0]  # src.models.BaseModelInterface.ModelInterface
 
 
 # ============================================================================
@@ -1555,13 +1348,13 @@ def run_testset(
     
     # Initialize model interface
     print(f"Initializing {provider} interface for {model_name}")
-    if provider == "ollama":
-        ollama_host = kwargs.get('ollama_host', 'http://localhost:11434')
-        interface = OllamaInterface(model_name, base_url=ollama_host)
-    elif provider == "huggingface":
-        interface = HuggingFaceInterface(model_name)
-    else:
-        raise ValueError(f"Unknown provider: {provider}")
+    interface = create_model_interface(
+        provider=provider,
+        model_name=model_name,
+        ollama_host=kwargs.get('ollama_host', 'http://localhost:11434'),
+        base_url=kwargs.get('api_base', ''),
+        api_key=kwargs.get('api_key', ''),
+    )
     
     # Prepare results structure
     start_time = datetime.now()
@@ -1793,13 +1586,18 @@ def main():
     parser = argparse.ArgumentParser(description="Run test set on model")
     parser.add_argument("testset", help="Path to test set JSON.gz file")
     parser.add_argument("--model", required=True, help="Model name")
-    parser.add_argument("--provider", required=True, choices=["ollama", "huggingface"],
+    parser.add_argument("--provider", required=True,
+                       choices=["ollama", "huggingface", "openai_compatible"],
                        help="Model provider")
     parser.add_argument("--output-dir", default="results", help="Output directory")
     parser.add_argument("--quantization", help="Quantization format (for metadata)")
     parser.add_argument("--context-length", type=int, help="Context length (for metadata)")
     parser.add_argument("--ollama-host", default="http://localhost:11434",
                        help="Ollama server URL (default: http://localhost:11434)")
+    parser.add_argument("--api-key", default="",
+                       help="API key for OpenAI-compatible or HuggingFace providers")
+    parser.add_argument("--api-base", default="",
+                       help="Base URL for OpenAI-compatible API")
     
     args = parser.parse_args()
     
@@ -1811,7 +1609,9 @@ def main():
             output_dir=args.output_dir,
             quantization=args.quantization,
             context_length=args.context_length,
-            ollama_host=args.ollama_host
+            ollama_host=args.ollama_host,
+            api_key=args.api_key,
+            api_base=args.api_base,
         )
     except Exception as e:
         print(f"✗ Error running test set: {e}")

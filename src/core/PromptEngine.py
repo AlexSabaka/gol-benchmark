@@ -56,6 +56,7 @@ class TaskType(str, Enum):
     ASCII_SHAPES = "ascii_shapes"
     OBJECT_TRACKING = "object_tracking"
     SALLY_ANNE = "sally_anne"
+    TIME_ARITHMETIC = "time_arithmetic"
 
 
 # ==================== DATA CLASSES ====================
@@ -1297,6 +1298,121 @@ Antwort:""",
 }
 
 
+# ==================== TIME ARITHMETIC PROMPTS ====================
+
+TIME_ARITHMETIC_PROMPTS = {
+    Language.EN: {
+        PromptStyle.LINGUISTIC: """Solve the following temporal reasoning problem. Show your reasoning step by step, then provide the final answer.
+
+{question}
+
+Provide your answer in the exact format requested (a specific time, a day of the week, a number of minutes, or state that the date is impossible if applicable).""",
+
+        PromptStyle.CASUAL: """Hey, quick time question for you:
+
+{question}
+
+What's the answer?""",
+
+        PromptStyle.MINIMAL: """{question}
+
+Answer:""",
+
+        PromptStyle.ADVERSARIAL: """{question}
+
+Respond with just the answer, nothing else:""",
+    },
+
+    Language.ES: {
+        PromptStyle.LINGUISTIC: """Resuelve el siguiente problema de razonamiento temporal. Muestra tu razonamiento paso a paso y luego da la respuesta final.
+
+{question}
+
+Proporciona tu respuesta en el formato exacto solicitado.""",
+
+        PromptStyle.CASUAL: """Oye, una pregunta rápida sobre el tiempo:
+
+{question}
+
+¿Cuál es la respuesta?""",
+
+        PromptStyle.MINIMAL: """{question}
+
+Respuesta:""",
+    },
+
+    Language.FR: {
+        PromptStyle.LINGUISTIC: """Résolvez le problème de raisonnement temporel suivant. Montrez votre raisonnement étape par étape, puis donnez la réponse finale.
+
+{question}
+
+Fournissez votre réponse dans le format exact demandé.""",
+
+        PromptStyle.CASUAL: """Hé, une petite question sur le temps :
+
+{question}
+
+Quelle est la réponse ?""",
+
+        PromptStyle.MINIMAL: """{question}
+
+Réponse :""",
+    },
+
+    Language.DE: {
+        PromptStyle.LINGUISTIC: """Lösen Sie das folgende zeitliche Denkproblem. Zeigen Sie Ihre Überlegungen Schritt für Schritt und geben Sie dann die endgültige Antwort.
+
+{question}
+
+Geben Sie Ihre Antwort im genau angeforderten Format an.""",
+
+        PromptStyle.CASUAL: """Hey, eine kurze Zeitfrage:
+
+{question}
+
+Was ist die Antwort?""",
+
+        PromptStyle.MINIMAL: """{question}
+
+Antwort:""",
+    },
+
+    Language.ZH: {
+        PromptStyle.LINGUISTIC: """请解决以下时间推理问题。逐步展示你的推理过程，然后给出最终答案。
+
+{question}
+
+请以要求的格式提供答案。""",
+
+        PromptStyle.CASUAL: """{question}
+
+答案是什么？""",
+
+        PromptStyle.MINIMAL: """{question}
+
+答案：""",
+    },
+
+    Language.UA: {
+        PromptStyle.LINGUISTIC: """Розв'яжіть наступну задачу на часове міркування. Покажіть своє міркування крок за кроком, а потім дайте остаточну відповідь.
+
+{question}
+
+Надайте відповідь у точному запитуваному форматі.""",
+
+        PromptStyle.CASUAL: """Привіт, швидке запитання про час:
+
+{question}
+
+Яка відповідь?""",
+
+        PromptStyle.MINIMAL: """{question}
+
+Відповідь:""",
+    },
+}
+
+
 # ==================== PROMPT ENGINE ====================
 
 class PromptEngine:
@@ -1316,6 +1432,7 @@ class PromptEngine:
             TaskType.ASCII_SHAPES: ASCII_SHAPES_PROMPTS,
             TaskType.OBJECT_TRACKING: OBJECT_TRACKING_PROMPTS,
             TaskType.SALLY_ANNE: SALLY_ANNE_PROMPTS,
+            TaskType.TIME_ARITHMETIC: TIME_ARITHMETIC_PROMPTS,
         }
         self.system_prompts = SYSTEM_PROMPTS
     
@@ -1552,6 +1669,34 @@ def create_ascii_shapes_context(
     """
     context = PromptContext(
         task_type=TaskType.ASCII_SHAPES,
+        language=Language(language),
+        style=PromptStyle(style),
+        system_style=SystemPromptStyle(system_style),
+    )
+    context.update(**kwargs)
+    return context
+
+
+def create_time_arithmetic_context(
+    language: str = "en",
+    style: str = "minimal",
+    system_style: str = "analytical",
+    **kwargs
+) -> PromptContext:
+    """
+    Create a prompt context for Time Arithmetic task.
+
+    Args:
+        language: Language code
+        style: Prompt style
+        system_style: System prompt style
+        **kwargs: Additional custom variables (question, etc.)
+
+    Returns:
+        PromptContext ready for generation
+    """
+    context = PromptContext(
+        task_type=TaskType.TIME_ARITHMETIC,
         language=Language(language),
         style=PromptStyle(style),
         system_style=SystemPromptStyle(system_style),

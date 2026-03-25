@@ -170,6 +170,12 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
         return test_cases if test_cases else None
 
     except Exception as e:
+        # Check if there's a built-in fallback for this task type.
+        # If not, re-raise so the user sees the real error instead of
+        # a misleading "Unknown task type" from the fallback chain.
+        _BUILTIN_FALLBACKS = {"arithmetic", "game_of_life", "cellular_automata_1d", "ascii_shapes", "linda_fallacy"}
+        if task_type not in _BUILTIN_FALLBACKS:
+            raise
         print(f"Warning: Plugin generation failed for {task_type}: {e}")
         return None
 

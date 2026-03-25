@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.5.0** | Last updated: 2026-03-24
+> **Version 2.6.0** | Last updated: 2026-03-25
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -35,7 +35,9 @@ The suite measures how well language models handle:
 - **Theory of Mind** — Sally-Anne false belief test
 - **Practical goal tracking** — Carwash paradox (walk vs drive)
 - **Character-level reasoning** — Letter counting, word reversal, nth-letter, anagram/pangram/lipogram detection (strawberry), measurement comparison
+- **Temporal reasoning** — Time arithmetic, calendar math, impossible date detection, AM/PM traps
 - **Tabular reasoning** — Grid-based data lookups, sums, counts
+- **Safety reasoning** — Detecting dangerous or impossible premises (false premise)
 
 ### Design Principles
 
@@ -55,10 +57,10 @@ The suite measures how well language models handle:
 ### 3-Stage Pipeline
 
 ```
-┌─────────────┐     ┌──────────────────┐     ┌──────────────────┐
-│  YAML Config │────▶│  Stage 1:        │────▶│  testset_*.json.gz│
-│              │     │  generate_testset │     │  (testsets/)      │
-└─────────────┘     └──────────────────┘     └────────┬─────────┘
+┌─────────────┐     ┌───────────────────┐     ┌───────────────────┐
+│ YAML Config │────▶│  Stage 1:         │────▶│ testset_*.json.gz │
+│             │     │  generate_testset │     │ (testsets/)       │
+└─────────────┘     └───────────────────┘     └────────┬──────────┘
                                                        │
                     ┌──────────────────┐               ▼
                     │  Stage 2:        │◀──── testset + model name
@@ -66,10 +68,10 @@ The suite measures how well language models handle:
                     │  (+ model API)   │      (results/)
                     └──────────────────┘               │
                                                        ▼
-                    ┌──────────────────┐     ┌──────────────────┐
+                    ┌──────────────────┐     ┌───────────────────┐
                     │  Stage 3:        │────▶│  Reports + Charts │
                     │  analyze_results │     │  (reports/)       │
-                    └──────────────────┘     └──────────────────┘
+                    └──────────────────┘     └───────────────────┘
 ```
 
 | Stage | Script | Input | Output |
@@ -82,7 +84,7 @@ Each stage is independently runnable. Stage 2 includes minimal self-contained mo
 
 ### Plugin System
 
-All 12 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
+All 15 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
 
 Each plugin provides three components:
 
@@ -103,7 +105,7 @@ A modern web interface built with **FastAPI + HTMX + Jinja2** (replaced the depr
 ```
 gol_eval/
 ├── src/
-│   ├── plugins/                        # Plugin-based benchmark system (12 plugins)
+│   ├── plugins/                        # Plugin-based benchmark system (15 plugins)
 │   │   ├── base.py                     #   Abstract base classes + ConfigField
 │   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
 │   │   ├── parse_utils.py              #   End-first parsing utilities
@@ -118,7 +120,10 @@ gol_eval/
 │   │   ├── inverted_cup/               #   Spatial orientation puzzle
 │   │   ├── strawberry/                 #   Character-level reasoning (6 sub-types)
 │   │   ├── measure_comparison/         #   Quantity comparison with units
-│   │   └── grid_tasks/                 #   Table reasoning
+│   │   ├── grid_tasks/                 #   Table reasoning
+│   │   ├── time_arithmetic/            #   Temporal reasoning & impossible dates
+│   │   ├── misquote/                   #   Sycophancy detection via false quote attributions
+│   │   └── false_premise/              #   Dangerous/impossible premise detection
 │   │
 │   ├── stages/                         # 3-stage pipeline
 │   │   ├── generate_testset.py         #   Stage 1: YAML → test sets
@@ -144,10 +149,11 @@ gol_eval/
 │   │   └── static/                     #   CSS, JS
 │   │
 │   ├── models/                         # LLM provider interfaces
-│   │   ├── BaseModelInterface.py       #   Abstract base
-│   │   ├── OllamaInterface.py          #   Ollama (local + remote)
-│   │   ├── HuggingFaceInterface.py     #   HuggingFace Transformers
-│   │   └── __init__.py                 #   Factory: create_interface(config)
+│   │   ├── BaseModelInterface.py       #   ModelInterface base class
+│   │   ├── OllamaInterface.py          #   Ollama (urllib-based, no ollama pkg)
+│   │   ├── HuggingFaceInterface.py     #   HuggingFace Transformers (CUDA/MPS/CPU)
+│   │   ├── OpenAICompatibleInterface.py#   OpenAI-compatible API (Groq, OpenRouter, etc.)
+│   │   └── __init__.py                 #   Factory: create_model_interface(provider, model)
 │   │
 │   ├── engine/                         # Core task algorithms
 │   │   ├── GameOfLifeEngine.py         #   Conway's GoL rules
@@ -206,6 +212,9 @@ gol_eval/
 | `strawberry` | Strawberry (Character Reasoning) | Letter counting, reversal, nth-letter, anagram, pangram, lipogram | Integer / String / Boolean |
 | `measure_comparison` | Measure Comparison | Quantity comparison with units | Measurement / "equal" / "incomparable" |
 | `grid_tasks` | Grid Tasks (Table Reasoning) | Tabular data lookups, sums, counts | Varies by question |
+| `time_arithmetic` | Time Arithmetic | Temporal reasoning, calendar math, impossible date detection | Time / Day / Duration / "impossible" |
+| `misquote` | Misquote Attribution | Sycophancy detection via false quote attributions | Yes/No (two-part) |
+| `false_premise` | False Premise | Dangerous/impossible premise detection | Refusal / Compliance / Hedge |
 
 Each plugin is self-contained in `src/plugins/<task_type>/` with its own generator, parser, and evaluator.
 
@@ -244,8 +253,9 @@ Any OpenAI-compatible API endpoint (e.g., vLLM, LM Studio, text-generation-infer
 ### Factory Pattern
 
 ```python
-from src.models import create_interface
-interface = create_interface(config)  # Dispatches based on config.interface_type
+from src.models import create_model_interface
+interface = create_model_interface("ollama", "qwen3:0.6b", ollama_host="http://localhost:11434")
+result = interface.query(prompt, {"temperature": 0.1, "max_tokens": 2048})
 ```
 
 ---

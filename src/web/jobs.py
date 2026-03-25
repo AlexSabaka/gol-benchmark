@@ -81,21 +81,18 @@ def _run_testset_worker(
     total = len(test_cases)
     progress_dict[job_id] = {"current": 0, "total": total, "state": "running"}
 
-    # Build model interface
+    # Build model interface — canonical implementations in src.models
+    from src.models import OllamaInterface, HuggingFaceInterface, OpenAICompatibleInterface
     if provider == "ollama":
-        from src.stages.run_testset import OllamaInterface
         model = OllamaInterface(model_name, base_url=ollama_host)
     elif provider == "openai_compatible":
-        from src.stages.run_testset import OpenAICompatibleInterface
         base = api_base or ollama_host  # fall back to ollama host
         model = OpenAICompatibleInterface(model_name, base_url=base, api_key=api_key)
     elif provider == "huggingface":
         if api_key:
             os.environ["HF_TOKEN"] = api_key
-        from src.stages.run_testset import HuggingFaceInterface
         model = HuggingFaceInterface(model_name)
     else:
-        from src.stages.run_testset import HuggingFaceInterface
         model = HuggingFaceInterface(model_name)
 
     from src.stages.run_testset import parse_answer_via_plugin, evaluate_via_plugin

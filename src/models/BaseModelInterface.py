@@ -1,40 +1,45 @@
-from src.utils.logger import logger
-from src.core.types import BaseTestConfig
+"""Base class for all model provider interfaces.
 
-import json
-from abc import ABC, abstractmethod
-from typing import Dict, List, Optional, Tuple
+All interfaces follow a lightweight pattern:
+    interface = SomeInterface(model_name, ...)
+    result = interface.query(prompt, params)
 
-class BaseModelInterface(ABC):
-    """Abstract base class for model interfaces"""
+Where ``params`` is a dict with keys like ``temperature``, ``max_tokens``,
+``system_prompt``, ``timeout_seconds``, etc.  The return value is always a
+dict with at least ``response`` (str) and ``duration`` (float) keys. On
+failure the dict contains ``error`` instead of ``response``.
+"""
 
-    def __init__(self, config: BaseTestConfig):
-        self.config = config
+from typing import Any, Dict
 
-    @abstractmethod
-    def preload_models(self) -> None:
-        """Preload models to reduce latency"""
-        pass
 
-    @abstractmethod
-    def supports_reasoning(self, model: str) -> bool:
-        """Check if the model supports reasoning"""
-        pass
+class ModelInterface:
+    """Abstract base for all model provider interfaces.
 
-    @abstractmethod
-    def query_model(self, model: str, prompt: str, system: str) -> Tuple[str, Dict[str, int]]:
-        """Send prompt to model"""
-        pass
+    Subclasses must implement :meth:`query`.
+    """
 
-def create_interface(config: BaseTestConfig) -> BaseModelInterface:
-    """Factory function to create the appropriate interface"""
+    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
+        """Send *prompt* to the model and return a result dict.
 
-    from src.models.HuggingFaceInterface import HuggingFaceInterface
-    from src.models.OllamaInterface import OllamaInterface
+        Parameters
+        ----------
+        prompt : str
+            The user prompt text.
+        params : dict
+            Sampling / execution parameters.  Common keys:
+            ``temperature``, ``max_tokens``, ``top_k``, ``top_p``,
+            ``min_p``, ``system_prompt``, ``timeout_seconds``.
 
-    if config.interface_type.lower() == "ollama":
-        return OllamaInterface(config)
-    elif config.interface_type.lower() == "huggingface":
-        return HuggingFaceInterface(config)
-    else:
-        raise ValueError(f"Unknown interface type: {config.interface_type}. Choose 'ollama' or 'huggingface'")
+        Returns
+        -------
+        dict
+            On success: ``{"response": str, "tokens_generated": int,
+            "tokens_input": int, "duration": float, "model_info": dict}``
+            On error: ``{"error": str, "duration": float, "model_info": dict}``
+        """
+        raise NotImplementedError
+
+
+# Backward-compatible alias used in older code / docs.
+BaseModelInterface = ModelInterface

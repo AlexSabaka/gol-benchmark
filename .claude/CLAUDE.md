@@ -21,6 +21,8 @@
 - **Strawberry**: Character-level reasoning — letter counting, word reversal, nth-letter, anagram, pangram, lipogram
 - **Measure Comparison**: Quantity comparison with units and conversion traps
 - **Grid Tasks**: Table reasoning — cell lookups, row sums, column counts
+- **Misquote Attribution**: Sycophancy detection — false quote attributions with social-pressure framings
+- **False Premise**: Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic)
 
 ### Key Characteristics
 
@@ -57,7 +59,7 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (12 plugins)
+│   ├── plugins/           # Plugin-based benchmark system (15 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
 │   │   ├── parse_utils.py # End-first parsing utilities
@@ -72,7 +74,10 @@ gol_eval/
 │   │   ├── inverted_cup/  # Inverted Cup plugin (v2.2.0)
 │   │   ├── strawberry/    # Character-level reasoning (6 sub-types)
 │   │   ├── measure_comparison/ # Quantity comparison plugin
-│   │   └── grid_tasks/    # Table reasoning plugin
+│   │   ├── grid_tasks/    # Table reasoning plugin
+│   │   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
+│   │   ├── misquote/      # Misquote Attribution (sycophancy detection)
+│   │   └── false_premise/ # False Premise (dangerous/impossible premise detection)
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
 │   │   ├── generate_testset.py  # Stage 1: YAML → test sets
 │   │   ├── run_testset.py       # Stage 2: Execute tests
@@ -107,7 +112,7 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (12 plugins)** | |
+| **Plugin System (15 plugins)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
 | [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
@@ -123,6 +128,9 @@ gol_eval/
 | [src/plugins/strawberry/](src/plugins/strawberry/) | Character-level reasoning plugin (6 sub-types) |
 | [src/plugins/measure_comparison/](src/plugins/measure_comparison/) | Quantity comparison plugin |
 | [src/plugins/grid_tasks/](src/plugins/grid_tasks/) | Table reasoning plugin |
+| [src/plugins/time_arithmetic/](src/plugins/time_arithmetic/) | Time Arithmetic plugin (temporal reasoning) |
+| [src/plugins/misquote/](src/plugins/misquote/) | Misquote Attribution plugin (sycophancy detection) |
+| [src/plugins/false_premise/](src/plugins/false_premise/) | False Premise plugin (dangerous/impossible premise detection) |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
@@ -153,13 +161,13 @@ evaluator = plugin.get_evaluator()
 ```
 
 ### 2. Factory Pattern
-`create_interface(config)` creates appropriate model interface based on config type.
+`create_model_interface(provider, model_name, ...)` creates the right interface from a provider string.
 
 ### 3. Strategy Pattern
 Different prompt/system styles are interchangeable via PromptEngine. Multi-strategy parsing in parsers (6 strategies for ARI, 4 for GoL).
 
 ### 4. Template Method
-`BaseModelInterface` defines contract; subclasses implement `query_model()` and `supports_reasoning()`.
+`ModelInterface` defines the `query(prompt, params)` contract; subclasses implement it.
 
 ### 5. Configuration Inheritance
 ```
@@ -294,22 +302,22 @@ All response parsers follow the principle of searching from the **end** of the m
 
 1. **Create interface** in `src/models/NewProviderInterface.py`:
    ```python
-   from src.models.BaseModelInterface import BaseModelInterface
+   from src.models.BaseModelInterface import ModelInterface
 
-   class NewProviderInterface(BaseModelInterface):
-       def query_model(self, prompt: str, **kwargs):
-           # Implementation
+   class NewProviderInterface(ModelInterface):
+       def __init__(self, model_name: str, **kwargs):
+           self.model_name = model_name
 
-       def supports_reasoning(self) -> bool:
-           return True  # or False
+       def query(self, prompt: str, params: dict) -> dict:
+           # Must return {"response": str, "duration": float, "model_info": {...}}
+           ...
    ```
 
-2. **Update factory** in [src/models/\_\_init\_\_.py](src/models/__init__.py):
+2. **Register in factory** in [src/models/\_\_init\_\_.py](src/models/__init__.py):
    ```python
-   def create_interface(config: BaseTestConfig):
-       if config.interface == "new_provider":
-           return NewProviderInterface(config)
-       # ... existing logic
+   # Add to create_model_interface():
+   elif provider == "new_provider":
+       return NewProviderInterface(model_name, **kwargs)
    ```
 
 ### New Visualization
@@ -399,8 +407,8 @@ from src.core.PromptEngine import PromptEngine, Language, PromptStyle
 from src.core.TestGenerator import TestGenerator
 
 # Models
-from src.models import create_interface
-from src.models.BaseModelInterface import BaseModelInterface
+from src.models import create_model_interface, ModelInterface
+from src.models import OllamaInterface, HuggingFaceInterface, OpenAICompatibleInterface
 
 # Evaluation
 from src.evaluation.TestEvaluator import TestEvaluator
@@ -592,9 +600,9 @@ Or use the 3-stage pipeline with a YAML config.
 ### Q: How do I add support for a new LLM API?
 
 See "New Model Provider" section above. Key steps:
-1. Create interface extending `BaseModelInterface`
-2. Implement `query_model()` method
-3. Update factory in `src/models/__init__.py`
+1. Create interface extending `ModelInterface`
+2. Implement `query(prompt, params)` method
+3. Register in `create_model_interface()` factory in `src/models/__init__.py`
 
 ### Q: Where are benchmark results stored?
 
@@ -676,7 +684,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-24*
-*Version: 2.4.1*
-*Key additions: Bug fixes • Dead code cleanup (~3,500 lines) • safe_enum() utility • ConfigField system*
+*Last updated: 2026-03-25*
+*Version: 2.6.0*
+*Key additions: False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

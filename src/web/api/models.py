@@ -5,6 +5,8 @@ import json
 
 from fastapi import APIRouter, Query
 
+from src.models.OpenAICompatibleInterface import _normalize_base_url
+
 router = APIRouter()
 
 
@@ -39,7 +41,7 @@ async def list_openai_models(
     api_key: str = Query("", description="API key (optional for local servers)"),
 ):
     """List models from an OpenAI-compatible /v1/models endpoint."""
-    url = f"{base_url.rstrip('/')}/models"
+    url = f"{_normalize_base_url(base_url)}/models"
     headers = {"Content-Type": "application/json"}
     if api_key:
         headers["Authorization"] = f"Bearer {api_key}"

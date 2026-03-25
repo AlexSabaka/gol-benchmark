@@ -36,6 +36,9 @@ Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, b
 | 10 | **Strawberry** | Character-level reasoning: letter counting, word reversal, nth-letter, anagram, pangram, lipogram |
 | 11 | **Measure Comparison** | Quantity comparison with units and conversion traps |
 | 12 | **Grid Tasks** | Table reasoning — cell lookups, row sums, column counts |
+| 13 | **Time Arithmetic** | Temporal reasoning — intervals, calendar math, impossible dates, AM/PM traps |
+| 14 | **Misquote Attribution** | Sycophancy detection — false quote attributions with social-pressure framings |
+| 15 | **False Premise** | Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic) |
 
 ---
 
@@ -287,7 +290,7 @@ This is a **personal experiment**, but if you're curious and want to:
 
 ### ✅ Completed
 
-- [x] Plugin-based benchmark architecture — 12 tasks with auto-discovery (v2.1.0+)
+- [x] Plugin-based benchmark architecture — 13 tasks with auto-discovery (v2.1.0+)
 - [x] 3-stage pipeline: generate → execute → analyze
 - [x] FastAPI + HTMX web UI with dynamic plugin config forms (v2.4.0)
 - [x] Plugin config schema introspection (`ConfigField` system)

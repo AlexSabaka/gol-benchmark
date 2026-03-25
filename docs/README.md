@@ -1,6 +1,6 @@
 # GoL Benchmark Documentation
 
-Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 12 structured cognitive tasks.
+Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 15 structured cognitive tasks.
 
 ---
 
@@ -8,7 +8,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 | Document | Description |
 |----------|-------------|
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 12 tasks, research findings, quick start |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 15 tasks, research findings, quick start |
 | [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) | Plugin system reference, per-plugin docs, adding new plugins |
 
 ---
@@ -43,7 +43,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 ---
 
-## Benchmark Tasks (12 plugins)
+## Benchmark Tasks (15 plugins)
 
 | Task | Plugin | Answer Type |
 |------|--------|-------------|
@@ -59,6 +59,9 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | Strawberry (Character Reasoning) | `strawberry` | Integer / String / Boolean |
 | Measure Comparison | `measure_comparison` | Measurement / "equal" / "incomparable" |
 | Grid Tasks (Table Reasoning) | `grid_tasks` | Varies |
+| Time Arithmetic | `time_arithmetic` | Time / Day / Duration / "impossible" |
+| Misquote Attribution | `misquote` | Yes/No (two-part) |
+| False Premise | `false_premise` | Refusal / Compliance / Hedge |
 
 See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for detailed per-plugin documentation.
 
@@ -99,5 +102,5 @@ docs/
 
 ---
 
-**Version:** 2.4.1
+**Version:** 2.6.0
 **Last Updated:** March 2026

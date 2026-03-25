@@ -1,11 +1,11 @@
-from src.models.BaseModelInterface import BaseModelInterface
-from src.utils.logger import logger
-from src.core.types import BaseTestConfig
+"""HuggingFace Transformers model interface with proper MPS support."""
 
-from typing import Dict, Tuple
+import time
+from typing import Any, Dict, Tuple
+
+from src.models.BaseModelInterface import ModelInterface
 
 try:
-    import requests
     import torch
     from transformers import AutoModelForCausalLM, AutoTokenizer
     TRANSFORMERS_AVAILABLE = True
@@ -13,136 +13,120 @@ except ImportError:
     TRANSFORMERS_AVAILABLE = False
 
 
+class HuggingFaceInterface(ModelInterface):
+    """Interface for HuggingFace Transformers models.
 
-class HuggingFaceInterface(BaseModelInterface):
-    """Interface for HuggingFace transformers with MPS backend support"""
+    Supports CUDA, Apple Silicon MPS, and CPU backends.  Models are loaded
+    lazily on first query and cached for subsequent calls.
+    """
 
-    def __init__(self, config: BaseTestConfig):
-        super().__init__(config)
-
+    def __init__(self, model_name: str):
         if not TRANSFORMERS_AVAILABLE:
-            raise RuntimeError("Transformers library not available. Install with: pip install transformers torch")
+            raise ImportError(
+                "HuggingFace interface requires 'transformers' and 'torch' packages. "
+                "Install with: pip install transformers torch"
+            )
 
-        # Set up device - prefer MPS for Apple Silicon, fallback to CPU
-        if torch.backends.cuda.is_available():
+        self.model_name = model_name
+
+        # Device selection: CUDA > MPS > CPU
+        if torch.cuda.is_available():
             self.device = "cuda"
-            logger.info("Using CUDA backend for acceleration")
         elif torch.backends.mps.is_available():
             self.device = "mps"
-            logger.info("Using MPS backend for acceleration")
         else:
             self.device = "cpu"
-            logger.info("MPS not available, using CPU backend")
 
-        self.loaded_models = {}  # Cache for loaded models
-        self.loaded_tokenizers = {}  # Cache for loaded tokenizers
+        self._model = None
+        self._tokenizer = None
 
-    def preload_models(self) -> None:
-        """Preload models to reduce latency"""
-        # This could be implemented to preload specific models
-        # For now, models are loaded on-demand
-        pass
+    # -- lazy loading with caching -----------------------------------------
 
-    def supports_reasoning(self, model: str) -> bool:
-        """Check if the model supports reasoning - placeholder for now"""
+    def _ensure_loaded(self) -> Tuple:
+        """Load model and tokenizer on first use."""
+        if self._model is not None:
+            return self._model, self._tokenizer
 
-        model_card = requests.get(f"https://huggingface.co/api/models/{model}").json()
-        if 'config' in model_card and 'tokenizer_config' in model_card['config']:
-            chat_template = model_card['config']['tokenizer_config'].get('chat_template', '')
-            return '<think>' in chat_template and '</think>' in chat_template
+        tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+        if tokenizer.pad_token is None:
+            tokenizer.pad_token = tokenizer.eos_token
 
-        return False
+        # float16 works well on both CUDA and modern MPS; use float32 only on CPU
+        dtype = torch.float32 if self.device == "cpu" else torch.float16
 
-    def _load_model_and_tokenizer(self, model_name: str) -> Tuple[object, object]:
-        """Load and cache model and tokenizer"""
-        if model_name not in self.loaded_models:
-            try:
-                logger.info(f"Loading model {model_name} on {self.device}")
+        model = AutoModelForCausalLM.from_pretrained(
+            self.model_name,
+            torch_dtype=dtype,
+            device_map=None,  # MPS does not support device_map
+            low_cpu_mem_usage=True,
+        )
+        model = model.to(self.device)
+        model.eval()
 
-                # Load tokenizer
-                tokenizer = AutoTokenizer.from_pretrained(model_name)
-                if tokenizer.pad_token is None:
-                    tokenizer.pad_token = tokenizer.eos_token
+        self._model = model
+        self._tokenizer = tokenizer
+        return self._model, self._tokenizer
 
-                # Load model with appropriate settings for the device
-                model = AutoModelForCausalLM.from_pretrained(
-                    model_name,
-                    torch_dtype=torch.float16 if self.device == "mps" else torch.float32,
-                    device_map=None,  # We'll manually move to device
-                    low_cpu_mem_usage=True
-                )
+    # -- public API --------------------------------------------------------
 
-                # Move to device
-                model = model.to(self.device)
-                model.eval()  # Set to evaluation mode
-
-                # Cache the models
-                self.loaded_models[model_name] = model
-                self.loaded_tokenizers[model_name] = tokenizer
-
-                logger.info(f"Successfully loaded {model_name}")
-
-            except Exception as e:
-                error_msg = f"Failed to load model {model_name}: {e}"
-                logger.error(error_msg)
-                raise RuntimeError(error_msg) from e
-
-        return self.loaded_models[model_name], self.loaded_tokenizers[model_name]
-
-    def query_model(self, model: str, prompt: str, system: str) -> Tuple[str, Dict[str, int]]:
-        """Send prompt to HuggingFace model with comprehensive error handling"""
+    def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
+        start_time = time.time()
         try:
-            model_obj, tokenizer = self._load_model_and_tokenizer(model)
+            model, tokenizer = self._ensure_loaded()
 
-            # Tokenize input
-            inputs = tokenizer.encode(prompt, return_tensors="pt", truncation=True, max_length=self.config.ctx_len)
-            inputs = inputs.to(self.device)
+            # Combine system + user prompt
+            if params.get("system_prompt"):
+                full_prompt = f"{params['system_prompt']}\n\n{prompt}"
+            else:
+                full_prompt = prompt
 
-            # Generate response
+            # Tokenize and move to device
+            inputs = tokenizer(full_prompt, return_tensors="pt")
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
+
             with torch.no_grad():
-                outputs = model_obj.generate(
-                    inputs,
-                    max_new_tokens=self.config.num_predict,
-                    temperature=self.config.temperature,
-                    do_sample=True if self.config.temperature > 0 else False,
-                    top_k=self.config.top_k if hasattr(self.config, 'top_k') else 50,
-                    top_p=getattr(self.config, 'min_p', 0.9),
+                outputs = model.generate(
+                    **inputs,
+                    max_new_tokens=params.get("max_tokens", 2048),
+                    temperature=max(params.get("temperature", 0.1), 1e-7),
+                    top_k=params.get("top_k", 40),
+                    top_p=params.get("top_p", 0.9),
+                    do_sample=params.get("temperature", 0.1) > 0,
                     pad_token_id=tokenizer.eos_token_id,
-                    eos_token_id=tokenizer.eos_token_id,
-                    repetition_penalty=1.1,
-                    length_penalty=1.0,
                 )
 
-            # Decode response (exclude the input prompt)
-            response_tokens = outputs[0][len(inputs[0]):]
+            # Decode only the newly generated tokens
+            input_len = inputs["input_ids"].shape[1]
+            response_tokens = outputs[0][input_len:]
             response = tokenizer.decode(response_tokens, skip_special_tokens=True)
 
-            token_stats = {
-                "prompt_eval_count": len(inputs[0]),
-                "eval_count": len(response_tokens),
+            end_time = time.time()
+            return {
+                "response": response.strip(),
+                "tokens_input": input_len,
+                "tokens_generated": len(response_tokens),
+                "duration": end_time - start_time,
+                "model_info": {"name": self.model_name, "provider": "huggingface"},
             }
-            return response.strip(), token_stats
 
-        except torch.cuda.OutOfMemoryError as e:
-            error_msg = f"Out of memory error for model {model}. Try reducing context length or batch size."
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
         except Exception as e:
-            error_msg = f"Unexpected error querying HuggingFace model {model}: {e}"
-            logger.error(error_msg)
-            raise RuntimeError(error_msg) from e
+            end_time = time.time()
+            return {
+                "error": str(e),
+                "duration": end_time - start_time,
+                "model_info": {"name": self.model_name, "provider": "huggingface"},
+            }
 
     def clear_cache(self):
-        """Clear model cache to free up memory"""
-        for model_name, model in self.loaded_models.items():
-            del model
-            logger.info(f"Cleared {model_name} from cache")
+        """Release model from memory."""
+        if self._model is not None:
+            del self._model
+            self._model = None
+        if self._tokenizer is not None:
+            del self._tokenizer
+            self._tokenizer = None
 
-        self.loaded_models.clear()
-        self.loaded_tokenizers.clear()
-
-        # Clear PyTorch cache if using MPS
-        if self.device == "mps":
+        if TRANSFORMERS_AVAILABLE and self.device == "mps":
             torch.mps.empty_cache()
-
-        logger.info("Cleared all models from cache")
+        elif TRANSFORMERS_AVAILABLE and self.device == "cuda":
+            torch.cuda.empty_cache()

@@ -2,6 +2,59 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.6.0] - March 25, 2026
+
+### False Premise Plugin — Dangerous/Impossible Premise Detection
+
+New plugin `src/plugins/false_premise/` — presents questions embedding dangerous or physically impossible premises; the model must refuse instead of complying.
+
+- **5 domains**: chemistry (toxic reactions), medicine (drug interactions), food_safety (dangerous preparations), physics (impossible scenarios), logic (contradictions)
+- **6 CSV data files** in `data/false_premise/` with severity levels (LETHAL/SEVERE/MODERATE)
+- **Hard mode** for chemistry: removes safety hedging cues, frames as urgent expert-to-expert requests
+- **Combinatorial expansion**: scenarios × urgency framings × authority framings for diverse test cases
+- **6-strategy end-first parser**: explicit_refusal, compliance_quantity, hedge_detection, impossibility, keyword_scan, fallback
+- **3 match types**: `correct_refusal`, `wrong_compliance`, `partial_hedge`
+- Per-domain and per-severity aggregation in `aggregate_results()`
+- ConfigField schema with count, domains, hard_mode_ratio, severity_filter
+- Pipeline integration: `analyze_results.py` task recognition pattern added
+
+### Misquote Attribution Plugin — Sycophancy Detection Benchmark
+
+New plugin `src/plugins/misquote/` — presents famous quotes with false attributions; the model must reject the wrong author instead of agreeing.
+
+- **27-quote × 20-attributor** data pool with domain-mismatch filtering
+- **4 framing styles**: `neutral`, `confident`, `authority`, `constraint` — progressively stronger social-pressure traps
+- **Two-part question format**: Q1 (attribution correctness) + Q2 (sentiment) to separate sycophancy from contrarianism
+- **6-strategy end-first parser**: numbered, labelled, bare pair, keyword inference, partial Q1, fallback
+- **5 match types**: `correct`, `contrarian`, `full_sycophancy`, `partial_sycophancy`, `parse_error`
+- `commonly_misquoted` metadata flag per quote for fine-grained analysis
+- `framing_style` as an experimental axis — analyze which pressure types fool which models
+- Pipeline integration: `analyze_results.py` color, test_id pattern, and HTML badge added
+
+### Time Arithmetic Plugin — Temporal Reasoning Benchmark
+
+New plugin `src/plugins/time_arithmetic/` with 7 sub-types:
+- **`interval`** — add/subtract duration to a time
+- **`crossing_midnight`** — durations that cross the midnight boundary
+- **`noon_midnight_trap`** — tricky AM/PM boundary questions (11:50 AM → 12:10 PM = 20 min, not 1h20m). Supports both result-time and duration question modes.
+- **`day_of_week`** — modular day-of-week arithmetic with large offsets
+- **`impossible_date`** — impossible calendar dates (Feb 30, Apr 31, etc.)
+- **`leap_year`** — Feb 29 validity with century/400-year rule traps (2100, 1900, 2000)
+- **`dst_trap`** — (advanced, opt-in) DST spring-forward time holes
+
+Key features:
+- 6 novel match types: `correct`, `wrong`, `correct_refusal`, `wrong_compliance`, `wrong_refusal`, `parse_error`
+- Impossible-question detection: tracks hallucination rate and false refusal rate per model
+- Forward/backward direction support with natural-language backward phrasings
+- 12h (AM/PM) and 24h time format modes
+- Full multilingual support (EN, ES, FR, DE, ZH, UA)
+- ConfigField schema for web UI integration
+- ±1 minute tolerance for time matching, abbreviation support for day matching
+
+### Bug Fixes
+
+- **Plugin-only task generation error masking**: `generate_tests_via_plugin()` in `generate_testset.py` caught all exceptions silently and returned `None`, causing plugin-only tasks (no built-in fallback) to show a misleading "Unknown task type" error instead of the real exception. Now re-raises for tasks without built-in fallbacks.
+
 ## [2.5.0] - March 24, 2026
 
 ### Strawberry Plugin — Character-Level Reasoning Family
