@@ -1,4 +1,3 @@
-from data.conways_life.parser import ConwayPatternParser
 from src.utils.logger import logger
 from src.core.types import DifficultyLevel, GameState, BaseTestConfig
 
@@ -164,17 +163,6 @@ class TestGenerator:
 
     def generate_known_pattern(self) -> List[List[int]]:
         """Generate known patterns for targeted testing"""
-        
-        # Select random known pattern from PATTERNS_DATABASE_PATH
-        pattern_files = [f for f in os.listdir(self.config.known_patterns_dir) if f.endswith(('.rle', '.cells'))]
-        if pattern_files:
-            selected_file = random.choice(pattern_files)
-            parser = ConwayPatternParser()
-            try:
-                pattern_grid, _ = parser.parse_file(str(Path(self.config.known_patterns_dir) / selected_file))
-                return pattern_grid.grid
-            except Exception as e:
-                logger.warning(f"Failed to parse pattern file {selected_file}: {e}")
 
         # Fallback to basic known patterns
         return random.choice(list(BASIC_KNOWN_PATTERNS.values()))
