@@ -33,7 +33,7 @@ Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, b
 | 7 | **Sally-Anne Test** | Theory of Mind — false belief reasoning |
 | 8 | **Carwash Paradox** | Practical goal tracking — walk or drive? (always drive) |
 | 9 | **Inverted Cup** | Spatial orientation — sealed top/open bottom cup (flip it) |
-| 10 | **Strawberry** | Letter counting in words ("How many R's in strawberry?") |
+| 10 | **Strawberry** | Character-level reasoning: letter counting, word reversal, nth-letter, anagram, pangram, lipogram |
 | 11 | **Measure Comparison** | Quantity comparison with units and conversion traps |
 | 12 | **Grid Tasks** | Table reasoning — cell lookups, row sums, column counts |
 

@@ -2,6 +2,49 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.5.0] - March 24, 2026
+
+### Strawberry Plugin — Character-Level Reasoning Family
+
+Expanded the strawberry plugin from single-task letter counting into a full family of 6 character-level reasoning sub-types:
+
+- **`count`** — Original letter-counting task ("How many R's in strawberry?"). Unchanged, backward-compatible.
+- **`reverse`** — Spell a word backwards ("What is 'banana' spelled in reverse?")
+- **`nth_letter`** — Identify the Nth letter of a word ("What is the 3rd letter of 'algorithm'?")
+- **`anagram`** — Decide whether two words are anagrams ("Are 'listen' and 'silent' anagrams?")
+- **`pangram`** — Decide whether a sentence is a pangram (uses every letter A–Z)
+- **`lipogram`** — Decide whether a sentence avoids a given letter
+
+#### Generator (`src/plugins/strawberry/generator.py`)
+- Full rewrite with sub-type dispatch and weighted selection via `sub_type_weights`
+- Multilingual question templates for all 6 sub-types × 6 languages (EN/ES/FR/DE/ZH/UA)
+- `sub_types` multi-select config (defaults to `["count"]` for backward compatibility)
+- Data loaders for 3 new curated data files
+
+#### Parser (`src/plugins/strawberry/parser.py`)
+- Sub-type dispatch: count (7-strategy), reverse (5-strategy), nth_letter (6-strategy), boolean (5-strategy shared by anagram/pangram/lipogram)
+- All strategies use end-first parsing convention
+
+#### Evaluator (`src/plugins/strawberry/evaluator.py`)
+- Sub-type dispatch: integer comparison (count), case-insensitive string match (reverse), char match (nth_letter), boolean match (anagram/pangram/lipogram)
+- `sub_type_breakdown` added to `aggregate_results()` — per-sub-type accuracy stats
+- `mode_breakdown` and `mean_off_by` preserved for count sub-type
+
+#### New Data Files
+- **`data/strawberry_anagram_pairs.txt`** — 76 curated word pairs (47 true anagrams, 29 near-miss non-anagrams). All verified programmatically.
+- **`data/strawberry_pangrams.txt`** — 40 sentences (20 true pangrams, 20 near-pangrams with documented missing letters). All verified programmatically.
+- **`data/strawberry_lipograms.txt`** — 44 sentences (26 true lipograms across 11 letters, 18 false cases). All verified programmatically.
+
+#### Plugin Metadata
+- Display name updated: "Strawberry (Letter Counting)" → "Strawberry (Character Reasoning)"
+- Description updated to cover all 6 sub-types
+
+#### Tests
+- Expanded from 30 to 121 test cases in `tests/test_strawberry_plugin.py`
+- Full coverage: generator (all 6 sub-types, multilingual, seed reproducibility, weighted distribution), parser (count/reverse/nth_letter/boolean strategies), evaluator (all match types, aggregation with sub_type_breakdown), data file integrity verification
+
+---
+
 ## [2.4.1] - March 24, 2026
 
 ### Bug Fixes

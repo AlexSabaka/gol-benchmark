@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.4.1** | Last updated: 2026-03-24
+> **Version 2.5.0** | Last updated: 2026-03-24
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 12 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -21,7 +21,7 @@ Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, 
   - [Sally-Anne](#7-sally-anne-test)
   - [Carwash Paradox](#8-carwash-paradox)
   - [Inverted Cup](#9-inverted-cup)
-  - [Strawberry](#10-strawberry-letter-counting)
+  - [Strawberry](#10-strawberry-character-reasoning)
   - [Measure Comparison](#11-measure-comparison)
   - [Grid Tasks](#12-grid-tasks)
 - [Adding a New Plugin](#adding-a-new-plugin)
@@ -468,37 +468,57 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 
 ---
 
-### 10. Strawberry (Letter Counting)
+### 10. Strawberry (Character Reasoning)
 
 **Path**: `src/plugins/strawberry/`
 **task_type**: `strawberry`
-**Tests**: "How many R's in strawberry?" — counting letter occurrences
+**Tests**: A family of 6 character-level reasoning tasks
 
-**Modes**:
+**Sub-types** (configurable via `sub_types` multi-select, defaults to `["count"]`):
+
+| Sub-type | Question Example | Answer Type |
+|----------|-----------------|-------------|
+| `count` | "How many R's in strawberry?" | Integer |
+| `reverse` | "Spell 'banana' backwards" | String |
+| `nth_letter` | "What is the 3rd letter of 'algorithm'?" | Single character |
+| `anagram` | "Are 'listen' and 'silent' anagrams?" | Boolean (yes/no) |
+| `pangram` | "Does this sentence use every letter A–Z?" | Boolean (yes/no) |
+| `lipogram` | "Does this sentence avoid the letter 'e'?" | Boolean (yes/no) |
+
+**Count modes** (apply only when `sub_type=count`):
 - `real` — Word from curated list, letter is present
 - `absent_letter` — Letter NOT in word (answer = 0, a trap)
 - `random` — Random character sequence
 - `mixed` — Weighted blend (default: 60% real, 20% absent, 20% random)
 
 **Generator** (`generator.py`):
-- Curated word list from `data/strawberry_words.txt`, bucketed by length
-- Multilingual support (EN, ES, FR, DE, ZH, UA)
-- Favors letters that appear more than once (harder counting)
-- Config: `mode`, `mixed_weights`, `word_lengths`, `favor_repeated`
+- Curated word list from `data/strawberry_words.txt`, bucketed by length tier
+- Curated data files: `data/strawberry_anagram_pairs.txt` (76 pairs), `data/strawberry_pangrams.txt` (40 sentences), `data/strawberry_lipograms.txt` (44 sentences)
+- Multilingual question templates for all 6 sub-types × 6 languages
+- Weighted sub-type selection via `sub_type_weights` config
+- Config: `sub_types`, `sub_type_weights`, `mode`, `mixed_weights`, `word_lengths`, `favor_repeated`
 
-**Parser** (`parser.py`) — 7 strategies (end-first):
+**Parser** (`parser.py`) — sub-type dispatched, all end-first:
+
+*Count* (7 strategies):
 1. `boxed` — `\boxed{N}`
 2. `bold` — `**N**`
 3. `label_line` — "Count:", "Answer:", "Result:"
 4. `is_n_tail` — "is N" / "are N" at sentence end
 5. `last_number` — Last standalone integer
 6. `first_number` — First number (fallback)
-7. `spelled_out` — Word-to-int: "three" → 3, "zero" → 0 (supports 0–20)
+7. `spelled_out` — Word-to-int: "three" → 3 (supports 0–20)
+
+*Reverse* (5 strategies): boxed → bold → label_line → quoted → last_alpha_token
+
+*Nth letter* (6 strategies): boxed → bold → label → quoted → is_tail → last_single_alpha
+
+*Boolean* (shared by anagram/pangram/lipogram, 5 strategies): boxed → bold → label → answer_is → last_keyword. Multilingual yes/no keyword sets.
 
 **Evaluator** (`evaluator.py`):
-- Exact integer match
-- Tracks `off_by` distance for near-misses
-- Breakdown by mode (real/absent_letter/random)
+- Sub-type dispatch: integer match (count), case-insensitive string match (reverse), char match (nth_letter), boolean match (anagram/pangram/lipogram)
+- Tracks `off_by` distance for count near-misses
+- Aggregation: `sub_type_breakdown` (per sub-type accuracy), `mode_breakdown` (count modes), `mean_off_by` (count only)
 
 ---
 

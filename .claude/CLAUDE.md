@@ -18,7 +18,7 @@
 - **Sally-Anne**: Theory of Mind — false belief reasoning
 - **Carwash Paradox**: Practical-goal-tracking test — walk or drive? (answer: always drive)
 - **Inverted Cup**: Spatial-orientation reasoning — sealed top / open bottom cup (answer: flip it)
-- **Strawberry**: Letter counting in words ("How many R's in strawberry?")
+- **Strawberry**: Character-level reasoning — letter counting, word reversal, nth-letter, anagram, pangram, lipogram
 - **Measure Comparison**: Quantity comparison with units and conversion traps
 - **Grid Tasks**: Table reasoning — cell lookups, row sums, column counts
 
@@ -70,7 +70,7 @@ gol_eval/
 │   │   ├── sally_anne/    # Sally-Anne false belief test plugin
 │   │   ├── carwash/       # Carwash Paradox plugin (v2.2.0)
 │   │   ├── inverted_cup/  # Inverted Cup plugin (v2.2.0)
-│   │   ├── strawberry/    # Letter counting plugin
+│   │   ├── strawberry/    # Character-level reasoning (6 sub-types)
 │   │   ├── measure_comparison/ # Quantity comparison plugin
 │   │   └── grid_tasks/    # Table reasoning plugin
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
@@ -120,7 +120,7 @@ gol_eval/
 | [src/plugins/sally_anne/](src/plugins/sally_anne/) | Sally-Anne false belief test plugin |
 | [src/plugins/carwash/](src/plugins/carwash/) | Carwash Paradox plugin |
 | [src/plugins/inverted_cup/](src/plugins/inverted_cup/) | Inverted Cup plugin |
-| [src/plugins/strawberry/](src/plugins/strawberry/) | Letter counting plugin |
+| [src/plugins/strawberry/](src/plugins/strawberry/) | Character-level reasoning plugin (6 sub-types) |
 | [src/plugins/measure_comparison/](src/plugins/measure_comparison/) | Quantity comparison plugin |
 | [src/plugins/grid_tasks/](src/plugins/grid_tasks/) | Table reasoning plugin |
 | **3-Stage Pipeline** | |

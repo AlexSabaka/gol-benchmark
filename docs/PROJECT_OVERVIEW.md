@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.4.1** | Last updated: 2026-03-24
+> **Version 2.5.0** | Last updated: 2026-03-24
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -34,7 +34,7 @@ The suite measures how well language models handle:
 - **Physical state tracking** — Object tracking through container inversions
 - **Theory of Mind** — Sally-Anne false belief test
 - **Practical goal tracking** — Carwash paradox (walk vs drive)
-- **Counting & numeracy** — Letter counting (strawberry), measurement comparison
+- **Character-level reasoning** — Letter counting, word reversal, nth-letter, anagram/pangram/lipogram detection (strawberry), measurement comparison
 - **Tabular reasoning** — Grid-based data lookups, sums, counts
 
 ### Design Principles
@@ -116,7 +116,7 @@ gol_eval/
 │   │   ├── sally_anne/                 #   Theory of Mind (false belief)
 │   │   ├── carwash/                    #   Practical goal tracking
 │   │   ├── inverted_cup/               #   Spatial orientation puzzle
-│   │   ├── strawberry/                 #   Letter counting
+│   │   ├── strawberry/                 #   Character-level reasoning (6 sub-types)
 │   │   ├── measure_comparison/         #   Quantity comparison with units
 │   │   └── grid_tasks/                 #   Table reasoning
 │   │
@@ -203,7 +203,7 @@ gol_eval/
 | `sally_anne` | Sally-Anne Test | Theory of Mind (false belief) | Container name (belief, not reality) |
 | `carwash` | Carwash Paradox | Practical goal tracking | Always "drive" |
 | `inverted_cup` | Inverted Cup | Spatial orientation reasoning | "flip" |
-| `strawberry` | Strawberry (Letter Counting) | Letter occurrence counting | Integer |
+| `strawberry` | Strawberry (Character Reasoning) | Letter counting, reversal, nth-letter, anagram, pangram, lipogram | Integer / String / Boolean |
 | `measure_comparison` | Measure Comparison | Quantity comparison with units | Measurement / "equal" / "incomparable" |
 | `grid_tasks` | Grid Tasks (Table Reasoning) | Tabular data lookups, sums, counts | Varies by question |
 

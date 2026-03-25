@@ -1,14 +1,17 @@
 """
-Strawberry (Letter Counting) — Benchmark Plugin
+Strawberry (Character-Level Reasoning) — Benchmark Plugin
 
-Tests the classic "How many R's in strawberry?" task: counting
-occurrences of a specific letter in a word.
+A family of character-level reasoning tasks:
 
-Modes:
-  - real:          word from curated list, letter present in the word
-  - absent_letter: word from curated list, letter NOT in the word (answer = 0)
-  - random:        random character sequence, any letter query
-  - mixed:         weighted blend of the above (default)
+  count       — How many R's in strawberry?  (the classic)
+  reverse     — Spell "banana" backwards
+  nth_letter  — What is the 3rd letter of "algorithm"?
+  anagram     — Are "listen" and "silent" anagrams?
+  pangram     — Does this sentence use every letter of the alphabet?
+  lipogram    — Does this sentence avoid the letter 'e'?
+
+All sub-types are configurable via the `sub_types` multi-select field.
+Defaults to ["count"] for backward compatibility.
 """
 from src.plugins.base import BenchmarkPlugin
 from src.plugins.strawberry.generator import StrawberryGenerator
@@ -23,14 +26,14 @@ class StrawberryPlugin(BenchmarkPlugin):
 
     @property
     def display_name(self) -> str:
-        return "Strawberry (Letter Counting)"
+        return "Strawberry (Character Reasoning)"
 
     @property
     def description(self) -> str:
         return (
-            "How many R's in strawberry? "
-            "Tests a model's ability to count occurrences of a given letter "
-            "in a word. Supports real words, absent-letter traps, and random strings."
+            "Character-level reasoning: letter counting, word reversal, "
+            "nth-letter extraction, anagram detection, pangram checking, "
+            "and lipogram verification."
         )
 
     def get_generator(self):

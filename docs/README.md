@@ -56,7 +56,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | Sally-Anne (Theory of Mind) | `sally_anne` | Container name |
 | Carwash Paradox | `carwash` | Always "drive" |
 | Inverted Cup | `inverted_cup` | "flip" |
-| Strawberry (Letter Counting) | `strawberry` | Integer |
+| Strawberry (Character Reasoning) | `strawberry` | Integer / String / Boolean |
 | Measure Comparison | `measure_comparison` | Measurement / "equal" / "incomparable" |
 | Grid Tasks (Table Reasoning) | `grid_tasks` | Varies |
 
