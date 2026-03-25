@@ -39,7 +39,7 @@ from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 # ---------------------------------------------------------------------------
 # Data directory
 # ---------------------------------------------------------------------------
-_DATA_DIR = Path(__file__).resolve().parents[3] / "data"
+_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "strawberry"
 
 # ---------------------------------------------------------------------------
 # All six sub-types

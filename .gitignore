@@ -228,8 +228,7 @@ __marimo__/
 known_patterns/
 
 # Data directory - ignore contents but keep structure
-data/*
-!data/conways_life/
+data/conways_life/
 
 # Results directory
 results/

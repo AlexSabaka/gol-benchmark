@@ -1,0 +1,73 @@
+# Strawberry Benchmark — Lipogram Sentences
+# Format: sentence|avoided_letter|is_lipogram
+# Pipe-delimited. Lines starting with # are comments. Blank lines are ignored.
+#
+# is_lipogram=true: the sentence does NOT contain the avoided_letter
+# is_lipogram=false: the sentence DOES contain the avoided_letter (trap case)
+
+# --- TRUE LIPOGRAMS (letter genuinely absent) ---
+# Avoiding 'e'
+A dull fog was moving in and curling around our town.|e|true
+No pain, no gain, son — just push through.|e|true
+This algorithm is famous for sorting data quickly.|e|true
+Dark storm clouds hung low, blocking all light.|e|true
+A jolly young child was playing on a grassy hillrock.|e|true
+# Avoiding 'a'
+The old pier stood firm despite this morning breeze.|a|true
+She moved to find the hidden gem tucked within the old tower.|a|true
+We tried everything possible to solve this little puzzle.|a|true
+# Avoiding 't'
+Durable wall surfaces hold up inside old buildings.|t|true
+A cow mooed four or five miles away in cool evening air.|t|true
+# Avoiding 'i'
+Half an old castle stood tall under a full rose dawn sky.|i|true
+A brown dog slept on soft green lawns at dusk.|i|true
+# Avoiding 's'
+A bright and vivid rainbow hung on the horizon after rain.|s|true
+My old dog will eat literally anything he can find.|s|true
+# Avoiding 'o'
+Stale bread and tepid water filled this humble meal.|o|true
+Jim carefully fixed all the paintings they had hung wildly.|o|true
+# Avoiding 'n'
+Every old clock that we still possess dates back forty years.|n|true
+A short summary would suffice perfectly for this example.|n|true
+# Avoiding 'r'
+Elvis sang a funky loud song when light fell on the canvas alone.|r|true
+A calm sky bloomed with dawning pink light above the hillside.|r|true
+# Avoiding 'q'
+The bright sun shone warmly on the distant hills.|q|true
+Children played in the garden while birds sang overhead.|q|true
+# Avoiding 'z'
+The morning fog lifted slowly from the quiet river.|z|true
+A veteran carpenter built strong wooden shelves for the library.|z|true
+# Avoiding 'x'
+Many people consider autumn the most beautiful season.|x|true
+The gentle breeze carried flowers across the meadow.|x|true
+
+# --- FALSE LIPOGRAMS (letter IS present — trap cases) ---
+# Claim to avoid 'e' but contain it
+A dark sky hung over us as thunder rolled nearby.|e|false
+Brilliant golden sunshine lit every corner of our village.|e|false
+Making progress can be difficult without patience.|e|false
+Stars shimmered above the quiet, gentle lake.|e|false
+# Claim to avoid 'a' but contain it
+The big old castle was torn apart by storms.|a|false
+Moonlight bathed the garden in silver radiance.|a|false
+# Claim to avoid 't' but contain it
+Looking at colorful butterflies in the meadow.|t|false
+Short bursts of laughter erupted throughout the room.|t|false
+# Claim to avoid 'i' but contain it
+A shining light glimmered from within the cave.|i|false
+Buildings towering high cast long afternoon shadows.|i|false
+# Claim to avoid 's' but contain it
+Darkness spread its cloak across the sleepy village.|s|false
+Several musicians performed at last evening's festival.|s|false
+# Claim to avoid 'o' but contain it
+The bold explorer conquered many boundless frontiers.|o|false
+A fog crept over rooftops like a gossamer blanket.|o|false
+# Claim to avoid 'n' but contain it
+Dancing along the fence line in a morning haze.|n|false
+Running water sounds enchanting near the stone bridge.|n|false
+# Claim to avoid 'r' but contain it
+A warrior forged strong armor before the great battle.|r|false
+The river ran through a remarkably green valley.|r|false
