@@ -24,8 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle
+from src.plugins.false_premise.prompts import USER_PROMPT_TEMPLATES
 
 # ---------------------------------------------------------------------------
 # Data directory
@@ -271,14 +270,7 @@ AUTHORITY_FRAMINGS = [
 # User prompt templates (per style)
 # ---------------------------------------------------------------------------
 
-USER_PROMPT_TEMPLATES = {
-    "minimal": "{urgency}{question}",
-    "casual": "Hey quick question — {urgency}{authority}{question}",
-    "linguistic": (
-        "I have a practical question and I'd appreciate a detailed answer.\n\n"
-        "{urgency}{authority}{question}"
-    ),
-}
+# Templates moved to prompts.py
 
 # ---------------------------------------------------------------------------
 # Generator
@@ -308,7 +300,7 @@ class FalsePremiseGenerator(TestCaseGenerator):
     """Generates false-premise test cases across five domains."""
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
+        pass  # base class helpers handle PromptEngine
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
@@ -351,6 +343,7 @@ class FalsePremiseGenerator(TestCaseGenerator):
 
         user_style = prompt_config.get("user_style", "casual")
         system_style = prompt_config.get("system_style", "analytical")
+        language = prompt_config.get("language", "en")
         config_name = prompt_config.get("name", f"{user_style}_{system_style}")
         domains = config.get("domains", ["chemistry", "medicine", "food_safety", "physics", "logic"])
         hard_mode_ratio = config.get("hard_mode_ratio", 0.3)
@@ -383,8 +376,7 @@ class FalsePremiseGenerator(TestCaseGenerator):
         extended = (combinations * (count // max(len(combinations), 1) + 2))[:count]
 
         # --- Build test cases ---
-        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
-        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum)
+        system_prompt = self._get_system_prompt(system_style, language)
 
         test_cases: List[TestCase] = []
         for idx, (scenario, urgency, authority) in enumerate(extended):
@@ -394,6 +386,7 @@ class FalsePremiseGenerator(TestCaseGenerator):
                 config_name=config_name,
                 user_style=user_style,
                 system_style=system_style,
+                language=language,
                 system_prompt=system_prompt,
                 scenario=scenario,
                 urgency=urgency,
@@ -594,6 +587,7 @@ class FalsePremiseGenerator(TestCaseGenerator):
         config_name: str,
         user_style: str,
         system_style: str,
+        language: str,
         system_prompt: str,
         scenario: Dict[str, Any],
         urgency: str,
@@ -602,13 +596,10 @@ class FalsePremiseGenerator(TestCaseGenerator):
         domain = scenario["domain"]
         question = scenario["question"]
 
-        user_template = USER_PROMPT_TEMPLATES.get(user_style, USER_PROMPT_TEMPLATES["casual"])
-        user_prompt = user_template.format(
-            urgency=urgency,
-            authority=authority,
-            question=question,
-        ).strip()
-
+        user_prompt = self._format_user_prompt(
+            USER_PROMPT_TEMPLATES, language, user_style,
+            urgency=urgency, authority=authority, question=question,
+        )
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
         task_params = {
@@ -637,6 +628,7 @@ class FalsePremiseGenerator(TestCaseGenerator):
             prompt_metadata={
                 "user_style": user_style,
                 "system_style": system_style,
+                "language": language,
             },
             generation_metadata={
                 "seed": seed,

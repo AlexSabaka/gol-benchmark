@@ -9,15 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import (
-    PromptEngine,
-    PromptContext,
-    Language,
-    PromptStyle,
-    SystemPromptStyle,
-    TaskType,
-)
+from src.plugins.arithmetic.prompts import USER_PROMPT_TEMPLATES
 from src.engine.MathExpressionGenerator import MathExpressionGenerator
 
 
@@ -30,7 +22,6 @@ class ArithmeticTestCaseGenerator(TestCaseGenerator):
     """
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
         self._generator = None
         self._current_seed = None
 
@@ -90,11 +81,6 @@ class ArithmeticTestCaseGenerator(TestCaseGenerator):
         system_style_str = prompt_config.get('system_style', 'analytical')
         config_name = prompt_config.get('name', f"{user_style_str}_{system_style_str}")
 
-        # Map strings to enums
-        language = safe_enum(Language, language_str, Language.EN)
-        user_style = safe_enum(PromptStyle, user_style_str, PromptStyle.MINIMAL)
-        system_style = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
-
         # Generate tests
         for complexity in complexity_levels:
             for target_value in target_values:
@@ -112,20 +98,13 @@ class ArithmeticTestCaseGenerator(TestCaseGenerator):
                     if test_id >= count:
                         break
 
-                    # Create prompt context
-                    context = PromptContext(
-                        task_type=TaskType.MATH_EXPRESSION,
-                        language=language,
-                        style=user_style,
-                        system_style=system_style
-                    )
-
-                    # Set expression context
-                    context.set('expression', expression)
-                    context.set('variables', {})
-
                     # Generate prompts
-                    result = self._prompt_engine.generate(context)
+                    user_prompt = self._format_user_prompt(
+                        USER_PROMPT_TEMPLATES, language_str, user_style_str,
+                        expression=expression,
+                    )
+                    system_prompt = self._get_system_prompt(system_style_str, language_str)
+                    full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
                     # Create test case
                     test_case = TestCase(
@@ -133,9 +112,9 @@ class ArithmeticTestCaseGenerator(TestCaseGenerator):
                         task_type='arithmetic',
                         config_name=config_name,
                         prompts={
-                            'system': result.system_prompt,
-                            'user': result.user_prompt,
-                            'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                            'system': system_prompt,
+                            'user': user_prompt,
+                            'full': full_prompt,
                         },
                         task_params={
                             'complexity': complexity,

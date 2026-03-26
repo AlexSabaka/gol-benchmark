@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a comprehensive LLM reasoning benchmark suite testing model capabilities across procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, Carwash Paradox, Inverted Cup). The system features a modern 3-stage architecture with a **plugin-based benchmark system (v2.2.0)**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
+This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 16 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
 ## Architecture (v2.2.0)
 
@@ -26,7 +26,8 @@ src/plugins/
 ├── grid_tasks/                # Grid Tasks: table reasoning
 ├── time_arithmetic/           # Time Arithmetic: temporal reasoning & impossible dates
 ├── misquote/                  # Misquote Attribution: sycophancy detection
-└── false_premise/             # False Premise: dangerous/impossible premise detection
+├── false_premise/             # False Premise: dangerous/impossible premise detection
+└── family_relations/          # Family Relations: perspective-aware counting puzzles
 ```
 
 **Benefits:**
@@ -55,10 +56,11 @@ src/plugins/
 
 ### Core Data Flow (Modern)
 ```
-TUI/CLI → Stage 1 (generate_testset.py) → Stage 2 (run_testset.py) → Stage 3 (analyze_results.py)
+Web UI/CLI → Stage 1 (generate_testset.py) → Stage 2 (run_testset.py) → Stage 3 (analyze_results.py)
   ↓            ↓                           ↓                         ↓
-Config →   TestGenerator →            ModelInterface →        Enhanced Analytics
-        PromptEngine                  (Ollama/HuggingFace)    Multi-dimensional Reports
+Config →   Plugin generators →        ModelInterface →        Enhanced Analytics
+        (plugin-local prompts.py     (Ollama/HuggingFace)    Multi-dimensional Reports
+         + base class helpers)
 ```
 
 ## Project Structure (v2.2.0)
@@ -69,8 +71,9 @@ Config →   TestGenerator →            ModelInterface →        Enhanced Ana
 src/
 ├── plugins/            # 🔌 Plugin-Based Benchmark System (v2.2.0)
 │   ├── base.py         # Abstract base classes (BenchmarkPlugin, TestCaseGenerator, etc.)
+│   │                  # + prompt helpers: _build_prompts(), _get_system_prompt(), _format_user_prompt()
 │   ├── __init__.py     # Plugin registry with auto-discovery
-│   ├── game_of_life/   # GoL plugin (generator.py, parser.py, evaluator.py, __init__.py)
+│   ├── game_of_life/   # GoL plugin (generator.py, parser.py, evaluator.py, prompts.py, __init__.py)
 │   ├── arithmetic/     # ARI plugin (6-strategy parsing)
 │   ├── linda_fallacy/  # Linda plugin (conjunction fallacy detection)
 │   ├── cellular_automata_1d/  # C14 plugin (state evolution)
@@ -84,7 +87,8 @@ src/
 │   ├── grid_tasks/     # Grid Tasks plugin (table reasoning)
 │   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
 │   ├── misquote/       # Misquote Attribution plugin (sycophancy detection)
-│   └── false_premise/  # False Premise plugin (dangerous/impossible premise detection)
+│   ├── false_premise/  # False Premise plugin (dangerous/impossible premise detection)
+│   └── family_relations/ # Family Relations plugin (perspective-aware counting)
 ├── stages/             # 3-Stage Pipeline Scripts (uses plugins)
 │   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
 │   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
@@ -93,7 +97,7 @@ src/
 │   └── benchmark_tui.py       # Interactive Terminal UI
 ├── core/               # Core types, prompt engine, test generation
 │   ├── types.py        # Config dataclasses (BaseTestConfig, GameOfLifeTestConfig, etc.)
-│   ├── PromptEngine.py # Multi-language, multi-style prompt templates
+│   ├── PromptEngine.py # System prompts + enums (user templates DEPRECATED → plugin-local prompts.py)
 │   ├── TestGenerator.py# Test case generation with pattern support
 │   └── PROMPT_STYLES.py# Prompt style definitions
 ├── models/             # Model provider interfaces
@@ -238,16 +242,16 @@ The benchmark systematically tests 3×3 prompt combinations:
 
 ## Code Conventions
 
-### **Adding New Benchmark Tasks (Plugin System v2.1.0)**
+### **Adding New Benchmark Tasks (Plugin System v2.8.0)**
 **Modern approach - create a self-contained plugin:**
 
 1. **Create plugin directory**: `src/plugins/new_task/`
 2. **Create `__init__.py`**: Define `NewTaskPlugin` class and export `plugin` instance
-3. **Create `generator.py`**: Implement `TestCaseGenerator` with `generate_batch()` method
-4. **Create `parser.py`**: Implement `ResponseParser` with multi-strategy `parse()` method
-5. **Create `evaluator.py`**: Implement `ResultEvaluator` with `evaluate()` method
-6. **Add prompts**: Update `src/core/PromptEngine.py` with new `TaskType`
-7. **Done!** Plugin auto-discovered by registry, integrated into all 3 stages
+3. **Create `prompts.py`**: Define user prompt templates keyed by `(Language, style_string)`
+4. **Create `generator.py`**: Implement `TestCaseGenerator` using `self._build_prompts()` helper
+5. **Create `parser.py`**: Implement `ResponseParser` with multi-strategy `parse()` method
+6. **Create `evaluator.py`**: Implement `ResultEvaluator` with `evaluate()` method
+7. **Done!** Plugin auto-discovered by registry, integrated into all 3 stages. No changes to `PromptEngine.py`.
 
 **Legacy approach (deprecated):**
 - Adding to `src/benchmarks/` requires manual integration
@@ -337,6 +341,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Inverted Cup**: Expected 60-90% accuracy (the flip answer is usually obvious)
 - **Time Arithmetic**: Expected 50-80% accuracy (noon/midnight traps and impossible dates are the hardest)
 - **Misquote Attribution**: Expected 40-70% accuracy (authority/constraint framings are the hardest sycophancy traps)
+- **Family Relations**: Expected 40-70% accuracy (self-counting traps are the classic failure mode)
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
@@ -391,11 +396,12 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.6.0 (March 25, 2026)
+**Version**: 2.8.0 (March 26, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery
+- Plugin-local prompt templates (PromptEngine user prompts deprecated)
 - Modern 3-stage architecture with enhanced parsing and analytics
-- 15 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise
+- 16 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations
 - Remote Ollama support (`--ollama-host`)
 - Token counting throughout pipeline

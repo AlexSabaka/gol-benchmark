@@ -2,6 +2,80 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.8.0] - March 26, 2026
+
+### Plugin-Local Prompt Templates — PromptEngine User Prompt Deprecation
+
+Migrated all 16 plugins from the centralised `PromptEngine` user-prompt templates to **plugin-local `prompts.py` files**. Each plugin now owns its own prompt templates, making plugins fully self-contained.
+
+#### What Changed
+
+- **New file per plugin**: Every plugin now has a `prompts.py` module containing its user prompt template dicts, keyed by `(Language, PromptStyle)` (e.g., `(Language.EN, "casual")`).
+- **Base class helpers** added to `TestCaseGenerator` in `src/plugins/base.py`:
+  - `_get_prompt_engine()` — lazy-initialised shared `PromptEngine` instance (for system prompts)
+  - `_get_system_prompt(system_style, language)` — wraps `PromptEngine.get_system_prompt_by_enum()` with safe enum parsing
+  - `_format_user_prompt(templates, language, style, **variables)` — static lookup into plugin-local template dicts with `EN`/`casual` fallbacks
+  - `_build_prompts(templates, language, user_style, system_style, **variables)` — convenience method returning `(user_prompt, system_prompt, full_prompt)` tuple
+- **PromptEngine.py**: All 8 task-specific template dict sections and convenience functions marked `(DEPRECATED)` with comments pointing to plugin-local canonical locations. No code removed — backward compatible.
+- **3 pre-existing C14 generator bugs fixed** during migration:
+  - `expected_state` → `expected_states` (plural key name)
+  - Added missing `rule_table` computation via `CellularAutomata1DEngine.format_rule_table()`
+  - Added missing `boundary_description` lookup for templates
+
+#### PromptEngine Status
+
+| Export | Status | Notes |
+|--------|--------|-------|
+| `Language`, `PromptStyle`, `SystemPromptStyle` enums | **Active** | Used by all plugins |
+| `SYSTEM_PROMPTS` dict | **Active** | System prompts still centralised |
+| `PromptEngine.get_system_prompt_by_enum()` | **Active** | Called via base class helper |
+| `TaskType` enum | **Deprecated** | No longer used by plugins |
+| `PromptContext`, `PromptResult` | **Deprecated** | Replaced by plugin-local templates |
+| `PromptEngine.generate()` / `get_user_prompt()` | **Deprecated** | Replaced by `_format_user_prompt()` |
+| All `*_PROMPTS` task-specific dicts | **Deprecated** | Templates now in `src/plugins/<task>/prompts.py` |
+| `create_*_context()` functions | **Deprecated** | No longer needed |
+
+#### Migration Pattern (for new plugins)
+
+```python
+# In your plugin's prompts.py:
+from src.core.PromptEngine import Language
+TEMPLATES = {
+    (Language.EN, "minimal"): "Solve: {expression}",
+    (Language.EN, "casual"):  "Hey, what's {expression}?",
+    (Language.EN, "linguistic"): "Please evaluate the following: {expression}",
+}
+
+# In your plugin's generator.py:
+from .prompts import TEMPLATES
+
+class MyGenerator(TestCaseGenerator):
+    def generate_batch(self, config, prompt_config, count, seed):
+        user_prompt, system_prompt, full_prompt = self._build_prompts(
+            TEMPLATES, language, user_style, system_style, expression="2+3"
+        )
+```
+
+#### Test Results
+
+- **0 regressions**: Before migration 19 failed / 443 passed → After 17 failed / 445 passed
+- 2 pre-existing test failures fixed (linda_fallacy test class names)
+
+## [2.7.0] - March 25, 2026
+
+### Family Relations Plugin — Perspective-Aware Family Counting Puzzles
+
+New plugin `src/plugins/family_relations/` — procedural family counting puzzles that test whether models can avoid the classic trap of counting the subject as their own sibling.
+
+- **4 sub-types**: `sibling_count` (self-counting trap), `shared_children` (shared-brothers trap), `generational` (multiplication chains, cousin counting), `perspective_shift` (algebraic constraint solving)
+- **10 template functions** generating diverse puzzle configurations with randomized names via `names` library
+- **3 user prompt styles** (minimal, casual, linguistic) with system prompts via `PromptEngine.get_system_prompt_by_enum()`
+- **6-strategy end-first parser**: boxed, bold, label_line, is_n_tail, last_number, spelled_out (word-to-int mapping 0–20)
+- **4 match types**: `correct`, `overcounting` (classic self-counting trap), `undercounting` (missed family member), `parse_error`
+- Each puzzle records its `trap` type in metadata (e.g., `counting_self_as_sibling`, `forgetting_subject`, `multiplying_instead_of_sharing`)
+- ConfigField schema: count, sub_types (multi-select), sub_type_weights (weight map), difficulty (easy/medium/hard)
+- Pipeline integration: `analyze_results.py` task color (burnt orange `#d35400`) and test_id recognition pattern added
+
 ## [2.6.0] - March 25, 2026
 
 ### False Premise Plugin — Dangerous/Impossible Premise Detection

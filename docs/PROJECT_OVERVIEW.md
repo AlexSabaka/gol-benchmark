@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.6.0** | Last updated: 2026-03-25
+> **Version 2.8.0** | Last updated: 2026-03-26
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -38,6 +38,7 @@ The suite measures how well language models handle:
 - **Temporal reasoning** — Time arithmetic, calendar math, impossible date detection, AM/PM traps
 - **Tabular reasoning** — Grid-based data lookups, sums, counts
 - **Safety reasoning** — Detecting dangerous or impossible premises (false premise)
+- **Perspective-aware reasoning** — Family counting puzzles with self-reference traps (family relations)
 
 ### Design Principles
 
@@ -84,7 +85,7 @@ Each stage is independently runnable. Stage 2 includes minimal self-contained mo
 
 ### Plugin System
 
-All 15 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
+All 16 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
 
 Each plugin provides three components:
 
@@ -105,7 +106,7 @@ A modern web interface built with **FastAPI + HTMX + Jinja2** (replaced the depr
 ```
 gol_eval/
 ├── src/
-│   ├── plugins/                        # Plugin-based benchmark system (15 plugins)
+│   ├── plugins/                        # Plugin-based benchmark system (16 plugins)
 │   │   ├── base.py                     #   Abstract base classes + ConfigField
 │   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
 │   │   ├── parse_utils.py              #   End-first parsing utilities
@@ -123,7 +124,8 @@ gol_eval/
 │   │   ├── grid_tasks/                 #   Table reasoning
 │   │   ├── time_arithmetic/            #   Temporal reasoning & impossible dates
 │   │   ├── misquote/                   #   Sycophancy detection via false quote attributions
-│   │   └── false_premise/              #   Dangerous/impossible premise detection
+│   │   ├── false_premise/              #   Dangerous/impossible premise detection
+│   │   └── family_relations/           #   Perspective-aware family counting puzzles
 │   │
 │   ├── stages/                         # 3-stage pipeline
 │   │   ├── generate_testset.py         #   Stage 1: YAML → test sets
@@ -132,7 +134,7 @@ gol_eval/
 │   │
 │   ├── core/                           # Shared infrastructure
 │   │   ├── types.py                    #   Config dataclasses, DifficultyLevel, enums
-│   │   ├── PromptEngine.py             #   Multilingual prompt generation (6 languages)
+│   │   ├── PromptEngine.py             #   System prompts + enums (user templates deprecated → plugins)
 │   │   └── TestGenerator.py            #   Test case generation helpers
 │   │
 │   ├── web/                            # FastAPI + HTMX web UI
@@ -215,6 +217,7 @@ gol_eval/
 | `time_arithmetic` | Time Arithmetic | Temporal reasoning, calendar math, impossible date detection | Time / Day / Duration / "impossible" |
 | `misquote` | Misquote Attribution | Sycophancy detection via false quote attributions | Yes/No (two-part) |
 | `false_premise` | False Premise | Dangerous/impossible premise detection | Refusal / Compliance / Hedge |
+| `family_relations` | Family Relations | Perspective-aware family counting puzzles | Integer (person count) |
 
 Each plugin is self-contained in `src/plugins/<task_type>/` with its own generator, parser, and evaluator.
 
@@ -262,7 +265,23 @@ result = interface.query(prompt, {"temperature": 0.1, "max_tokens": 2048})
 
 ## Prompt Engineering System
 
-The `PromptEngine` (`src/core/PromptEngine.py`) generates prompts from a combinatorial space:
+### Architecture (v2.8.0)
+
+Prompt generation follows a **plugin-local template** pattern. Each plugin defines its own user prompt templates in a `prompts.py` file, while system prompts remain centralised in `PromptEngine`.
+
+```
+src/plugins/<task>/
+├── prompts.py          # User prompt templates keyed by (Language, style)
+└── generator.py        # Uses _build_prompts() base class helper
+
+src/core/PromptEngine.py  # System prompts + Language/PromptStyle/SystemPromptStyle enums
+                           # (task-specific user templates DEPRECATED)
+```
+
+Base class helpers in `TestCaseGenerator`:
+- `_build_prompts(templates, language, user_style, system_style, **vars)` → `(user, system, full)`
+- `_get_system_prompt(system_style, language)` — wraps PromptEngine with safe fallbacks
+- `_format_user_prompt(templates, language, style, **vars)` — template lookup with EN/casual fallback
 
 ### User Prompt Styles
 
@@ -271,8 +290,8 @@ The `PromptEngine` (`src/core/PromptEngine.py`) generates prompts from a combina
 | `linguistic` | Formal, rule-based, detailed instructions | Models that thrive on structure |
 | `casual` | Conversational, approachable | Balanced models |
 | `minimal` | Bare minimum instructions | Testing baseline capability |
-| `examples` | Includes worked examples | Few-shot learning |
-| `rules_math` | Mathematical notation | Math-oriented tasks |
+| `examples` | Includes worked examples | Few-shot learning (deprecated) |
+| `rules_math` | Mathematical notation | Math-oriented tasks (deprecated) |
 
 ### System Prompt Styles
 
@@ -289,7 +308,9 @@ English (EN), French (FR), Spanish (ES), German (DE), Chinese (ZH), Ukrainian (U
 
 ### Why This Matters
 
-The combinatorial matrix (up to 5 user styles x 4 system styles x 6 languages = 120 configurations per task) enables systematic study of how prompt engineering affects model performance. Research with this system found that prompt choice alone can swing accuracy by 44+ percentage points on the same model.
+The combinatorial matrix (up to 3 user styles x 3 system styles x 6 languages = 54 configurations per task) enables systematic study of how prompt engineering affects model performance. Research with this system found that prompt choice alone can swing accuracy by 44+ percentage points on the same model.
+
+> **Note**: The `examples` and `rules_math` user styles and the `adversarial` system style exist in legacy code but are deprecated. New plugins should use `minimal`, `casual`, and `linguistic`.
 
 ---
 

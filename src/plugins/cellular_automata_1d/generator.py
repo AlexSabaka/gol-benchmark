@@ -9,14 +9,9 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import (
-    PromptEngine,
-    PromptContext,
-    Language,
-    PromptStyle,
-    SystemPromptStyle,
-    TaskType,
+from src.plugins.cellular_automata_1d.prompts import (
+    USER_PROMPT_TEMPLATES,
+    BOUNDARY_DESCRIPTIONS,
 )
 
 
@@ -29,7 +24,6 @@ class C14TestCaseGenerator(TestCaseGenerator):
     """
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
         self._ca_generator = None
 
     def _get_ca_generator(self, seed: Optional[int] = None):
@@ -86,13 +80,14 @@ class C14TestCaseGenerator(TestCaseGenerator):
         system_style_str = prompt_config.get('system_style', 'analytical')
         config_name = prompt_config.get('name', f"{user_style_str}_{system_style_str}")
 
-        # Map strings to enums
-        language = safe_enum(Language, language_str, Language.EN)
-        user_style = safe_enum(PromptStyle, user_style_str, PromptStyle.LINGUISTIC)
-        system_style = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
-
         # Generate tests for each rule
         for rule in rules:
+            # Pre-compute rule table (same for all cases with this rule)
+            rule_table = CellularAutomata1DEngine.format_rule_table(rule)
+            # Boundary description
+            lang_boundaries = BOUNDARY_DESCRIPTIONS.get(language_str, BOUNDARY_DESCRIPTIONS['en'])
+            boundary_description = lang_boundaries.get(boundary, boundary)
+
             for _ in range(tests_per_rule):
                 if test_id >= count:
                     break
@@ -100,7 +95,7 @@ class C14TestCaseGenerator(TestCaseGenerator):
                 # Generate a test case using CA generator
                 try:
                     test_data = ca_generator.generate_test_case(
-                        rule=rule,
+                        rule_number=rule,
                         width=width,
                         steps=steps,
                         boundary=boundary
@@ -109,28 +104,22 @@ class C14TestCaseGenerator(TestCaseGenerator):
                     continue
 
                 initial_state = test_data['initial_state']
-                expected_state = test_data['expected_state']
+                expected_states = test_data['expected_states']
 
                 # Format state for prompt
                 state_str = ' '.join(str(x) for x in initial_state)
 
-                # Create prompt context
-                context = PromptContext(
-                    task_type=TaskType.CELLULAR_AUTOMATA_1D,
-                    language=language,
-                    style=user_style,
-                    system_style=system_style
-                )
-
-                # Set CA-specific context
-                context.set('rule', rule)
-                context.set('initial_state', state_str)
-                context.set('width', width)
-                context.set('steps', steps)
-                context.set('boundary', boundary)
-
                 # Generate prompts
-                result = self._prompt_engine.generate(context)
+                user_prompt, system_prompt, full_prompt = self._build_prompts(
+                    USER_PROMPT_TEMPLATES,
+                    language=language_str,
+                    user_style=user_style_str,
+                    system_style=system_style_str,
+                    rule_number=rule,
+                    rule_table=rule_table,
+                    state_str=state_str,
+                    boundary_description=boundary_description,
+                )
 
                 # Create test case
                 test_case = TestCase(
@@ -138,14 +127,14 @@ class C14TestCaseGenerator(TestCaseGenerator):
                     task_type='cellular_automata_1d',
                     config_name=config_name,
                     prompts={
-                        'system': result.system_prompt,
-                        'user': result.user_prompt,
-                        'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                        'system': system_prompt,
+                        'user': user_prompt,
+                        'full': full_prompt
                     },
                     task_params={
                         'rule': rule,
                         'initial_state': initial_state,
-                        'expected_state': expected_state,
+                        'expected_state': expected_states,
                         'width': width,
                         'steps': steps,
                         'boundary': boundary,

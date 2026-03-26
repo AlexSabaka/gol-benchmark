@@ -23,6 +23,7 @@
 - **Grid Tasks**: Table reasoning — cell lookups, row sums, column counts
 - **Misquote Attribution**: Sycophancy detection — false quote attributions with social-pressure framings
 - **False Premise**: Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic)
+- **Family Relations**: Perspective-aware family counting puzzles — sibling count, shared children, generational chains, perspective shifts
 
 ### Key Characteristics
 
@@ -59,7 +60,7 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (15 plugins)
+│   ├── plugins/           # Plugin-based benchmark system (16 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
 │   │   ├── parse_utils.py # End-first parsing utilities
@@ -112,7 +113,7 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (15 plugins)** | |
+| **Plugin System (16 plugins)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
 | [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
@@ -131,13 +132,14 @@ gol_eval/
 | [src/plugins/time_arithmetic/](src/plugins/time_arithmetic/) | Time Arithmetic plugin (temporal reasoning) |
 | [src/plugins/misquote/](src/plugins/misquote/) | Misquote Attribution plugin (sycophancy detection) |
 | [src/plugins/false_premise/](src/plugins/false_premise/) | False Premise plugin (dangerous/impossible premise detection) |
+| [src/plugins/family_relations/](src/plugins/family_relations/) | Family Relations plugin (perspective-aware counting) |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
 | [src/stages/analyze_results.py](src/stages/analyze_results.py) | Stage 3: Analytics and reporting |
 | **Core Infrastructure** | |
 | [src/core/types.py](src/core/types.py) | All config classes, types, difficulty levels |
-| [src/core/PromptEngine.py](src/core/PromptEngine.py) | Multilingual prompt generation (6 languages) |
+| [src/core/PromptEngine.py](src/core/PromptEngine.py) | System prompts + enums (user templates deprecated → plugins) |
 | [src/core/TestGenerator.py](src/core/TestGenerator.py) | Test case generation with known patterns |
 | [src/models/BaseModelInterface.py](src/models/BaseModelInterface.py) | Abstract base for model providers |
 | [src/models/OllamaInterface.py](src/models/OllamaInterface.py) | Ollama integration with retry logic |
@@ -164,7 +166,7 @@ evaluator = plugin.get_evaluator()
 `create_model_interface(provider, model_name, ...)` creates the right interface from a provider string.
 
 ### 3. Strategy Pattern
-Different prompt/system styles are interchangeable via PromptEngine. Multi-strategy parsing in parsers (6 strategies for ARI, 4 for GoL).
+Different prompt/system styles are interchangeable via plugin-local `prompts.py` template dicts and base class helpers. Multi-strategy parsing in parsers (6 strategies for ARI, 4 for GoL).
 
 ### 4. Template Method
 `ModelInterface` defines the `query(prompt, params)` contract; subclasses implement it.
@@ -241,25 +243,37 @@ All response parsers follow the principle of searching from the **end** of the m
    plugin = NewTaskPlugin()  # Auto-discovered!
    ```
 
-3. **Create `generator.py`** (test case generation):
+3. **Create `prompts.py`** (plugin-local user prompt templates):
+   ```python
+   from src.core.PromptEngine import Language
+
+   TEMPLATES = {
+       (Language.EN, "minimal"): "...",
+       (Language.EN, "casual"): "...",
+       (Language.EN, "linguistic"): "...",
+   }
+   ```
+
+4. **Create `generator.py`** (test case generation):
    ```python
    from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
+   from .prompts import TEMPLATES
 
    class NewTaskGenerator(TestCaseGenerator):
        def generate_batch(self, config, prompt_config, count, seed):
-           # Generate test cases
+           user_prompt, system_prompt, full_prompt = self._build_prompts(
+               TEMPLATES, language, user_style, system_style, **vars
+           )
            return [TestCase(...), ...]
 
        def get_config_schema(self) -> list[ConfigField]:
-           # Return field descriptors for the web UI config form
            return [
                ConfigField(name='count', label='Number of cases', field_type='number',
                            default=10, min_value=1, max_value=200),
-               # ... more fields (types: number, select, multi-select, text, boolean, range, weight_map)
            ]
    ```
 
-4. **Create `parser.py`** (response parsing with multi-strategy):
+5. **Create `parser.py`** (response parsing with multi-strategy):
    ```python
    from src.plugins.base import ResponseParser, ParsedAnswer
 
@@ -269,7 +283,7 @@ All response parsers follow the principle of searching from the **end** of the m
            return ParsedAnswer(value=..., raw_response=response, parse_strategy='...')
    ```
 
-5. **Create `evaluator.py`** (result evaluation):
+6. **Create `evaluator.py`** (result evaluation):
    ```python
    from src.plugins.base import ResultEvaluator, EvaluationResult
 
@@ -279,24 +293,7 @@ All response parsers follow the principle of searching from the **end** of the m
            return EvaluationResult(correct=..., match_type='...', accuracy=...)
    ```
 
-6. **Add prompts** to [src/core/PromptEngine.py](src/core/PromptEngine.py):
-   ```python
-   TaskType = Enum('TaskType', [..., 'new_task'])
-   ```
-
-7. **Add config class** (if needed) in [src/core/types.py](src/core/types.py):
-   ```python
-   @dataclass
-   class NewTaskTestConfig(BaseTestConfig):
-       task_param1: int
-       task_param2: str
-   ```
-
-**That's it! The plugin is automatically discovered and integrated into:**
-- Stage 1 (generate_testset.py)
-- Stage 2 (run_testset.py)
-- Stage 3 (analyze_results.py)
-- Web UI `/configure` page (dynamic form via `get_config_schema()`)
+7. **Done!** No changes to `PromptEngine.py` needed. Plugin auto-discovered by registry.
 
 ### New Model Provider
 
@@ -401,9 +398,13 @@ from src.plugins.base import (
 )
 from src.plugins.parse_utils import safe_enum, re_search_last
 
-# Core
+# Plugin-local prompt templates (inside each plugin's generator.py)
+from .prompts import TEMPLATES  # Each plugin defines its own
+
+# Core (PromptEngine: system prompts + enums are active; user templates are deprecated)
 from src.core.types import GameOfLifeTestConfig, DifficultyLevel
-from src.core.PromptEngine import PromptEngine, Language, PromptStyle
+from src.core.PromptEngine import Language, PromptStyle, SystemPromptStyle  # Active enums
+# DEPRECATED: Do NOT import TaskType, PromptContext, PromptResult, create_*_context()
 from src.core.TestGenerator import TestGenerator
 
 # Models
@@ -684,7 +685,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-25*
-*Version: 2.6.0*
-*Key additions: False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-03-26*
+*Version: 2.8.0*
+*Key additions: Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

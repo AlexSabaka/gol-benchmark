@@ -12,16 +12,10 @@ import random
 from datetime import datetime
 from typing import Any, Dict, List, Optional
 
-from src.core.PromptEngine import (
-    Language,
-    PromptContext,
-    PromptEngine,
-    PromptStyle,
-    SystemPromptStyle,
-    TaskType,
-)
+from src.core.PromptEngine import Language
 from src.plugins.base import ConfigField, TestCase, TestCaseGenerator
 from src.plugins.parse_utils import safe_enum
+from src.plugins.time_arithmetic.prompts import USER_PROMPT_TEMPLATES
 
 # ── constants ────────────────────────────────────────────────────────
 
@@ -515,15 +509,13 @@ class TimeArithmeticGenerator(TestCaseGenerator):
 
         # Prompt metadata
         lang = safe_enum(Language, prompt_config.get("language", "en"), Language.EN)
-        user_style = safe_enum(PromptStyle, prompt_config.get("user_style", "minimal"), PromptStyle.MINIMAL)
-        sys_style = safe_enum(SystemPromptStyle, prompt_config.get("system_style", "analytical"), SystemPromptStyle.ANALYTICAL)
-        config_name = prompt_config.get("name", f"{user_style.value}_{sys_style.value}")
+        user_style = prompt_config.get("user_style", "minimal")
+        sys_style = prompt_config.get("system_style", "analytical")
+        config_name = prompt_config.get("name", f"{user_style}_{sys_style}")
 
         time_fmt = cfg.get("time_format", "12h")
         direction = cfg.get("direction", "both")
         year_range = (cfg.get("year_range_start", 1900), cfg.get("year_range_end", 2200))
-
-        engine = PromptEngine()
 
         test_cases: list[TestCase] = []
         for i in range(count):
@@ -531,7 +523,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
             tc = self._dispatch_generate(
                 rng, st,
                 lang=lang, user_style=user_style, sys_style=sys_style,
-                config_name=config_name, engine=engine,
+                config_name=config_name,
                 time_fmt=time_fmt, direction=direction,
                 max_dur_h=max_dur_h, max_day_offset=max_day_offset,
                 year_range=year_range, index=i, seed=seed,
@@ -559,7 +551,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── interval ─────────────────────────────────────────────────────
 
     def _gen_interval(self, rng: random.Random, *, sub_type, lang, user_style,
-                      sys_style, config_name, engine, time_fmt, direction,
+                      sys_style, config_name, time_fmt, direction,
                       max_dur_h, index, seed, **_kw) -> TestCase:
         hour = rng.randint(0, 23)
         minute = rng.randint(0, 59)
@@ -579,7 +571,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         )
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -598,7 +590,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── crossing midnight ────────────────────────────────────────────
 
     def _gen_crossing_midnight(self, rng: random.Random, *, sub_type, lang,
-                               user_style, sys_style, config_name, engine,
+                               user_style, sys_style, config_name,
                                time_fmt, direction, max_dur_h, index, seed,
                                **_kw) -> TestCase:
         backward = direction == "backward" or (direction == "both" and rng.random() < 0.5)
@@ -637,7 +629,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         )
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -656,7 +648,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── noon / midnight trap ─────────────────────────────────────────
 
     def _gen_noon_midnight_trap(self, rng: random.Random, *, sub_type, lang,
-                                user_style, sys_style, config_name, engine,
+                                user_style, sys_style, config_name,
                                 time_fmt, index, seed, **_kw) -> TestCase:
         # Two trap scenarios:
         #   A) 11:XX AM → 12:XX PM  (noon crossing)
@@ -697,7 +689,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
             expected = end_str
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -718,7 +710,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── day of week ──────────────────────────────────────────────────
 
     def _gen_day_of_week(self, rng: random.Random, *, sub_type, lang, user_style,
-                         sys_style, config_name, engine, direction,
+                         sys_style, config_name, direction,
                          max_day_offset, index, seed, **_kw) -> TestCase:
         start_idx = rng.randint(0, 6)
         offset = rng.randint(1, max_day_offset)
@@ -739,7 +731,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         )
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -757,7 +749,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── impossible date ──────────────────────────────────────────────
 
     def _gen_impossible_date(self, rng: random.Random, *, sub_type, lang,
-                             user_style, sys_style, config_name, engine,
+                             user_style, sys_style, config_name,
                              index, seed, **_kw) -> TestCase:
         month, day = rng.choice(IMPOSSIBLE_DATES)
         year = rng.randint(2000, 2100)
@@ -771,7 +763,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         ).format(date=date_str)
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -789,7 +781,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── leap year ────────────────────────────────────────────────────
 
     def _gen_leap_year(self, rng: random.Random, *, sub_type, lang,
-                       user_style, sys_style, config_name, engine,
+                       user_style, sys_style, config_name,
                        year_range, index, seed, **_kw) -> TestCase:
         # Mix curated trap years with random years in range
         if rng.random() < 0.6:
@@ -805,7 +797,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         expected = "valid" if is_leap else "impossible"
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -821,7 +813,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── DST trap ─────────────────────────────────────────────────────
 
     def _gen_dst_trap(self, rng: random.Random, *, sub_type, lang,
-                      user_style, sys_style, config_name, engine,
+                      user_style, sys_style, config_name,
                       index, seed, **_kw) -> TestCase:
         entry = rng.choice(DST_SPRING_FORWARD)
         year, month, day, date_desc = entry
@@ -834,7 +826,7 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         ).format(date=date_desc, time=time_str)
 
         return self._build_test_case(
-            engine=engine, lang=lang, user_style=user_style, sys_style=sys_style,
+            lang=lang, user_style=user_style, sys_style=sys_style,
             config_name=config_name, index=index, seed=seed,
             sub_type=sub_type, question=question,
             task_params={
@@ -853,19 +845,17 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     # ── test-case builder ────────────────────────────────────────────
 
     def _build_test_case(
-        self, *, engine: PromptEngine, lang: Language, user_style: PromptStyle,
-        sys_style: SystemPromptStyle, config_name: str, index: int,
+        self, *, lang: Language, user_style: str,
+        sys_style: str, config_name: str, index: int,
         seed: int | None, sub_type: str, question: str,
         task_params: dict[str, Any],
     ) -> TestCase:
-        context = PromptContext(
-            task_type=TaskType.TIME_ARITHMETIC,
-            language=lang,
-            style=user_style,
-            system_style=sys_style,
+        language_str = lang.value
+        user_prompt = self._format_user_prompt(
+            USER_PROMPT_TEMPLATES, language_str, user_style, question=question,
         )
-        context.update(question=question)
-        result = engine.generate(context)
+        system_prompt = self._get_system_prompt(sys_style, language_str)
+        full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
         test_id = f"time_arithmetic_{index:04d}"
         return TestCase(
@@ -873,15 +863,15 @@ class TimeArithmeticGenerator(TestCaseGenerator):
             task_type="time_arithmetic",
             config_name=config_name,
             prompts={
-                "system": result.system_prompt,
-                "user": result.user_prompt,
-                "full": f"{result.system_prompt}\n\n{result.user_prompt}",
+                "system": system_prompt,
+                "user": user_prompt,
+                "full": full_prompt,
             },
             task_params=task_params,
             prompt_metadata={
-                "user_style": user_style.value,
-                "system_style": sys_style.value,
-                "language": lang.value,
+                "user_style": user_style,
+                "system_style": sys_style,
+                "language": language_str,
             },
             generation_metadata={
                 "seed": seed,

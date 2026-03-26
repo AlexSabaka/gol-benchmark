@@ -20,8 +20,7 @@ except ImportError:
     names = None
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
+from src.plugins.grid_tasks.prompts import USER_PROMPT_TEMPLATES
 from src.utils.text_table import create_table
 
 
@@ -381,7 +380,7 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
     """Generate test cases for grid tasks."""
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
+        pass  # base class helpers handle PromptEngine
 
     def get_default_config(self) -> Dict[str, Any]:
         return {
@@ -477,19 +476,14 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
             )
             
             # Create prompt
-            user_prompt = f"""Here is a data table:
-
-{table_str}
-
-Question: {question}
-
-Please provide your answer clearly."""
-            
+            user_style_str = prompt_config.get('user_style', 'casual')
             system_style_str = prompt_config.get('system_style', 'analytical')
             language_str = prompt_config.get('language', 'en')
-            sys_enum = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
-            lang_enum = safe_enum(Language, language_str, Language.EN)
-            system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
+            user_prompt = self._format_user_prompt(
+                USER_PROMPT_TEMPLATES, language_str, user_style_str,
+                table_str=table_str, question=question,
+            )
+            system_prompt = self._get_system_prompt(system_style_str, language_str)
             
             # Create test case
             test_case = TestCase(

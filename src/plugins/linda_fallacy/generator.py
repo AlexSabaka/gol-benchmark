@@ -9,15 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import (
-    PromptEngine,
-    PromptContext,
-    Language,
-    PromptStyle,
-    SystemPromptStyle,
-    TaskType,
-)
+from src.plugins.linda_fallacy.prompts import USER_PROMPT_TEMPLATES
 
 
 # Language to culture mapping
@@ -40,7 +32,6 @@ class LindaTestCaseGenerator(TestCaseGenerator):
     """
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
         self._linda_benchmark = None
 
     def _get_linda_benchmark(self, language: str, num_options: int, culture_filter: Optional[str] = None):
@@ -117,11 +108,6 @@ class LindaTestCaseGenerator(TestCaseGenerator):
         if not linda_benchmark.persona_templates:
             return []
 
-        # Map strings to enums
-        language = safe_enum(Language, language_str, Language.EN)
-        user_style = safe_enum(PromptStyle, user_style_str, PromptStyle.LINGUISTIC)
-        system_style = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
-
         # Generate test cases
         for persona_idx in range(min(personas_per_config, count)):
             if test_id >= count:
@@ -136,14 +122,6 @@ class LindaTestCaseGenerator(TestCaseGenerator):
             except Exception:
                 continue
 
-            # Create prompt context
-            context = PromptContext(
-                task_type=TaskType.LINDA_FALLACY,
-                language=language,
-                style=user_style,
-                system_style=system_style
-            )
-
             # Format persona description
             traits_str = ", ".join(persona.personality_traits)
             background_str = ". ".join(persona.background)
@@ -153,15 +131,19 @@ class LindaTestCaseGenerator(TestCaseGenerator):
                 f"{background_str}. As a student, {activities_str}."
             )
 
-            # Set Linda-specific context variables
-            context.set('persona_description', persona_description)
-            context.set('ranked_items', '\n'.join(
+            ranked_items = '\n'.join(
                 f"{i+1}. {item}" for i, item in enumerate(test_item.all_items)
-            ))
-            context.set('num_options', len(test_item.all_items))
+            )
 
             # Generate prompts
-            result = self._prompt_engine.generate(context)
+            user_prompt = self._format_user_prompt(
+                USER_PROMPT_TEMPLATES, language_str, user_style_str,
+                persona_description=persona_description,
+                ranked_items=ranked_items,
+                num_options=len(test_item.all_items),
+            )
+            system_prompt = self._get_system_prompt(system_style_str, language_str)
+            full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
             # Create test case
             test_case = TestCase(
@@ -169,9 +151,9 @@ class LindaTestCaseGenerator(TestCaseGenerator):
                 task_type='linda_fallacy',
                 config_name=config_name,
                 prompts={
-                    'system': result.system_prompt,
-                    'user': result.user_prompt,
-                    'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                    'system': system_prompt,
+                    'user': user_prompt,
+                    'full': full_prompt,
                 },
                 task_params={
                     'persona': {

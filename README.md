@@ -12,7 +12,7 @@ A procedural benchmark suite for testing multilingual LLM reasoning capabilities
 GoL Benchmark is a **semi *vibe* coded pet project evolved to experimental playground** for stress-testing how well language models handle **structured reasoning tasks** across different:
 
 - **Languages** (English, Spanish, French, German, Chinese, Ukrainian)
-- **Prompt styles** (linguistic, casual, minimal, examples-based)
+- **Prompt styles** (linguistic, casual, minimal — each plugin owns its templates)
 - **Representations** (numeric `1/0` vs emoji `🟩/🟥` and etc)
 - **Complexity levels** (from easy to nightmare mode)
 
@@ -39,6 +39,7 @@ Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, b
 | 13 | **Time Arithmetic** | Temporal reasoning — intervals, calendar math, impossible dates, AM/PM traps |
 | 14 | **Misquote Attribution** | Sycophancy detection — false quote attributions with social-pressure framings |
 | 15 | **False Premise** | Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic) |
+| 16 | **Family Relations** | Perspective-aware family counting puzzles — sibling count, shared children, generational, perspective shift |
 
 ---
 

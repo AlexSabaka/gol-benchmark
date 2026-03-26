@@ -17,8 +17,7 @@ import random
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
+from src.plugins.carwash.prompts import USER_PROMPT_TEMPLATES
 
 
 # ---------------------------------------------------------------------------
@@ -76,21 +75,14 @@ QUESTION_VARIANTS = [
 # ---------------------------------------------------------------------------
 
 
-USER_PROMPT_TEMPLATES = {
-    "minimal": "{setup}\n\n{question}",
-    "casual": "Hey, quick question: {setup}  The carwash is {distance}.  {question}",
-    "linguistic": (
-        "I have an everyday logistics question and I'd appreciate your honest advice.\n\n"
-        "{setup}  The carwash is {distance}.  {weather}{urgency}{transport}\n\n{question}"
-    ),
-}
+# Templates moved to prompts.py
 
 
 class CarwashGenerator(TestCaseGenerator):
     """Generates Carwash Paradox test cases."""
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
+        pass  # base class helpers handle PromptEngine
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
@@ -111,6 +103,7 @@ class CarwashGenerator(TestCaseGenerator):
 
         user_style = prompt_config.get("user_style", "casual")
         system_style = prompt_config.get("system_style", "analytical")
+        language = prompt_config.get("language", "en")
         config_name = prompt_config.get("name", f"{user_style}_{system_style}")
 
         # Allowed distances (can be filtered via config)
@@ -141,6 +134,7 @@ class CarwashGenerator(TestCaseGenerator):
                 config_name=config_name,
                 user_style=user_style,
                 system_style=system_style,
+                language=language,
                 dist=dist,
                 framing=framing,
                 weather=weather,
@@ -160,6 +154,7 @@ class CarwashGenerator(TestCaseGenerator):
         config_name: str,
         user_style: str,
         system_style: str,
+        language: str,
         dist: Dict,
         framing: str,
         weather: str,
@@ -170,23 +165,11 @@ class CarwashGenerator(TestCaseGenerator):
         setup = framing
         distance_str = dist["desc"]
 
-        user_template = USER_PROMPT_TEMPLATES.get(user_style, USER_PROMPT_TEMPLATES["casual"])
-        user_prompt = user_template.format(
-            setup=setup,
-            distance=distance_str,
-            weather=weather,
-            urgency=urgency,
-            transport=transport,
-            question=question,
-        ).strip()
-
-        # For minimal style the distance needs to be injected into the setup
-        if user_style == "minimal":
-            user_prompt = f"{setup} The carwash is {distance_str}. {question}".strip()
-
-        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
-        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum)
-        full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+        user_prompt, system_prompt, full_prompt = self._build_prompts(
+            USER_PROMPT_TEMPLATES, language, user_style, system_style,
+            setup=setup, distance=distance_str, weather=weather,
+            urgency=urgency, transport=transport, question=question,
+        )
 
         task_params = {
             "expected_answer": "drive",
@@ -214,6 +197,7 @@ class CarwashGenerator(TestCaseGenerator):
             prompt_metadata={
                 "user_style": user_style,
                 "system_style": system_style,
+                "language": language,
             },
             generation_metadata={
                 "seed": seed,

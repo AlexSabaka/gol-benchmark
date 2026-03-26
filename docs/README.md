@@ -1,6 +1,6 @@
 # GoL Benchmark Documentation
 
-Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 15 structured cognitive tasks.
+Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 16 structured cognitive tasks.
 
 ---
 
@@ -8,7 +8,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 | Document | Description |
 |----------|-------------|
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 15 tasks, research findings, quick start |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 16 tasks, research findings, quick start |
 | [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) | Plugin system reference, per-plugin docs, adding new plugins |
 
 ---
@@ -25,11 +25,13 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 | Document | Description |
 |----------|-------------|
-| [prompt-engine/SYSTEM_PROMPTS.md](prompt-engine/SYSTEM_PROMPTS.md) | System prompt styles (analytical, casual, adversarial) |
-| [prompt-engine/USER_PROMPTS_GOL.md](prompt-engine/USER_PROMPTS_GOL.md) | Game of Life user prompt templates |
-| [prompt-engine/USER_PROMPTS_MATH.md](prompt-engine/USER_PROMPTS_MATH.md) | Arithmetic user prompt templates |
-| [prompt-engine/USER_PROMPTS_LINDA.md](prompt-engine/USER_PROMPTS_LINDA.md) | Linda Fallacy user prompt templates |
-| [prompt-engine/MIGRATION_GUIDE.md](prompt-engine/MIGRATION_GUIDE.md) | Prompt engine migration guide |
+| [prompt-engine/SYSTEM_PROMPTS.md](prompt-engine/SYSTEM_PROMPTS.md) | System prompt styles (analytical, casual, adversarial) — **active** |
+| [prompt-engine/USER_PROMPTS_GOL.md](prompt-engine/USER_PROMPTS_GOL.md) | Game of Life user prompt templates (**deprecated** — see `src/plugins/game_of_life/prompts.py`) |
+| [prompt-engine/USER_PROMPTS_MATH.md](prompt-engine/USER_PROMPTS_MATH.md) | Arithmetic user prompt templates (**deprecated** — see `src/plugins/arithmetic/prompts.py`) |
+| [prompt-engine/USER_PROMPTS_LINDA.md](prompt-engine/USER_PROMPTS_LINDA.md) | Linda Fallacy user prompt templates (**deprecated** — see `src/plugins/linda_fallacy/prompts.py`) |
+| [prompt-engine/MIGRATION_GUIDE.md](prompt-engine/MIGRATION_GUIDE.md) | Prompt engine migration guide (updated for v2.8.0 plugin-local templates) |
+
+> **Note (v2.8.0):** User prompt templates have moved from `PromptEngine.py` to plugin-local `prompts.py` files. Each plugin in `src/plugins/<task>/prompts.py` is the canonical source. The documents above for GoL/Math/Linda are retained for historical reference. See [PLUGIN_GUIDE.md — Prompt Template Architecture](PLUGIN_GUIDE.md#prompt-template-architecture) for the current approach.
 
 ## Research
 
@@ -43,7 +45,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 ---
 
-## Benchmark Tasks (15 plugins)
+## Benchmark Tasks (16 plugins)
 
 | Task | Plugin | Answer Type |
 |------|--------|-------------|
@@ -62,6 +64,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | Time Arithmetic | `time_arithmetic` | Time / Day / Duration / "impossible" |
 | Misquote Attribution | `misquote` | Yes/No (two-part) |
 | False Premise | `false_premise` | Refusal / Compliance / Hedge |
+| Family Relations | `family_relations` | Integer (person count) |
 
 See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for detailed per-plugin documentation.
 
@@ -102,5 +105,5 @@ docs/
 
 ---
 
-**Version:** 2.6.0
+**Version:** 2.8.0
 **Last Updated:** March 2026

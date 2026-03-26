@@ -17,7 +17,7 @@ Example usage:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Type
+from typing import Any, Dict, List, Optional, Tuple, Type
 from datetime import datetime
 
 
@@ -247,6 +247,76 @@ class TestCaseGenerator(ABC):
             List of ConfigField objects describing each config parameter.
         """
         return []
+
+    # ------------------------------------------------------------------
+    # Prompt helpers (shared across all generators)
+    # ------------------------------------------------------------------
+
+    def _get_prompt_engine(self):
+        """Lazy-initialise and return the shared PromptEngine instance."""
+        if not hasattr(self, '_prompt_engine') or self._prompt_engine is None:
+            from src.core.PromptEngine import PromptEngine
+            self._prompt_engine = PromptEngine()
+        return self._prompt_engine
+
+    def _get_system_prompt(self, system_style: str, language: str = "en") -> str:
+        """Return the system prompt for *system_style* and *language*.
+
+        Wraps ``PromptEngine.get_system_prompt_by_enum()`` with safe enum
+        parsing so callers can pass plain strings.
+        """
+        from src.core.PromptEngine import SystemPromptStyle, Language
+        from src.plugins.parse_utils import safe_enum
+
+        engine = self._get_prompt_engine()
+        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
+        lang_enum = safe_enum(Language, language, Language.EN)
+        return engine.get_system_prompt_by_enum(sys_enum, lang_enum)
+
+    @staticmethod
+    def _format_user_prompt(
+        templates: Dict[str, Dict[str, str]],
+        language: str,
+        style: str,
+        **variables: Any,
+    ) -> str:
+        """Look up and render a user-prompt template.
+
+        Args:
+            templates: ``{"en": {"minimal": "...", "casual": "...", ...}, ...}``
+            language: Language code (e.g. ``"en"``, ``"fr"``).
+            style: User-prompt style (e.g. ``"minimal"``, ``"casual"``, ``"linguistic"``).
+            **variables: Substitution variables passed to ``str.format()``.
+
+        Returns:
+            Rendered prompt string.  Falls back to ``"en"`` for language
+            and ``"casual"`` for style when the requested key is missing.
+        """
+        lang_templates = templates.get(language, templates.get("en", {}))
+        template = lang_templates.get(style, lang_templates.get("casual", ""))
+        return template.format(**variables).strip()
+
+    def _build_prompts(
+        self,
+        templates: Dict[str, Dict[str, str]],
+        language: str,
+        user_style: str,
+        system_style: str,
+        **variables: Any,
+    ) -> Tuple[str, str, str]:
+        """Build user, system, and full prompts in one call.
+
+        Returns:
+            ``(user_prompt, system_prompt, full_prompt)``
+        """
+        user_prompt = self._format_user_prompt(
+            templates, language, user_style, **variables
+        )
+        system_prompt = self._get_system_prompt(system_style, language)
+        full_prompt = (
+            f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+        )
+        return user_prompt, system_prompt, full_prompt
 
 
 class ResponseParser(ABC):

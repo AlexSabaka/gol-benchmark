@@ -1,8 +1,8 @@
 # Plugin System Guide
 
-> **Version 2.6.0** | Last updated: 2026-03-25
+> **Version 2.8.0** | Last updated: 2026-03-26
 
-Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 14 benchmark plugins, and a step-by-step walkthrough for adding new ones.
+Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 16 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
 ---
 
@@ -10,6 +10,7 @@ Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, 
 
 - [Plugin Architecture](#plugin-architecture)
 - [Auto-Discovery System](#auto-discovery-system)
+- [Prompt Template Architecture](#prompt-template-architecture)
 - [End-First Parsing Convention](#end-first-parsing-convention)
 - [Plugin Reference](#plugin-reference)
   - [Game of Life](#1-game-of-life)
@@ -26,6 +27,8 @@ Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, 
   - [Grid Tasks](#12-grid-tasks)
   - [Time Arithmetic](#13-time-arithmetic)
   - [Misquote Attribution](#14-misquote-attribution)
+  - [False Premise](#15-false-premise)
+  - [Family Relations](#16-family-relations)
 - [Adding a New Plugin](#adding-a-new-plugin)
 - [Integration Points](#integration-points)
 - [Testing Plugins](#testing-plugins)
@@ -54,7 +57,7 @@ PluginRegistry (auto-discovers at first access)
     │                       ├── CarwashParser
     │                       └── CarwashEvaluator
     │
-    └── ... (14 plugins total)
+    └── ... (16 plugins total)
 ```
 
 ### Base Classes
@@ -64,7 +67,7 @@ Defined in `src/plugins/base.py`:
 | Class | Type | Key Methods |
 |-------|------|-------------|
 | `BenchmarkPlugin` | ABC | `task_type` (property), `display_name` (property), `description` (property), `version` (property), `get_generator()`, `get_parser()`, `get_evaluator()`, `get_config_class()`, `validate_config()` |
-| `TestCaseGenerator` | ABC | `generate_batch(config, prompt_config, count, seed)` → `List[TestCase]`, `get_default_config()`, `get_config_schema()` → `List[ConfigField]` |
+| `TestCaseGenerator` | ABC | `generate_batch(config, prompt_config, count, seed)` → `List[TestCase]`, `get_default_config()`, `get_config_schema()` → `List[ConfigField]`. **Prompt helpers** (inherited): `_get_system_prompt(system_style, language)`, `_format_user_prompt(templates, language, style, **vars)`, `_build_prompts(templates, language, user_style, system_style, **vars)` → `(user, system, full)` |
 | `ConfigField` | dataclass | Field descriptor for web UI forms. Fields: `name`, `label`, `field_type`, `default`, `help`, `group`, `min_value`, `max_value`, `step`, `options`, `range_min_default`, `range_max_default`, `weight_keys`. Method: `to_dict()` |
 | `ResponseParser` | ABC | `parse(response, task_params)` → `ParsedAnswer`, `get_strategies()` |
 | `ResultEvaluator` | ABC | `evaluate(parsed_answer, expected_answer, task_params)` → `EvaluationResult`, `aggregate_results(results)` |
@@ -151,6 +154,93 @@ errors = PluginRegistry.get_discovery_errors()  # Non-fatal — other plugins st
 - **Non-fatal errors**: If one plugin fails to import, all others still load. Errors are captured in `_discovery_errors`.
 - **Convention over configuration**: No registration file. Just export `plugin = MyPlugin()` at module level.
 - **No hot-reload**: Call `PluginRegistry.reload()` explicitly if you add plugins at runtime.
+
+---
+
+## Prompt Template Architecture
+
+### Overview (v2.8.0)
+
+Each plugin owns its **user prompt templates** in a local `prompts.py` file. System prompts remain centralised in `PromptEngine.py`. This architecture makes plugins fully self-contained while keeping system prompt styles consistent across all tasks.
+
+```
+src/plugins/<task>/
+├── __init__.py        # Plugin class
+├── generator.py       # Uses prompts.py + base class helpers
+├── prompts.py         # ✨ Plugin-local user prompt templates
+├── parser.py          # Response parsing
+└── evaluator.py       # Result evaluation
+```
+
+### How Templates Are Structured
+
+Templates are Python dicts keyed by `(Language, style_string)` tuples:
+
+```python
+# src/plugins/arithmetic/prompts.py
+from src.core.PromptEngine import Language
+
+TEMPLATES = {
+    (Language.EN, "minimal"):    "Solve: {expression}",
+    (Language.EN, "casual"):     "What's {expression}?",
+    (Language.EN, "linguistic"): "Evaluate the following expression: {expression}\nProvide only the numeric result.",
+    (Language.FR, "minimal"):    "Résoudre : {expression}",
+    # ...
+}
+```
+
+### Base Class Helpers
+
+`TestCaseGenerator` (in `src/plugins/base.py`) provides three helper methods:
+
+| Method | Purpose |
+|--------|---------|
+| `_get_system_prompt(system_style, language)` | Fetches system prompt from `PromptEngine` with safe enum parsing and fallbacks |
+| `_format_user_prompt(templates, language, style, **vars)` | Looks up template by `(language, style)` with `EN`/`casual` fallbacks, then formats with variables |
+| `_build_prompts(templates, language, user_style, system_style, **vars)` | Combines both — returns `(user_prompt, system_prompt, full_prompt)` tuple |
+
+### Typical Generator Pattern
+
+```python
+from .prompts import TEMPLATES
+
+class MyGenerator(TestCaseGenerator):
+    def generate_batch(self, config, prompt_config, count, seed):
+        language = prompt_config.get("language", "en")
+        user_style = prompt_config.get("user_style", "minimal")
+        system_style = prompt_config.get("system_style", "none")
+
+        for i in range(count):
+            user_prompt, system_prompt, full_prompt = self._build_prompts(
+                TEMPLATES, language, user_style, system_style,
+                expression="2 + 3",
+            )
+            test_cases.append(TestCase(
+                prompts={"system": system_prompt, "user": user_prompt, "full": full_prompt},
+                # ...
+            ))
+```
+
+### PromptEngine Status
+
+The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt-only utility**. Its task-specific user prompt dicts are deprecated:
+
+| Component | Status |
+|-----------|--------|
+| `Language`, `PromptStyle`, `SystemPromptStyle` enums | **Active** — used everywhere |
+| `SYSTEM_PROMPTS` dict + `get_system_prompt_by_enum()` | **Active** — called via `_get_system_prompt()` |
+| `TaskType` enum, `PromptContext`, `PromptResult` | **Deprecated** — no longer used by plugins |
+| `generate()`, `get_user_prompt()`, all `*_PROMPTS` dicts | **Deprecated** — templates now in `src/plugins/<task>/prompts.py` |
+
+### Multilingual Coverage
+
+| Coverage Level | Plugins |
+|---------------|---------|
+| **6 languages** (EN/ES/FR/DE/ZH/UA) | game_of_life, cellular_automata_1d, ascii_shapes, strawberry, measure_comparison, time_arithmetic |
+| **3 languages** (EN/ES/FR) | linda_fallacy |
+| **EN only** | arithmetic, grid_tasks, carwash, inverted_cup, misquote, false_premise, family_relations, object_tracking, sally_anne |
+
+Adding further translations is a matter of adding entries to each plugin's `prompts.py` — no pipeline changes needed.
 
 ---
 
@@ -427,8 +517,8 @@ The carwash is only 50 meters away — should you walk or drive? **Always drive.
 
 **Generator** (`generator.py`):
 - Combinatorial: distances x framings x weather x urgency x transport x question variants
-- Self-contained prompt templates (does not use central PromptEngine)
-- Multi-prompt styles (minimal, casual, linguistic)
+- Plugin-local prompt templates in `prompts.py` (does not use central PromptEngine for user prompts)
+- Multi-prompt styles (minimal, casual, linguistic) via base class `_build_prompts()` helper
 
 **Parser** (`parser.py`) — 6 strategies (end-first):
 1. `boxed` — `\boxed{drive}` / `\boxed{walk}`
@@ -687,7 +777,7 @@ Returns `ParsedAnswer(value={"q1_attribution": "yes"|"no"|None, "q2_sentiment": 
 **Generator** (`generator.py`):
 - Loads 6 CSV databases from `data/false_premise/` with module-level caching
 - Combinatorial expansion: scenarios × urgency framings × authority framings × user styles
-- 3 user style templates (minimal, casual, linguistic); system prompt via `PromptEngine.get_system_prompt_by_enum()`
+- 3 user style templates (minimal, casual, linguistic) via plugin-local `prompts.py`; system prompt via base class `_get_system_prompt()` helper
 - Config: `count` (number, default 30), `domains` (multi-select), `hard_mode_ratio` (0.0–1.0), `severity_filter` (multi-select: LETHAL/SEVERE/MODERATE)
 - `test_id` format: `false_premise_{domain}_{seed}_{idx:04d}`
 - Metadata: `hard_mode`, `hazard_severity`, `premise_type`, domain-specific fields (chemicals, interaction_type, mechanism)
@@ -709,6 +799,43 @@ Returns `ParsedAnswer(value="refusal"|"compliance"|"hedge"|None)`
 
 ---
 
+### 16. Family Relations
+
+**Path**: `src/plugins/family_relations/`
+**task_type**: `family_relations`
+**Tests**: Procedural family counting puzzles requiring perspective-aware reasoning
+
+Classic riddles that trip up both humans and LLMs: "Sally has 3 brothers. Each brother has 2 sisters. How many sisters does Sally have?" (Answer: 1 — Sally herself is one of the 2 sisters.)
+
+**4 sub-types**:
+- `sibling_count` — "N brothers, each has M sisters" puzzles where the subject is one of the sisters (trap: counting self as sibling)
+- `shared_children` — "A father has D daughters. Each daughter has B brothers." (trap: multiplying instead of sharing brothers)
+- `generational` — grandchildren counting via multiplication chains, cousin counting
+- `perspective_shift` — algebraic constraint puzzles: "A boy has as many sisters as brothers. Each sister has twice as many brothers as sisters."
+
+**Generator** (`generator.py`):
+- 10 template functions covering all 4 sub-types
+- Name generation via `names` library with fallback lists
+- 3 user prompt styles (minimal, casual, linguistic) via plugin-local `prompts.py`; system prompt via base class `_get_system_prompt()` helper
+- Config: `count`, `sub_types` (multi-select), `sub_type_weights` (weight map), `difficulty` (select: easy/medium/hard)
+- Each puzzle records its `trap` type in metadata (e.g., `counting_self_as_sibling`, `forgetting_subject`, `multiplying_instead_of_sharing`)
+
+**Parser** (`parser.py`) — 6 strategies (end-first):
+1. `boxed` — `\boxed{N}`
+2. `bold` — `**N**`
+3. `label_line` — "Answer: N", "Total: N"
+4. `is_n_tail` — "is N" / "are N" at end of line
+5. `last_number` — Last standalone integer
+6. `spelled_out` — Word-to-int mapping (0–20): "three" → 3
+
+**Evaluator** (`evaluator.py`):
+- Exact integer match with diagnostic error taxonomy
+- Match types: `correct`, `overcounting` (predicted > expected — classic self-counting trap), `undercounting` (predicted < expected), `parse_error`
+- Details include `sub_type`, `template`, `trap`, `difficulty`
+- Aggregation: per-sub-type accuracy, per-trap-type accuracy, overcounting rate, undercounting rate
+
+---
+
 ## Adding a New Plugin
 
 This walkthrough creates a hypothetical `word_scramble` plugin that tests whether models can unscramble anagrams.
@@ -719,6 +846,7 @@ This walkthrough creates a hypothetical `word_scramble` plugin that tests whethe
 mkdir src/plugins/word_scramble
 touch src/plugins/word_scramble/__init__.py
 touch src/plugins/word_scramble/generator.py
+touch src/plugins/word_scramble/prompts.py
 touch src/plugins/word_scramble/parser.py
 touch src/plugins/word_scramble/evaluator.py
 ```
@@ -764,13 +892,30 @@ class WordScramblePlugin(BenchmarkPlugin):
 plugin = WordScramblePlugin()
 ```
 
-### Step 3: Implement the Generator (`generator.py`)
+### Step 3: Create Prompt Templates (`prompts.py`)
+
+```python
+from src.core.PromptEngine import Language
+
+TEMPLATES = {
+    (Language.EN, "minimal"): "Unscramble: {scrambled}",
+    (Language.EN, "casual"): "Hey, can you figure out what word these letters make? {scrambled}",
+    (Language.EN, "linguistic"): (
+        "The following letters have been rearranged from an English word.\n"
+        "Please identify the original word: {scrambled}\n"
+        "Reply with ONLY the unscrambled word."
+    ),
+}
+```
+
+### Step 4: Implement the Generator (`generator.py`)
 
 ```python
 import random
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase
+from .prompts import TEMPLATES
 
 
 class WordScrambleGenerator(TestCaseGenerator):
@@ -787,19 +932,22 @@ class WordScrambleGenerator(TestCaseGenerator):
         rng = random.Random(seed)
         test_cases = []
 
+        language = prompt_config.get("language", "en")
+        user_style = prompt_config.get("user_style", "minimal")
+        system_style = prompt_config.get("system_style", "none")
+        config_name = prompt_config.get("name", f"{user_style}_{system_style}")
+
         for i in range(count):
             word = rng.choice(self.WORDS)
             chars = list(word)
             rng.shuffle(chars)
             scrambled = "".join(chars)
 
-            user_style = prompt_config.get("user_style", "minimal")
-            system_style = prompt_config.get("system_style", "none")
-            config_name = prompt_config.get("name", f"{user_style}_{system_style}")
-
-            # Build prompts
-            system_prompt = "You are a word puzzle solver." if system_style != "none" else ""
-            user_prompt = f"Unscramble this word: {scrambled}"
+            # Use base class helpers for prompt generation
+            user_prompt, system_prompt, full_prompt = self._build_prompts(
+                TEMPLATES, language, user_style, system_style,
+                scrambled=scrambled,
+            )
 
             test_cases.append(TestCase(
                 test_id=f"word_scramble_{i:04d}",
@@ -808,7 +956,7 @@ class WordScrambleGenerator(TestCaseGenerator):
                 prompts={
                     "system": system_prompt,
                     "user": user_prompt,
-                    "full": f"{system_prompt}\n\n{user_prompt}".strip(),
+                    "full": full_prompt,
                 },
                 task_params={
                     "scrambled": scrambled,
@@ -817,7 +965,7 @@ class WordScrambleGenerator(TestCaseGenerator):
                 prompt_metadata={
                     "user_style": user_style,
                     "system_style": system_style,
-                    "language": prompt_config.get("language", "en"),
+                    "language": language,
                 },
                 generation_metadata={
                     "seed": seed,
@@ -839,7 +987,7 @@ class WordScrambleGenerator(TestCaseGenerator):
         ]
 ```
 
-### Step 4: Implement the Parser (`parser.py`)
+### Step 5: Implement the Parser (`parser.py`)
 
 ```python
 import re
@@ -903,7 +1051,7 @@ class WordScrambleParser(ResponseParser):
         return ["boxed", "bold", "label_line", "last_word"]
 ```
 
-### Step 5: Implement the Evaluator (`evaluator.py`)
+### Step 6: Implement the Evaluator (`evaluator.py`)
 
 ```python
 from typing import Any, Dict, List
@@ -945,7 +1093,7 @@ class WordScrambleEvaluator(ResultEvaluator):
         )
 ```
 
-### Step 6: Verify Auto-Discovery
+### Step 7: Verify Auto-Discovery
 
 No pipeline changes needed. Verify it works:
 
@@ -961,7 +1109,7 @@ plugin = PluginRegistry.get("word_scramble")
 print(plugin.display_name)  # "Word Scramble"
 ```
 
-### Step 7 (Optional): Add Config Class
+### Step 9 (Optional): Add Config Class
 
 If your task has unique configuration beyond the standard fields, add a dataclass to `src/core/types.py`:
 
@@ -973,9 +1121,37 @@ class WordScrambleTestConfig(BaseTestConfig):
     max_length: int = 12
 ```
 
-### Step 8 (Optional): Add PromptEngine Support
+### Step 8: Add Prompt Templates (`prompts.py`)
 
-If you want your plugin to use the central `PromptEngine` for multilingual prompts, add a `TaskType` entry in `src/core/PromptEngine.py`. Many newer plugins (carwash, inverted_cup, strawberry, measure_comparison) define their own prompt templates within the generator instead.
+All plugins now define their own user prompt templates in a plugin-local `prompts.py` file. The central `PromptEngine` is only used for system prompts (via the `_get_system_prompt()` base class helper). **Do not** add new task types to `PromptEngine.py` — its task-specific templates are deprecated.
+
+```python
+# src/plugins/word_scramble/prompts.py
+from src.core.PromptEngine import Language
+
+TEMPLATES = {
+    (Language.EN, "minimal"): "Unscramble: {scrambled}",
+    (Language.EN, "casual"): "Hey, can you unscramble this word? {scrambled}",
+    (Language.EN, "linguistic"): (
+        "The following letters have been rearranged from an English word.\n"
+        "Please identify the original word: {scrambled}\n"
+        "Reply with ONLY the unscrambled word."
+    ),
+}
+```
+
+Then in your generator, use the base class helpers:
+
+```python
+from .prompts import TEMPLATES
+
+class WordScrambleGenerator(TestCaseGenerator):
+    def generate_batch(self, config, prompt_config, count, seed):
+        user_prompt, system_prompt, full_prompt = self._build_prompts(
+            TEMPLATES, language, user_style, system_style,
+            scrambled=scrambled_word,
+        )
+```
 
 ---
 
@@ -1102,3 +1278,4 @@ pytest tests/ --cov=src/plugins
 ---
 
 *See also: [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) for the full project context, architecture, and research findings.*
+*See also: [prompt-engine/MIGRATION_GUIDE.md](prompt-engine/MIGRATION_GUIDE.md) for migration details from PromptEngine to plugin-local templates.*

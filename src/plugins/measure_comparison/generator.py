@@ -38,8 +38,7 @@ from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
+from src.plugins.measure_comparison.prompts import USER_PROMPT_TEMPLATES
 
 # =========================================================================
 # Unit System
@@ -291,67 +290,7 @@ QUESTION_TEMPLATES: Dict[str, List[str]] = {
 }
 
 # ---------------------------------------------------------------------------
-# User prompt templates  {lang: {style: template}}
-# Placeholder: {question}
-# ---------------------------------------------------------------------------
-
-USER_PROMPT_TEMPLATES: Dict[str, Dict[str, str]] = {
-    "en": {
-        "minimal": "{question}\n\nAnswer:",
-        "casual": "Hey, quick question — {question}",
-        "linguistic": (
-            "I have a measurement comparison question for you.\n\n"
-            "{question}\n\n"
-            "Please provide just the winning measurement "
-            "(or 'equal' / 'incomparable' if applicable)."
-        ),
-    },
-    "es": {
-        "minimal": "{question}\n\nRespuesta:",
-        "casual": "Oye, pregunta rápida — {question}",
-        "linguistic": (
-            "Tengo una pregunta sobre comparación de medidas.\n\n"
-            "{question}\n\n"
-            "Por favor, proporciona solo la medida ganadora."
-        ),
-    },
-    "fr": {
-        "minimal": "{question}\n\nRéponse :",
-        "casual": "Salut, petite question — {question}",
-        "linguistic": (
-            "J'ai une question de comparaison de mesures.\n\n"
-            "{question}\n\n"
-            "Veuillez fournir uniquement la mesure gagnante."
-        ),
-    },
-    "de": {
-        "minimal": "{question}\n\nAntwort:",
-        "casual": "Hey, kurze Frage — {question}",
-        "linguistic": (
-            "Ich habe eine Frage zum Vergleich von Maßeinheiten.\n\n"
-            "{question}\n\n"
-            "Bitte geben Sie nur die größere Messung an."
-        ),
-    },
-    "zh": {
-        "minimal": "{question}\n\n答案：",
-        "casual": "嘿，快问一下——{question}",
-        "linguistic": (
-            "我有一个关于测量比较的问题。\n\n"
-            "{question}\n\n"
-            "请只提供较大的测量值。"
-        ),
-    },
-    "ua": {
-        "minimal": "{question}\n\nВідповідь:",
-        "casual": "Привіт, швидке питання — {question}",
-        "linguistic": (
-            "У мене є питання про порівняння вимірювань.\n\n"
-            "{question}\n\n"
-            "Будь ласка, надайте лише більше вимірювання."
-        ),
-    },
-}
+# User prompt templates moved to prompts.py
 
 
 # =========================================================================
@@ -362,7 +301,7 @@ class MeasureComparisonGenerator(TestCaseGenerator):
     """Generates measurement-comparison test cases."""
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
+        pass  # base class helpers handle PromptEngine
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
@@ -890,13 +829,11 @@ class MeasureComparisonGenerator(TestCaseGenerator):
             unit2=u2_sym,
         )
 
-        user_templates = USER_PROMPT_TEMPLATES.get(language, USER_PROMPT_TEMPLATES["en"])
-        user_template = user_templates.get(user_style, user_templates["casual"])
-        user_prompt = user_template.format(question=question).strip()
+        user_prompt = self._format_user_prompt(
+            USER_PROMPT_TEMPLATES, language, user_style, question=question,
+        )
 
-        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
-        lang_enum = safe_enum(Language, language, Language.EN)
-        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
+        system_prompt = self._get_system_prompt(system_style, language)
 
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 

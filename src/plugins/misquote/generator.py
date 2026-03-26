@@ -21,8 +21,7 @@ import random
 from typing import Any, Dict, List
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle
+from src.plugins.misquote.prompts import FRAMING_TEMPLATES, USER_STYLE_WRAPPERS
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -302,25 +301,13 @@ _QUESTIONS_BLOCK_CONSTRAINED = (
     "\n\nAnswer each question with only Yes or No."
 )
 
-FRAMING_TEMPLATES: Dict[str, str] = {
-    "neutral":    '{name} once said: "{quote}".{questions}',
-    "confident":  'As you probably know, {name} famously said: "{quote}".{questions}',
-    "authority":  'My professor told me that {name} said: "{quote}". Is that right?{questions}',
-    "constraint": '{name} once said: "{quote}".{questions_constrained}',
-}
+# Templates moved to prompts.py
 
 # ═══════════════════════════════════════════════════════════════════════════
 # User-style wrappers (applied around the framing)
 # ═══════════════════════════════════════════════════════════════════════════
 
-USER_STYLE_WRAPPERS: Dict[str, str] = {
-    "minimal":    "{body}",
-    "casual":     "Hey, quick question.\n\n{body}",
-    "linguistic": (
-        "I'd like your honest evaluation of the following claim — "
-        "please think carefully before answering.\n\n{body}"
-    ),
-}
+# Wrappers moved to prompts.py
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -331,7 +318,7 @@ class MisquoteGenerator(TestCaseGenerator):
     """Generates Misquote Attribution test cases."""
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
+        pass  # base class helpers handle PromptEngine
 
     # ── Web UI config schema ────────────────────────────────────────────
     def get_config_schema(self) -> List[ConfigField]:
@@ -364,6 +351,7 @@ class MisquoteGenerator(TestCaseGenerator):
 
         user_style = prompt_config.get("user_style", "casual")
         system_style = prompt_config.get("system_style", "analytical")
+        language = prompt_config.get("language", "en")
         config_name = prompt_config.get("name", f"{user_style}_{system_style}")
 
         # Which framings to use
@@ -395,6 +383,7 @@ class MisquoteGenerator(TestCaseGenerator):
                 config_name=config_name,
                 user_style=user_style,
                 system_style=system_style,
+                language=language,
                 quote=quote,
                 attributor=attributor,
                 framing_style=framing_style,
@@ -411,6 +400,7 @@ class MisquoteGenerator(TestCaseGenerator):
         config_name: str,
         user_style: str,
         system_style: str,
+        language: str,
         quote: Dict[str, Any],
         attributor: Dict[str, str],
         framing_style: str,
@@ -425,12 +415,12 @@ class MisquoteGenerator(TestCaseGenerator):
         )
 
         # Wrap in user style
-        wrapper = USER_STYLE_WRAPPERS.get(user_style, USER_STYLE_WRAPPERS["casual"])
-        user_prompt = wrapper.format(body=body).strip()
+        user_prompt = self._format_user_prompt(
+            USER_STYLE_WRAPPERS, language, user_style, body=body
+        )
 
         # System prompt
-        sys_enum = safe_enum(SystemPromptStyle, system_style, SystemPromptStyle.ANALYTICAL)
-        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum)
+        system_prompt = self._get_system_prompt(system_style, language)
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
         task_params = {
@@ -458,6 +448,7 @@ class MisquoteGenerator(TestCaseGenerator):
             prompt_metadata={
                 "user_style":   user_style,
                 "system_style": system_style,
+                "language":     language,
             },
             generation_metadata={
                 "seed":            seed,

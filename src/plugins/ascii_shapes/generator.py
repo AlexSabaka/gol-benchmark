@@ -6,19 +6,10 @@ with questions about dimensions, counts, and positions.
 """
 
 from datetime import datetime
-from turtle import shape
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import (
-    PromptEngine,
-    PromptContext,
-    Language,
-    PromptStyle,
-    SystemPromptStyle,
-    TaskType,
-)
+from src.plugins.ascii_shapes.prompts import USER_PROMPT_TEMPLATES
 
 
 class AsciiShapesTestCaseGenerator(TestCaseGenerator):
@@ -30,7 +21,6 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
     """
 
     def __init__(self):
-        self._prompt_engine = PromptEngine()
         self._shapes_generator = None
 
     def _get_shapes_generator(self, seed: Optional[int] = None):
@@ -81,11 +71,6 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
         user_style_str = prompt_config.get('user_style', 'linguistic')
         system_style_str = prompt_config.get('system_style', 'analytical')
         config_name = prompt_config.get('name', f"{user_style_str}_{system_style_str}")
-
-        # Map strings to enums
-        language = safe_enum(Language, language_str, Language.EN)
-        user_style = safe_enum(PromptStyle, user_style_str, PromptStyle.LINGUISTIC)
-        system_style = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
 
         # Generate tests
         rng = shapes_generator.rng
@@ -158,21 +143,14 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
                     'question': self._generate_question(question_type, x if question_type == 'position' else None, y if question_type == 'position' else None),
                 }
 
-            # Create prompt context
-            context = PromptContext(
-                task_type=TaskType.ASCII_SHAPES,
-                language=language,
-                style=user_style,
-                system_style=system_style
-            )
-
-            # Set shape-specific context
-            context.set('shape', shape.get('rendered', ''))
-            context.set('question', shape.get('question', ''))
-            context.set('question_type', question_type)
-
             # Generate prompts
-            result = self._prompt_engine.generate(context)
+            user_prompt = self._format_user_prompt(
+                USER_PROMPT_TEMPLATES, language_str, user_style_str,
+                shape=shape.get('rendered', ''),
+                question=shape.get('question', ''),
+            )
+            system_prompt = self._get_system_prompt(system_style_str, language_str)
+            full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
 
             # Create test case
             test_case = TestCase(
@@ -180,9 +158,9 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
                 task_type='ascii_shapes',
                 config_name=config_name,
                 prompts={
-                    'system': result.system_prompt,
-                    'user': result.user_prompt,
-                    'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                    'system': system_prompt,
+                    'user': user_prompt,
+                    'full': full_prompt,
                 },
                 task_params={
                     'width': width,

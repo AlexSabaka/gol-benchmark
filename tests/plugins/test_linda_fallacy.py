@@ -3,9 +3,9 @@ Unit tests for Linda Fallacy plugin.
 """
 
 import pytest
-from src.plugins.linda_fallacy.generator import LindaFallacyTestCaseGenerator
-from src.plugins.linda_fallacy.parser import LindaFallacyResponseParser
-from src.plugins.linda_fallacy.evaluator import LindaFallacyResultEvaluator
+from src.plugins.linda_fallacy.generator import LindaTestCaseGenerator
+from src.plugins.linda_fallacy.parser import LindaResponseParser
+from src.plugins.linda_fallacy.evaluator import LindaResultEvaluator
 from src.plugins.base import TestCase, ParsedAnswer
 
 
@@ -14,7 +14,7 @@ class TestLindaFallacyGenerator:
 
     def test_generate_batch_basic(self):
         """Test basic batch generation."""
-        generator = LindaFallacyTestCaseGenerator()
+        generator = LindaTestCaseGenerator()
 
         config = generator.get_default_config()
         prompt_config = {
@@ -37,7 +37,7 @@ class TestLindaFallacyGenerator:
 
     def test_generate_with_seed_reproducibility(self):
         """Test that same seed produces same test cases."""
-        generator = LindaFallacyTestCaseGenerator()
+        generator = LindaTestCaseGenerator()
 
         config = generator.get_default_config()
         prompt_config = {
@@ -59,7 +59,7 @@ class TestLindaFallacyParser:
 
     def test_parse_numbered_list(self):
         """Test parsing numbered ranking list."""
-        parser = LindaFallacyResponseParser()
+        parser = LindaResponseParser()
 
         response = """
         Based on the description:
@@ -81,7 +81,7 @@ class TestLindaFallacyParser:
 
     def test_parse_keywords(self):
         """Test parsing with keywords like 'most likely'."""
-        parser = LindaFallacyResponseParser()
+        parser = LindaResponseParser()
 
         response = """
         Most likely: Teacher and activist
@@ -101,7 +101,7 @@ class TestLindaFallacyParser:
 
     def test_parse_ambiguous(self):
         """Test parsing ambiguous response."""
-        parser = LindaFallacyResponseParser()
+        parser = LindaResponseParser()
 
         response = "I'm not sure about the ranking."
 
@@ -121,7 +121,7 @@ class TestLindaFallacyEvaluator:
 
     def test_evaluate_conjunction_fallacy(self):
         """Test detection of conjunction fallacy."""
-        evaluator = LindaFallacyResultEvaluator()
+        evaluator = LindaResultEvaluator()
 
         # Fallacy: conjunction ranked higher than components
         parsed_answer = ParsedAnswer(
@@ -143,7 +143,7 @@ class TestLindaFallacyEvaluator:
 
     def test_evaluate_correct_ranking(self):
         """Test correct ranking (no fallacy)."""
-        evaluator = LindaFallacyResultEvaluator()
+        evaluator = LindaResultEvaluator()
 
         # Correct: components ranked higher than conjunction
         parsed_answer = ParsedAnswer(
@@ -165,7 +165,7 @@ class TestLindaFallacyEvaluator:
 
     def test_evaluate_parse_error(self):
         """Test evaluation with parse error."""
-        evaluator = LindaFallacyResultEvaluator()
+        evaluator = LindaResultEvaluator()
 
         parsed_answer = ParsedAnswer(
             value=None,
@@ -190,9 +190,9 @@ class TestLindaFallacyRoundtrip:
 
     def test_roundtrip_basic(self):
         """Test complete pipeline."""
-        generator = LindaFallacyTestCaseGenerator()
-        parser = LindaFallacyResponseParser()
-        evaluator = LindaFallacyResultEvaluator()
+        generator = LindaTestCaseGenerator()
+        parser = LindaResponseParser()
+        evaluator = LindaResultEvaluator()
 
         # Generate test case
         config = generator.get_default_config()

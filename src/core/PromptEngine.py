@@ -1,13 +1,17 @@
 """
-Unified Prompt Engine for managing system prompts and user prompts
-across different tasks, styles, and languages.
+Prompt Engine — system prompts, enums, and legacy task-specific templates.
 
-Architecture:
-- PromptTemplate: Base class for defining prompt structure
-- SystemPromptTemplate: Manages system-level instructions
-- UserPromptTemplate: Manages user-level task prompts
-- PromptContext: Holds variables for prompt rendering
-- PromptEngine: Main orchestrator for prompt generation
+Active exports (used by plugin system):
+    Language, PromptStyle, SystemPromptStyle   — enums
+    SYSTEM_PROMPTS                             — system prompt templates by language/style
+    PromptEngine.get_system_prompt_by_enum()   — lookup system prompt by enums
+
+Deprecated (kept for backward-compatible legacy fallbacks in generate_testset.py):
+    TaskType, PromptContext, PromptResult       — legacy dataclasses
+    PromptEngine.generate() / get_user_prompt() — legacy generation path
+    GAME_OF_LIFE_PROMPTS, MATH_EXPRESSION_PROMPTS, etc. — task-specific templates
+        → now live in each plugin's prompts.py (src/plugins/<task>/prompts.py)
+    create_gol_context(), create_math_context(), etc. — convenience factories
 """
 
 from dataclasses import dataclass, field
@@ -260,7 +264,8 @@ Priorisieren Sie Eleganz und Einfachheit in Ihren Denkwegen.""",
 }
 
 
-# ==================== GAME OF LIFE PROMPTS ====================
+# ==================== GAME OF LIFE PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/game_of_life/prompts.py
 
 GAME_OF_LIFE_PROMPTS = {
     Language.EN: {
@@ -471,7 +476,8 @@ Nächster:""",
 }
 
 
-# ==================== MATH EXPRESSION PROMPTS ====================
+# ==================== MATH EXPRESSION PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/arithmetic/prompts.py
 
 MATH_EXPRESSION_PROMPTS = {
     Language.EN: {
@@ -523,7 +529,8 @@ Final result: """,
 }
 
 
-# Linda Conjunction Fallacy Prompts
+# Linda Conjunction Fallacy Prompts (DEPRECATED)
+# Canonical templates now in src/plugins/linda_fallacy/prompts.py
 LINDA_FALLACY_PROMPTS = {
     Language.EN: {
         PromptStyle.LINGUISTIC: """Consider the following description:
@@ -626,7 +633,8 @@ CLASSEMENT :""",
 }
 
 
-# ==================== CELLULAR AUTOMATA 1D PROMPTS ====================
+# ==================== CELLULAR AUTOMATA 1D PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/cellular_automata_1d/prompts.py
 
 CELLULAR_AUTOMATA_1D_PROMPTS = {
     Language.EN: {
@@ -875,7 +883,8 @@ Nächste:""",
 }
 
 
-# ==================== ASCII SHAPES PROMPTS ====================
+# ==================== ASCII SHAPES PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/ascii_shapes/prompts.py
 
 ASCII_SHAPES_PROMPTS = {
     Language.EN: {
@@ -1033,7 +1042,8 @@ Antwort: {answer_format}""",
 }
 
 
-# ==================== OBJECT TRACKING PROMPTS ====================
+# ==================== OBJECT TRACKING PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/object_tracking/prompts.py
 
 OBJECT_TRACKING_PROMPTS = {
     Language.EN: {
@@ -1157,7 +1167,8 @@ Antwort:""",
 }
 
 
-# ==================== SALLY-ANNE PROMPTS ====================
+# ==================== SALLY-ANNE PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/sally_anne/prompts.py
 
 SALLY_ANNE_PROMPTS = {
     Language.EN: {
@@ -1298,7 +1309,8 @@ Antwort:""",
 }
 
 
-# ==================== TIME ARITHMETIC PROMPTS ====================
+# ==================== TIME ARITHMETIC PROMPTS (DEPRECATED) ====================
+# Canonical templates now in src/plugins/time_arithmetic/prompts.py
 
 TIME_ARITHMETIC_PROMPTS = {
     Language.EN: {
@@ -1563,7 +1575,8 @@ class PromptEngine:
         }
 
 
-# ==================== CONVENIENCE FUNCTIONS ====================
+# ==================== CONVENIENCE FUNCTIONS (DEPRECATED) ====================
+# Use plugin generators directly instead of these factory functions.
 
 def create_gol_context(
     language: str = "en",

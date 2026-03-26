@@ -9,9 +9,7 @@ import itertools
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from ..base import TestCaseGenerator, TestCase, ConfigField
-from ..parse_utils import safe_enum
 from .scenario_builder import SallyAnneScenarioBuilder
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
 class SallyAnneTestCaseGenerator(TestCaseGenerator):
@@ -20,7 +18,6 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
     def __init__(self):
         """Initialize generator with scenario builder."""
         self.scenario_builder = SallyAnneScenarioBuilder()
-        self._prompt_engine = PromptEngine()
     
     def generate_batch(
         self,
@@ -166,9 +163,7 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
         
         system_style_str = prompt_config.get('system_style', '')
         language_str = prompt_config.get('language', 'en')
-        sys_enum = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
-        lang_enum = safe_enum(Language, language_str, Language.EN)
-        system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
+        system_prompt = self._get_system_prompt(system_style_str, language_str)
 
         return TestCase(
             test_id=test_id,

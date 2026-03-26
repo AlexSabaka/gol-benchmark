@@ -83,6 +83,7 @@ TASK_COLORS = {
     'strawberry': '#e74c3c',           # Red (like a strawberry)
     'measure_comparison': '#2980b9',   # Blue (measurement)
     'misquote': '#c0392b',             # Dark red (misattribution)
+    'family_relations': '#d35400',     # Burnt orange (family tree)
     'multi-task': '#95a5a6',           # Light gray
 }
 
@@ -241,6 +242,8 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'misquote'
         elif '_false_premise' in test_id or test_id.startswith('false_premise_'):
             task_type = 'false_premise'
+        elif '_family_relations' in test_id or test_id.startswith('family_relations_'):
+            task_type = 'family_relations'
         
         task_stats[task_type]['total'] += 1
         

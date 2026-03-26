@@ -1,0 +1,132 @@
+"""User prompt templates for the Strawberry plugin.
+
+Strawberry has 6 sub-types (count, reverse, nth_letter, anagram, pangram,
+lipogram).  Minimal and casual styles are generic; the linguistic style uses
+per-sub-type intros and answer cues.
+"""
+
+# ── Minimal / casual wrappers (same across sub-types) ──────────────
+
+MINIMAL_TEMPLATE = {
+    "en": "{question}\n\nAnswer: ",
+    "es": "{question}\n\nRespuesta: ",
+    "fr": "{question}\n\nRéponse : ",
+    "de": "{question}\n\nAntwort: ",
+    "zh": "{question}\n\n答案：",
+    "ua": "{question}\n\nВідповідь: ",
+}
+
+CASUAL_TEMPLATE = {
+    "en": "Hey, quick question — {question}",
+    "es": "Oye, pregunta rápida — {question}",
+    "fr": "Salut, petite question — {question}",
+    "de": "Hey, kurze Frage — {question}",
+    "zh": "嘿，快问一下——{question}",
+    "ua": "Привіт, швидке питання — {question}",
+}
+
+# ── Linguistic intros (per language × sub-type) ────────────────────
+
+LINGUISTIC_INTROS = {
+    "en": {
+        "count": "I have a letter-counting question for you.",
+        "reverse": "I have a word-reversal question for you.",
+        "nth_letter": "I have a letter-position question for you.",
+        "anagram": "I have an anagram question for you.",
+        "pangram": "I have a pangram question for you.",
+        "lipogram": "I have a lipogram question for you.",
+    },
+    "es": {
+        "count": "Tengo una pregunta sobre el conteo de letras.",
+        "reverse": "Tengo una pregunta sobre la inversión de palabras.",
+        "nth_letter": "Tengo una pregunta sobre la posición de letras.",
+        "anagram": "Tengo una pregunta sobre anagramas.",
+        "pangram": "Tengo una pregunta sobre pangramas.",
+        "lipogram": "Tengo una pregunta sobre lipogramas.",
+    },
+    "fr": {
+        "count": "J'ai une question de comptage de lettres pour vous.",
+        "reverse": "J'ai une question d'inversion de mots pour vous.",
+        "nth_letter": "J'ai une question sur la position des lettres pour vous.",
+        "anagram": "J'ai une question sur les anagrammes pour vous.",
+        "pangram": "J'ai une question sur les pangrammes pour vous.",
+        "lipogram": "J'ai une question sur les lipogrammes pour vous.",
+    },
+    "de": {
+        "count": "Ich habe eine Frage zum Buchstabenzählen.",
+        "reverse": "Ich habe eine Frage zur Wortumkehrung.",
+        "nth_letter": "Ich habe eine Frage zur Buchstabenposition.",
+        "anagram": "Ich habe eine Frage zu Anagrammen.",
+        "pangram": "Ich habe eine Frage zu Pangrammen.",
+        "lipogram": "Ich habe eine Frage zu Lipogrammen.",
+    },
+    "zh": {
+        "count": "我有一个关于字母计数的问题。",
+        "reverse": "我有一个关于单词反转的问题。",
+        "nth_letter": "我有一个关于字母位置的问题。",
+        "anagram": "我有一个关于变位词的问题。",
+        "pangram": "我有一个关于全字母句的问题。",
+        "lipogram": "我有一个关于避字文的问题。",
+    },
+    "ua": {
+        "count": "У мене є питання про підрахунок літер.",
+        "reverse": "У мене є питання про перевертання слів.",
+        "nth_letter": "У мене є питання про позицію літери.",
+        "anagram": "У мене є питання про анаграми.",
+        "pangram": "У мене є питання про панграми.",
+        "lipogram": "У мене є питання про ліпограми.",
+    },
+}
+
+# ── Answer cues (per language × sub-type) ──────────────────────────
+
+ANSWER_CUES = {
+    "en": {
+        "count": "Please provide the numerical answer.",
+        "reverse": "Please provide the reversed word.",
+        "nth_letter": "Please provide the single letter.",
+        "anagram": "Please answer yes or no.",
+        "pangram": "Please answer yes or no.",
+        "lipogram": "Please answer yes or no.",
+    },
+    "es": {
+        "count": "Por favor, proporciona la respuesta numérica.",
+        "reverse": "Por favor, proporciona la palabra invertida.",
+        "nth_letter": "Por favor, proporciona la letra.",
+        "anagram": "Por favor, responde sí o no.",
+        "pangram": "Por favor, responde sí o no.",
+        "lipogram": "Por favor, responde sí o no.",
+    },
+    "fr": {
+        "count": "Veuillez fournir la réponse numérique.",
+        "reverse": "Veuillez fournir le mot inversé.",
+        "nth_letter": "Veuillez fournir la lettre.",
+        "anagram": "Veuillez répondre oui ou non.",
+        "pangram": "Veuillez répondre oui ou non.",
+        "lipogram": "Veuillez répondre oui ou non.",
+    },
+    "de": {
+        "count": "Bitte geben Sie die numerische Antwort an.",
+        "reverse": "Bitte geben Sie das umgekehrte Wort an.",
+        "nth_letter": "Bitte geben Sie den Buchstaben an.",
+        "anagram": "Bitte antworten Sie mit ja oder nein.",
+        "pangram": "Bitte antworten Sie mit ja oder nein.",
+        "lipogram": "Bitte antworten Sie mit ja oder nein.",
+    },
+    "zh": {
+        "count": "请提供数字答案。",
+        "reverse": "请提供反转后的单词。",
+        "nth_letter": "请提供该字母。",
+        "anagram": "请回答是或否。",
+        "pangram": "请回答是或否。",
+        "lipogram": "请回答是或否。",
+    },
+    "ua": {
+        "count": "Будь ласка, надайте числову відповідь.",
+        "reverse": "Будь ласка, надайте перевернене слово.",
+        "nth_letter": "Будь ласка, надайте літеру.",
+        "anagram": "Будь ласка, відповідайте так або ні.",
+        "pangram": "Будь ласка, відповідайте так або ні.",
+        "lipogram": "Будь ласка, відповідайте так або ні.",
+    },
+}

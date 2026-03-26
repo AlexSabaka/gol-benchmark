@@ -10,9 +10,8 @@ from typing import Any, Dict, List, Optional
 import random
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
+from src.plugins.object_tracking.prompts import USER_PROMPT_TEMPLATES
 from src.plugins.object_tracking.step_builder import StepBuilder, Scenario
-from src.core.PromptEngine import PromptEngine, SystemPromptStyle, Language
 
 
 # Default vocabulary for test generation
@@ -34,7 +33,6 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
 
     def __init__(self):
         self._step_builder: Optional[StepBuilder] = None
-        self._prompt_engine = PromptEngine()
 
     def _get_step_builder(self, seed: Optional[int] = None) -> StepBuilder:
         """Get or create a StepBuilder with the given seed."""
@@ -80,7 +78,8 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
         self,
         scenario: Scenario,
         style: str,
-        question: str
+        question: str,
+        language: str = "en",
     ) -> str:
         """
         Build the prompt text based on style.
@@ -89,34 +88,24 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
             scenario: The generated scenario
             style: User prompt style (casual, minimal, linguistic)
             question: The question to ask
+            language: Language code
 
         Returns:
             Complete prompt text
         """
         builder = self._get_step_builder()
 
-        if style == 'minimal':
-            steps_text = builder.format_steps_numbered(scenario.steps)
-            return f"{steps_text}\n\n{question}\nAnswer:"
-
-        elif style == 'linguistic':
-            steps_text = builder.format_steps_numbered(scenario.steps)
-            return f"""{steps_text}
-
-Based on the sequence of actions described above, determine the current location of the {scenario.object}.
-
-Apply logical reasoning to track the object through each step:
-1. Identify where the object was initially placed
-2. Track any movements or transfers
-3. Pay special attention to any inversion or flipping of containers
-4. Determine the final resting location
-
-{question}
-Provide your answer as a single word indicating the location."""
-
-        else:  # casual (default)
+        # Casual uses narrative format; all others use numbered
+        if style == 'casual':
             steps_text = builder.format_steps_narrative(scenario.steps)
-            return f"{steps_text} {question} Give single word answer."
+        else:
+            steps_text = builder.format_steps_numbered(scenario.steps)
+
+        return self._format_user_prompt(
+            USER_PROMPT_TEMPLATES, language, style,
+            steps_text=steps_text, question=question,
+            object=scenario.object,
+        )
 
     def generate_batch(
         self,
@@ -203,10 +192,8 @@ Provide your answer as a single word indicating the location."""
             question = builder.generate_question(obj)
 
             # Build prompts
-            user_prompt = self._build_prompt_text(scenario, user_style_str, question)
-            sys_enum = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
-            lang_enum = safe_enum(Language, language_str, Language.EN)
-            system_prompt = self._prompt_engine.get_system_prompt_by_enum(sys_enum, lang_enum)
+            user_prompt = self._build_prompt_text(scenario, user_style_str, question, language_str)
+            system_prompt = self._get_system_prompt(system_style_str, language_str)
 
             # Determine difficulty
             difficulty = self._compute_difficulty(scenario, distractor_count)

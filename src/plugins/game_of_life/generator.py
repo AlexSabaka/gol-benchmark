@@ -10,15 +10,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.parse_utils import safe_enum
-from src.core.PromptEngine import (
-    PromptEngine,
-    PromptContext,
-    Language,
-    PromptStyle,
-    SystemPromptStyle,
-    TaskType,
-)
+from src.plugins.game_of_life.prompts import USER_PROMPT_TEMPLATES
 from src.core.types import DifficultyLevel
 from src.engine.GameOfLifeEngine import GameOfLifeEngine
 
@@ -40,7 +32,6 @@ class GoLTestCaseGenerator(TestCaseGenerator):
 
     def __init__(self):
         self._engine = GameOfLifeEngine()
-        self._prompt_engine = PromptEngine()
         self._test_generator = None
 
     def _get_test_generator(self, seed: Optional[int] = None):
@@ -113,10 +104,7 @@ class GoLTestCaseGenerator(TestCaseGenerator):
         system_style_str = prompt_config.get('system_style', 'analytical')
         config_name = prompt_config.get('name', f"{user_style_str}_{system_style_str}")
 
-        # Map strings to enums
-        language = safe_enum(Language, language_str, Language.EN)
-        user_style = safe_enum(PromptStyle, user_style_str, PromptStyle.LINGUISTIC)
-        system_style = safe_enum(SystemPromptStyle, system_style_str, SystemPromptStyle.ANALYTICAL)
+
 
         # Generate tests for each difficulty level
         for difficulty_str in difficulty_levels:
@@ -146,25 +134,17 @@ class GoLTestCaseGenerator(TestCaseGenerator):
                 # Compute expected next state
                 next_state = self._engine.next_state(initial_grid)
 
-                # Create prompt context
-                context = PromptContext(
-                    task_type=TaskType.GAME_OF_LIFE,
-                    language=language,
-                    style=user_style,
-                    system_style=system_style
-                )
-
-                # Set grid context
-                grid_str = format_grid(initial_grid, live_cell, dead_cell)
-                context.set('initial_grid', initial_grid)
-                context.set('live_cell', live_cell)
-                context.set('dead_cell', dead_cell)
-                context.set('grid_str', grid_str)
-                context.set('l', live_cell)
-                context.set('d', dead_cell)
-
                 # Generate prompts
-                result = self._prompt_engine.generate(context)
+                grid_str = format_grid(initial_grid, live_cell, dead_cell)
+                user_prompt, system_prompt, full_prompt = self._build_prompts(
+                    USER_PROMPT_TEMPLATES,
+                    language=language_str,
+                    user_style=user_style_str,
+                    system_style=system_style_str,
+                    grid_str=grid_str,
+                    l=live_cell,
+                    d=dead_cell,
+                )
 
                 # Create test case
                 test_case = TestCase(
@@ -172,9 +152,9 @@ class GoLTestCaseGenerator(TestCaseGenerator):
                     task_type='game_of_life',
                     config_name=config_name,
                     prompts={
-                        'system': result.system_prompt,
-                        'user': result.user_prompt,
-                        'full': f"{result.system_prompt}\n\n{result.user_prompt}"
+                        'system': system_prompt,
+                        'user': user_prompt,
+                        'full': full_prompt
                     },
                     task_params={
                         'difficulty': difficulty_str,
