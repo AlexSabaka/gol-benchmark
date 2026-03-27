@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.8.0** | Last updated: 2026-03-26
+> **Version 2.8.1** | Last updated: 2026-03-27
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 16 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -618,15 +618,16 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 
 **Path**: `src/plugins/measure_comparison/`
 **task_type**: `measure_comparison`
-**Tests**: Comparing two quantities with units
+**Tests**: Comparing two quantities with units, and framing-sensitive decimal interpretation
 
-"Which is longer, 0.1 mm or 1 mm?" — models get tripped by decimal precision, digit counts, and unit conversions.
+"Which is longer, 0.1 mm or 1 mm?" — models get tripped by decimal precision, digit counts, and unit conversions. "Is 9.9 or 9.11 bigger?" — depends whether you're reading it as a decimal, a software version, or a date.
 
 **Comparison types**:
 - `same_unit` — Pure numerical comparison (both values share a unit)
 - `mixed_unit` — Requires unit conversion (e.g., cm vs inch)
 - `equal` — Trick: values are equivalent after conversion (e.g., 1000g vs 1kg)
 - `incomparable` — Trick: different physical dimensions (e.g., 98°C vs 2kg)
+- `decimal` — Framing-sensitive: same pair interpreted under 4 framings (neutral, decimal, version, date). Adversarial pairs have different correct answers depending on framing.
 
 **Number formats**: integer, decimal (with adversarial traps), fraction
 
@@ -635,9 +636,13 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 **Generator** (`generator.py`):
 - Unit system with conversion factors for normalization
 - Adversarial decimal traps (e.g., "0.9" vs "0.10" — trailing zeros)
-- Config: `number_format`, `comparison_type`, `unit_categories`, `decimal_trap_ratio`
+- Decimal framing: adversarial pairs (9.9 vs 9.11 — decimal order ≠ version order) and control pairs (3.5 vs 2.1 — both orderings agree)
+- Each decimal pair generates one `TestCase` per framing, linked by `framing_group_id`
+- Config: `number_format`, `comparison_type`, `unit_categories`, `decimal_trap_ratio`, `decimal_framings`, `decimal_adversarial_ratio`
 
-**Parser** (`parser.py`) — 9 strategies:
+**Parser** (`parser.py`) — 9 strategies + decimal-specific pipeline:
+
+*Standard strategies (for same_unit, mixed_unit, equal, incomparable):*
 1. `boxed` — `\boxed{answer}`
 2. `bold` — `**answer**`
 3. `keyword_equal` — "equal", "same", "equivalent" (multilingual)
@@ -648,12 +653,21 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 8. `last_value_unit` — Last value+unit found
 9. `fallback`
 
+*Decimal-specific strategies (5-strategy pipeline):*
+1. `decimal_boxed` — `\boxed{value}`
+2. `decimal_bold` — `**value**`
+3. `decimal_label` — "Answer: value" labels
+4. `decimal_value_match` — Bare number match (end-first) with float normalization
+5. `decimal_position` — "first" / "second" keywords
+
 **End-first exception**: `value_unit_match` (strategy 6) does NOT reverse because both options are mentioned in the response. Identification is by which option matches, not by position.
 
 **Evaluator** (`evaluator.py`):
 - Match types: `correct`, `wrong`, `parse_error`, `correct_equal`, `correct_incomparable`, `missed_equal`, `missed_incomparable`
+- Decimal match types: `correct`, `wrong`, `parse_error` (with framing/framing_group_id in details)
 - Rich aggregation: breakdowns by comparison type, number format, category
 - Decimal trap accuracy tracking, position bias analysis
+- **Framing analysis** (decimal only): `framing_sensitivity_rate`, `framing_accuracy_by_type`, `perfect_group_rate`, `adversarial_perfect_rate`
 
 ---
 

@@ -290,6 +290,47 @@ QUESTION_TEMPLATES: Dict[str, List[str]] = {
 }
 
 # ---------------------------------------------------------------------------
+# Decimal-framing question templates  {lang: {framing: [templates]}}
+# Placeholders: {val1}, {val2}  (no units — bare numbers)
+# ---------------------------------------------------------------------------
+
+DECIMAL_FRAMING_TEMPLATES: Dict[str, Dict[str, List[str]]] = {
+    "en": {
+        "neutral": [
+            "Which is bigger: {val1} or {val2}?",
+            "Is {val1} or {val2} bigger?",
+            "Between {val1} and {val2}, which is bigger?",
+            "{val1} vs {val2} — which is bigger?",
+        ],
+        "decimal": [
+            "Treating these as decimal numbers, which is larger: {val1} or {val2}?",
+            "As decimal values, is {val1} or {val2} larger?",
+            "Interpreted as decimal numbers: {val1} vs {val2} — which is larger?",
+        ],
+        "version": [
+            "If {val1} and {val2} are software version numbers, which is the higher version?",
+            "Comparing software versions: is {val1} or {val2} the newer release?",
+            "Which software version is more recent: {val1} or {val2}?",
+        ],
+        "date": [
+            "If {val1} and {val2} represent dates in Month.Day format, which date comes later in the year?",
+            "Interpreting {val1} and {val2} as Month.Day dates: which comes later?",
+            "As calendar dates (Month.Day), which is later: {val1} or {val2}?",
+        ],
+    },
+}
+
+# Decimal framing comparison words  {lang: {framing: {bigger: ..., smaller: ...}}}
+DECIMAL_COMP_WORDS: Dict[str, Dict[str, Dict[str, str]]] = {
+    "en": {
+        "neutral":  {"bigger": "bigger",  "smaller": "smaller"},
+        "decimal":  {"bigger": "larger",  "smaller": "smaller"},
+        "version":  {"bigger": "higher",  "smaller": "lower"},
+        "date":     {"bigger": "later",   "smaller": "earlier"},
+    },
+}
+
+# ---------------------------------------------------------------------------
 # User prompt templates moved to prompts.py
 
 
@@ -308,7 +349,8 @@ class MeasureComparisonGenerator(TestCaseGenerator):
             ConfigField(name='number_format', label='Number format', field_type='select',
                         default='mixed', options=['integer', 'decimal', 'fraction', 'mixed']),
             ConfigField(name='comparison_type', label='Comparison type', field_type='select',
-                        default='all', options=['same_unit', 'mixed_unit', 'equal', 'incomparable', 'all']),
+                        default='all',
+                        options=['same_unit', 'mixed_unit', 'equal', 'incomparable', 'decimal', 'all']),
             ConfigField(name='question_direction', label='Question direction', field_type='select',
                         default='mixed', options=['bigger', 'smaller', 'mixed']),
             ConfigField(name='unit_categories', label='Unit categories', field_type='multi-select',
@@ -328,9 +370,19 @@ class MeasureComparisonGenerator(TestCaseGenerator):
             ConfigField(name='max_decimal_places', label='Max decimal places', field_type='number',
                         default=3, min_value=1, max_value=10, group='advanced'),
             ConfigField(name='type_weights', label='Type weights', field_type='weight_map',
-                        default={"same_unit": 0.4, "mixed_unit": 0.3, "equal": 0.15, "incomparable": 0.15},
-                        weight_keys=['same_unit', 'mixed_unit', 'equal', 'incomparable'],
+                        default={"same_unit": 0.35, "mixed_unit": 0.25, "equal": 0.15,
+                                 "incomparable": 0.10, "decimal": 0.15},
+                        weight_keys=['same_unit', 'mixed_unit', 'equal', 'incomparable', 'decimal'],
                         group='advanced', help='Probability weights when comparison_type is "all"'),
+            ConfigField(name='decimal_framings', label='Decimal framings', field_type='multi-select',
+                        default=['neutral', 'decimal', 'version', 'date'],
+                        options=['neutral', 'decimal', 'version', 'date'],
+                        group='decimal',
+                        help='Framing variants for decimal comparison type'),
+            ConfigField(name='decimal_adversarial_ratio', label='Adversarial pair ratio',
+                        field_type='number', default=0.6, min_value=0.0, max_value=1.0, step=0.1,
+                        group='decimal',
+                        help='Fraction of decimal pairs where framings disagree on the answer'),
         ]
 
     def generate_batch(
@@ -346,10 +398,11 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         number_format = config.get("number_format", "mixed")
         comparison_type = config.get("comparison_type", "all")
         type_weights = config.get("type_weights", {
-            "same_unit": 0.40,
-            "mixed_unit": 0.30,
+            "same_unit": 0.35,
+            "mixed_unit": 0.25,
             "equal": 0.15,
-            "incomparable": 0.15,
+            "incomparable": 0.10,
+            "decimal": 0.15,
         })
         unit_categories = config.get("unit_categories", list(UNITS.keys()))
         question_direction = config.get("question_direction", "mixed")
@@ -359,6 +412,9 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         frac_max_denom = config.get("fraction_max_denominator", 16)
         max_dp = config.get("max_decimal_places", 3)
         language = config.get("language", "en")
+        decimal_framings = config.get("decimal_framings",
+                                      ["neutral", "decimal", "version", "date"])
+        decimal_adversarial_ratio = config.get("decimal_adversarial_ratio", 0.6)
 
         user_style = prompt_config.get("user_style", "casual")
         system_style = prompt_config.get("system_style", "analytical")
@@ -367,43 +423,71 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         )
 
         test_cases: List[TestCase] = []
-        for idx in range(count):
+        idx_counter = 0
+        for pair_idx in range(count):
             # Pick comparison type
             ctype = self._pick_comparison_type(comparison_type, type_weights, rng)
-
-            # Pick number format for this case
-            nfmt = self._pick_number_format(number_format, rng)
 
             # Pick direction
             direction = self._pick_direction(question_direction, rng)
 
-            # Generate the case
-            case = self._generate_case(
-                ctype=ctype,
-                nfmt=nfmt,
-                direction=direction,
-                unit_categories=unit_categories,
-                decimal_trap_ratio=decimal_trap_ratio,
-                close_value_ratio=close_value_ratio,
-                value_order=value_order,
-                frac_max_denom=frac_max_denom,
-                max_dp=max_dp,
-                rng=rng,
-            )
+            if ctype == "decimal":
+                # Decimal type generates multiple test cases (one per framing)
+                framing_group_id = f"fg_{seed if seed is not None else 0}_{pair_idx:04d}"
+                cases = self._gen_decimal_cases(
+                    framings=decimal_framings,
+                    adversarial_ratio=decimal_adversarial_ratio,
+                    direction=direction,
+                    order=value_order,
+                    rng=rng,
+                    framing_group_id=framing_group_id,
+                )
+                for case in cases:
+                    tc = self._build_test_case(
+                        idx=idx_counter,
+                        seed=seed,
+                        config_name=config_name,
+                        user_style=user_style,
+                        system_style=system_style,
+                        language=language,
+                        direction=direction,
+                        case=case,
+                        rng=rng,
+                    )
+                    test_cases.append(tc)
+                    idx_counter += 1
+            else:
+                # Pick number format for this case
+                nfmt = self._pick_number_format(number_format, rng)
 
-            # Build prompts
-            tc = self._build_test_case(
-                idx=idx,
-                seed=seed,
-                config_name=config_name,
-                user_style=user_style,
-                system_style=system_style,
-                language=language,
-                direction=direction,
-                case=case,
-                rng=rng,
-            )
-            test_cases.append(tc)
+                # Generate the case
+                case = self._generate_case(
+                    ctype=ctype,
+                    nfmt=nfmt,
+                    direction=direction,
+                    unit_categories=unit_categories,
+                    decimal_trap_ratio=decimal_trap_ratio,
+                    close_value_ratio=close_value_ratio,
+                    value_order=value_order,
+                    frac_max_denom=frac_max_denom,
+                    max_dp=max_dp,
+                    rng=rng,
+                )
+
+                # Build prompts
+                tc = self._build_test_case(
+                    idx=idx_counter,
+                    seed=seed,
+                    config_name=config_name,
+                    user_style=user_style,
+                    system_style=system_style,
+                    language=language,
+                    direction=direction,
+                    case=case,
+                    rng=rng,
+                )
+                test_cases.append(tc)
+                idx_counter += 1
 
         return test_cases
 
@@ -704,6 +788,168 @@ class MeasureComparisonGenerator(TestCaseGenerator):
 
         return big_val, small_val, f"{big_val:.{big_dp}f}", f"{small_val:.{small_dp}f}"
 
+    # ------------------------------------------------------------------
+    # Decimal-framing pair generators
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _version_compare(a: str, b: str) -> int:
+        """Compare two dotted-decimal strings as version numbers.
+
+        Splits on '.', compares integer parts left to right.
+        Returns -1 (a<b), 0 (equal), 1 (a>b).
+        """
+        a_parts = [int(x) for x in a.split(".")]
+        b_parts = [int(x) for x in b.split(".")]
+        for av, bv in zip(a_parts, b_parts):
+            if av < bv:
+                return -1
+            if av > bv:
+                return 1
+        # If all compared parts equal, longer one is bigger
+        if len(a_parts) < len(b_parts):
+            return -1
+        if len(a_parts) > len(b_parts):
+            return 1
+        return 0
+
+    @staticmethod
+    def _make_adversarial_decimal_pair(
+        rng: random.Random,
+    ) -> Tuple[str, str, float, float]:
+        """Generate a pair where decimal order != version order.
+
+        E.g. (9.9, 9.11): decimal 9.9 > 9.11, version 9.11 > 9.9.
+        Returns (a_str, b_str, a_float, b_float) where a_float > b_float
+        (i.e. 'a' wins as a decimal).
+        """
+        int_part = rng.randint(1, 20)
+
+        # 'big_frac' has fewer digits but bigger decimal value
+        # 'small_frac' has more digits but smaller decimal value
+        # e.g. big_frac="9" → 0.9, small_frac="11" → 0.11
+        big_digit = rng.randint(5, 9)          # single digit 5-9
+        small_int = rng.randint(10, 99)         # two digits 10-99
+
+        # Ensure the decimal interpretation is adversarial:
+        # big_digit/10 must be > small_int/100
+        # i.e. big_digit*10 > small_int
+        while big_digit * 10 <= small_int:
+            small_int = rng.randint(10, big_digit * 10 - 1)
+
+        a_str = f"{int_part}.{big_digit}"       # e.g. "9.9"
+        b_str = f"{int_part}.{small_int}"        # e.g. "9.11"
+        a_float = float(a_str)                    # 9.9
+        b_float = float(b_str)                    # 9.11
+
+        return (a_str, b_str, a_float, b_float)
+
+    @staticmethod
+    def _make_control_decimal_pair(
+        rng: random.Random,
+    ) -> Tuple[str, str, float, float]:
+        """Generate a pair where decimal order == version order.
+
+        Both interpretations agree on which is bigger.
+        Returns (a_str, b_str, a_float, b_float) where a_float > b_float.
+        """
+        # Strategy: different integer parts guarantees agreement
+        a_int = rng.randint(2, 20)
+        b_int = rng.randint(1, a_int - 1) if a_int > 1 else 1
+        if a_int == b_int:
+            a_int = b_int + 1
+
+        # Add a fractional part
+        a_frac = rng.randint(1, 99)
+        b_frac = rng.randint(1, 99)
+
+        a_str = f"{a_int}.{a_frac}"
+        b_str = f"{b_int}.{b_frac}"
+        a_float = float(a_str)
+        b_float = float(b_str)
+
+        # Ensure a > b (should be true given a_int > b_int, but be safe)
+        if a_float <= b_float:
+            a_str, b_str = b_str, a_str
+            a_float, b_float = b_float, a_float
+
+        return (a_str, b_str, a_float, b_float)
+
+    def _gen_decimal_cases(
+        self,
+        *,
+        framings: List[str],
+        adversarial_ratio: float,
+        direction: str,
+        order: str,
+        rng: random.Random,
+        framing_group_id: str,
+    ) -> List[Dict[str, Any]]:
+        """Generate one pair with multiple framing variants.
+
+        Returns a list of case dicts — one per framing.
+        """
+        is_adversarial = rng.random() < adversarial_ratio
+
+        if is_adversarial:
+            a_str, b_str, a_float, b_float = self._make_adversarial_decimal_pair(rng)
+        else:
+            a_str, b_str, a_float, b_float = self._make_control_decimal_pair(rng)
+
+        # Apply value ordering (a starts as the bigger decimal value)
+        bigger_idx = 0  # a is bigger as decimal
+        if order == "smaller_first":
+            a_str, b_str = b_str, a_str
+            a_float, b_float = b_float, a_float
+            bigger_idx = 1
+        elif order == "random" and rng.random() < 0.5:
+            a_str, b_str = b_str, a_str
+            a_float, b_float = b_float, a_float
+            bigger_idx = 1 - bigger_idx
+
+        # Pre-compute version comparison result
+        vcmp = self._version_compare(a_str, b_str)
+        # vcmp > 0 means a wins, vcmp < 0 means b wins (as version)
+        version_bigger_idx = 0 if vcmp > 0 else (1 if vcmp < 0 else bigger_idx)
+
+        cases = []
+        for framing in framings:
+            # Which interpretation applies?
+            if framing in ("neutral", "decimal"):
+                winner_idx = bigger_idx  # decimal math
+            else:  # "version", "date"
+                winner_idx = version_bigger_idx  # component-wise
+
+            # Determine correct position and expected answer
+            if direction == "bigger":
+                correct_position = "first" if winner_idx == 0 else "second"
+                expected = a_str if winner_idx == 0 else b_str
+            else:  # smaller
+                correct_position = "second" if winner_idx == 0 else "first"
+                expected = b_str if winner_idx == 0 else a_str
+
+            cases.append({
+                "val1_str": a_str,
+                "val2_str": b_str,
+                "unit1_key": "",
+                "unit2_key": "",
+                "val1_base": a_float,
+                "val2_base": b_float,
+                "val1_numeric": a_float,
+                "val2_numeric": b_float,
+                "category": "decimal",
+                "comparison_type": "decimal",
+                "number_format": "decimal",
+                "is_decimal_trap": is_adversarial,
+                "correct_position": correct_position,
+                "expected_answer": expected,
+                "framing": framing,
+                "framing_group_id": framing_group_id,
+                "is_adversarial": is_adversarial,
+            })
+
+        return cases
+
     @staticmethod
     def _make_fraction(rng: random.Random, max_denom: int) -> Tuple[float, str]:
         denom = rng.randint(2, max_denom)
@@ -813,6 +1059,15 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         case: Dict[str, Any],
         rng: random.Random,
     ) -> TestCase:
+        ctype = case.get("comparison_type", "")
+
+        if ctype == "decimal":
+            return self._build_decimal_test_case(
+                idx=idx, seed=seed, config_name=config_name,
+                user_style=user_style, system_style=system_style,
+                language=language, direction=direction, case=case, rng=rng,
+            )
+
         cat = case["category"].split("+")[0]  # use first cat for word lookup
         comp_word = self._get_comp_word(language, cat, direction)
 
@@ -882,3 +1137,94 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         lang_words = COMPARISON_WORDS.get(language, COMPARISON_WORDS["en"])
         cat_words = lang_words.get(category, lang_words["_generic"])
         return cat_words.get(direction, cat_words["bigger"])
+
+    # ------------------------------------------------------------------
+    # Build decimal TestCase
+    # ------------------------------------------------------------------
+
+    def _build_decimal_test_case(
+        self,
+        *,
+        idx: int,
+        seed: int | None,
+        config_name: str,
+        user_style: str,
+        system_style: str,
+        language: str,
+        direction: str,
+        case: Dict[str, Any],
+        rng: random.Random,
+    ) -> TestCase:
+        framing = case["framing"]
+
+        # Pick framing-specific template
+        lang_templates = DECIMAL_FRAMING_TEMPLATES.get(
+            language, DECIMAL_FRAMING_TEMPLATES["en"]
+        )
+        framing_templates = lang_templates.get(framing, lang_templates["neutral"])
+        template = rng.choice(framing_templates)
+
+        # For "smaller" direction, swap the comp word in the template
+        # Framing templates use "bigger/larger/higher/later" by default
+        if direction == "smaller":
+            comp_words = DECIMAL_COMP_WORDS.get(
+                language, DECIMAL_COMP_WORDS["en"]
+            ).get(framing, {"bigger": "bigger", "smaller": "smaller"})
+            bigger_word = comp_words["bigger"]
+            smaller_word = comp_words["smaller"]
+            template = template.replace(bigger_word, smaller_word)
+
+        question = template.format(val1=case["val1_str"], val2=case["val2_str"])
+
+        user_prompt = self._format_user_prompt(
+            USER_PROMPT_TEMPLATES, language, user_style, question=question,
+        )
+
+        system_prompt = self._get_system_prompt(system_style, language)
+
+        full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+
+        seed_label = seed if seed is not None else 0
+
+        return TestCase(
+            test_id=f"measure_comparison_{seed_label}_{idx:04d}",
+            task_type="measure_comparison",
+            config_name=config_name,
+            prompts={
+                "system": system_prompt,
+                "user": user_prompt,
+                "full": full_prompt,
+            },
+            task_params={
+                "expected_answer": case["expected_answer"],
+                "value1": case["val1_str"],
+                "unit1": "",
+                "unit1_symbol": "",
+                "value2": case["val2_str"],
+                "unit2": "",
+                "unit2_symbol": "",
+                "value1_base": case["val1_base"],
+                "value2_base": case["val2_base"],
+                "category": "decimal",
+                "comparison_type": "decimal",
+                "number_format": "decimal",
+                "question_direction": direction,
+                "correct_position": case["correct_position"],
+                "is_decimal_trap": case["is_decimal_trap"],
+                "framing": framing,
+                "framing_group_id": case["framing_group_id"],
+                "is_adversarial": case["is_adversarial"],
+            },
+            prompt_metadata={
+                "user_style": user_style,
+                "system_style": system_style,
+                "language": language,
+            },
+            generation_metadata={
+                "seed": seed,
+                "index": idx,
+                "comparison_type": "decimal",
+                "framing": framing,
+                "framing_group_id": case["framing_group_id"],
+            },
+        )

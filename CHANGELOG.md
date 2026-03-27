@@ -2,6 +2,39 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.8.1] - March 27, 2026
+
+### Measure Comparison — Decimal Framing Comparison Type
+
+New `decimal` comparison type for the `measure_comparison` plugin. Tests whether models can correctly interpret the same numeric pair (e.g., 9.9 vs 9.11) under different **framing contexts** — as a pure decimal, a software version, or a date.
+
+#### What Changed
+
+- **New comparison type `decimal`** with 4 framings: `neutral`, `decimal`, `version`, `date`
+- **2 answer groups**: neutral + decimal → decimal math ordering; version + date → component-wise ordering
+- **Adversarial pairs**: pairs where decimal order ≠ version order (e.g., 9.9 > 9.11 as decimals, but 9.9 < 9.11 as versions)
+- **Control pairs**: both orderings agree (e.g., 3.5 vs 2.1) — serves as a baseline
+- **Framing group tracking**: each pair generates one `TestCase` per framing, linked by `framing_group_id` in `task_params`
+- **Framing-sensitivity metric** in `aggregate_results()`:
+  - `framing_sensitivity_rate` — fraction of adversarial groups where the model gave ≥2 distinct answers
+  - `framing_accuracy_by_type` — per-framing accuracy breakdown
+  - `perfect_group_rate` — fraction of groups where all framings were answered correctly
+  - `adversarial_perfect_rate` — same, restricted to adversarial groups
+- **Decimal-specific parser** (`_parse_decimal()`) — 5-strategy pipeline: boxed, bold, label, bare-value-match, position keywords
+- **Decimal-specific evaluator** (`_eval_decimal()`) — float-normalized comparison with framing metadata in details
+- **Config schema additions**: `decimal_framings` (multi-select), `decimal_adversarial_ratio` (0.0–1.0), updated `type_weights` default
+
+#### Design Decisions
+
+- Count is **approximate** when `decimal` type is in the mix — each pair generates `len(framings)` cases
+- English-only framing templates for now (multilingual deferred)
+- Neutral framing uses decimal math as the "correct" interpretation
+
+#### Test Results
+
+- **40 new tests** in `tests/test_measure_comparison_decimal.py` — all passing
+- **0 regressions** in existing measure_comparison tests (150 total)
+
 ## [2.8.0] - March 26, 2026
 
 ### Plugin-Local Prompt Templates — PromptEngine User Prompt Deprecation

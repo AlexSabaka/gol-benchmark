@@ -244,6 +244,10 @@ class MeasureComparisonParser(ResponseParser):
         text = response.strip()
         tp = task_params or {}
 
+        # Route decimal comparison type to a specialised parser (bare numbers)
+        if tp.get("comparison_type") == "decimal":
+            return self._parse_decimal(text, tp)
+
         # --- Strategy 1: LaTeX boxed (last match) ---
         boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
         if boxed:
@@ -401,4 +405,111 @@ class MeasureComparisonParser(ResponseParser):
             return "first"
         if low in second_words:
             return "second"
+        return None
+
+    # ------------------------------------------------------------------
+    # Decimal-framing parser (bare numbers, no units)
+    # ------------------------------------------------------------------
+
+    def _parse_decimal(self, text: str, tp: Dict[str, Any]) -> ParsedAnswer:
+        """Parse a decimal-framing response.  Expected answer is a bare number."""
+        v1 = tp.get("value1", "")
+        v2 = tp.get("value2", "")
+
+        # Strategy 1: LaTeX boxed (last match)
+        boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
+        if boxed:
+            inner = boxed.group(1).strip()
+            match = self._match_decimal_value(inner, v1, v2)
+            if match:
+                return ParsedAnswer(
+                    value=match, raw_response=text,
+                    parse_strategy="decimal_boxed", confidence=0.95,
+                )
+
+        # Strategy 2: Bold (last match)
+        bold = re_search_last(r"\*\*([^*]{1,40})\*\*", text)
+        if bold:
+            inner = bold.group(1).strip()
+            match = self._match_decimal_value(inner, v1, v2)
+            if match:
+                return ParsedAnswer(
+                    value=match, raw_response=text,
+                    parse_strategy="decimal_bold", confidence=0.90,
+                )
+
+        # Strategy 3: Label line (last match)
+        label = re_search_last(
+            r"(?:answer|result|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
+            text, re.IGNORECASE | re.MULTILINE,
+        )
+        if label:
+            inner = label.group(1).strip()
+            match = self._match_decimal_value(inner, v1, v2)
+            if match:
+                return ParsedAnswer(
+                    value=match, raw_response=text,
+                    parse_strategy="decimal_label", confidence=0.88,
+                )
+
+        # Strategy 4: Scan for bare numbers matching v1 or v2 (end-first)
+        # Build a pattern that matches either value as a standalone number
+        v1_esc = re.escape(v1)
+        v2_esc = re.escape(v2)
+        pattern = re.compile(
+            r"(?<!\d)(?<!\.)(" + v1_esc + r"|" + v2_esc + r")(?!\d)(?!\.)",
+        )
+        matches = list(pattern.finditer(text))
+        if matches:
+            last_match = matches[-1].group(1)
+            match = self._match_decimal_value(last_match, v1, v2)
+            if match:
+                return ParsedAnswer(
+                    value=match, raw_response=text,
+                    parse_strategy="decimal_value_match", confidence=0.85,
+                )
+
+        # Strategy 5: Position keywords (last match)
+        pos_m = re_search_last(_POSITION_RE, text)
+        if pos_m:
+            pos_word = pos_m.group(1).lower()
+            pos = self._resolve_position(pos_word)
+            if pos == "first":
+                return ParsedAnswer(
+                    value=v1, raw_response=text,
+                    parse_strategy="decimal_position", confidence=0.75,
+                )
+            elif pos == "second":
+                return ParsedAnswer(
+                    value=v2, raw_response=text,
+                    parse_strategy="decimal_position", confidence=0.75,
+                )
+
+        # Fallback
+        return ParsedAnswer(
+            value=None, raw_response=text,
+            parse_strategy="decimal_fallback", confidence=0.10,
+            error="Could not extract a decimal answer from response",
+        )
+
+    @staticmethod
+    def _match_decimal_value(
+        candidate: str, v1: str, v2: str,
+    ) -> Optional[str]:
+        """Check if candidate matches v1 or v2 (as bare number strings)."""
+        c = candidate.strip()
+        # Direct string match
+        if c == v1:
+            return v1
+        if c == v2:
+            return v2
+        # Try float comparison for robustness (e.g. "9.90" vs "9.9")
+        try:
+            cf = float(c)
+            if abs(cf - float(v1)) < 1e-9:
+                return v1
+            if abs(cf - float(v2)) < 1e-9:
+                return v2
+        except ValueError:
+            pass
         return None

@@ -59,7 +59,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | Carwash Paradox | `carwash` | Always "drive" |
 | Inverted Cup | `inverted_cup` | "flip" |
 | Strawberry (Character Reasoning) | `strawberry` | Integer / String / Boolean |
-| Measure Comparison | `measure_comparison` | Measurement / "equal" / "incomparable" |
+| Measure Comparison | `measure_comparison` | Measurement / "equal" / "incomparable" / decimal framing |
 | Grid Tasks (Table Reasoning) | `grid_tasks` | Varies |
 | Time Arithmetic | `time_arithmetic` | Time / Day / Duration / "impossible" |
 | Misquote Attribution | `misquote` | Yes/No (two-part) |
@@ -105,5 +105,5 @@ docs/
 
 ---
 
-**Version:** 2.8.0
+**Version:** 2.8.1
 **Last Updated:** March 2026

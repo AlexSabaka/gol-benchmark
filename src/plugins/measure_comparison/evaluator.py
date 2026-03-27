@@ -55,6 +55,8 @@ class MeasureComparisonEvaluator(ResultEvaluator):
             return self._eval_equal(predicted, expected, parsed_answer, tp)
         if ctype == "incomparable":
             return self._eval_incomparable(predicted, expected, parsed_answer, tp)
+        if ctype == "decimal":
+            return self._eval_decimal(predicted, expected, parsed_answer, tp)
 
         return self._eval_normal(predicted, expected, parsed_answer, tp)
 
@@ -117,6 +119,39 @@ class MeasureComparisonEvaluator(ResultEvaluator):
             accuracy=1.0 if is_incomparable else 0.0,
             details=self._details(predicted, expected, pa, tp),
         )
+
+    # ------------------------------------------------------------------
+    # Decimal-framing comparison
+    # ------------------------------------------------------------------
+
+    def _eval_decimal(
+        self, predicted: str, expected: str, pa: ParsedAnswer, tp: Dict,
+    ) -> EvaluationResult:
+        """Evaluate decimal-framing comparison (bare number match)."""
+        correct = self._decimal_answers_match(predicted, expected)
+        details = self._details(predicted, expected, pa, tp)
+        details["framing"] = tp.get("framing", "")
+        details["framing_group_id"] = tp.get("framing_group_id", "")
+        details["is_adversarial"] = tp.get("is_adversarial", False)
+        return EvaluationResult(
+            correct=correct,
+            match_type="correct" if correct else "wrong",
+            accuracy=1.0 if correct else 0.0,
+            details=details,
+        )
+
+    @staticmethod
+    def _decimal_answers_match(predicted: str, expected: str) -> bool:
+        """Check if predicted matches expected bare number."""
+        p = predicted.strip()
+        e = expected.strip()
+        if p == e:
+            return True
+        # Float comparison for trailing-zero differences (e.g. "9.90" vs "9.9")
+        try:
+            return abs(float(p) - float(e)) < 1e-9
+        except ValueError:
+            return False
 
     # ------------------------------------------------------------------
     # Answer matching
@@ -269,5 +304,71 @@ class MeasureComparisonEvaluator(ResultEvaluator):
             "second_correct_total": pos_second_total,
             "second_predicted_total": pos_second_predicted,
         }
+
+        # --- Framing-sensitivity analysis (decimal comparison type) ---
+        framing_groups: Dict[str, List[EvaluationResult]] = {}
+        framing_accuracy: Dict[str, Dict[str, int]] = {}
+        for r in results:
+            d = r.details
+            if d.get("comparison_type") != "decimal":
+                continue
+
+            # Group by framing_group_id
+            gid = d.get("framing_group_id", "")
+            if gid:
+                framing_groups.setdefault(gid, []).append(r)
+
+            # Accuracy by framing
+            framing = d.get("framing", "unknown")
+            if framing not in framing_accuracy:
+                framing_accuracy[framing] = {"correct": 0, "total": 0}
+            framing_accuracy[framing]["total"] += 1
+            if r.correct:
+                framing_accuracy[framing]["correct"] += 1
+
+        if framing_groups:
+            # Framing sensitivity: did the model vary its answer across framings?
+            adversarial_groups = 0
+            adversarial_varied = 0
+            adversarial_perfect = 0
+            all_perfect = 0
+
+            for gid, group_results in framing_groups.items():
+                is_adv = any(r.details.get("is_adversarial") for r in group_results)
+                predicted_set = {
+                    str(r.details.get("predicted", "")).strip()
+                    for r in group_results
+                }
+                all_correct = all(r.correct for r in group_results)
+
+                if all_correct:
+                    all_perfect += 1
+
+                if is_adv:
+                    adversarial_groups += 1
+                    if len(predicted_set) > 1:
+                        adversarial_varied += 1
+                    if all_correct:
+                        adversarial_perfect += 1
+
+            base["framing_analysis"] = {
+                "total_groups": len(framing_groups),
+                "framing_accuracy_by_type": {
+                    k: _acc(v) for k, v in framing_accuracy.items()
+                },
+                "perfect_group_rate": (
+                    all_perfect / len(framing_groups)
+                    if framing_groups else 0.0
+                ),
+                "adversarial_groups": adversarial_groups,
+                "framing_sensitivity_rate": (
+                    adversarial_varied / adversarial_groups
+                    if adversarial_groups else 0.0
+                ),
+                "adversarial_perfect_rate": (
+                    adversarial_perfect / adversarial_groups
+                    if adversarial_groups else 0.0
+                ),
+            }
 
         return base

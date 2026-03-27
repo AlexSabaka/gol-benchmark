@@ -159,7 +159,9 @@ class TestGeneratorBatch:
     """Test generate_batch with various configs."""
 
     def test_deterministic_with_seed(self, gen):
-        cfg = _default_config(count=10)
+        # Exclude decimal type — it produces multiple cases per pair (approximate count)
+        weights = {"same_unit": 0.4, "mixed_unit": 0.3, "equal": 0.15, "incomparable": 0.15}
+        cfg = _default_config(count=10, type_weights=weights)
         pc = _default_prompt_config()
         a = gen.generate_batch(cfg, pc, count=10, seed=42)
         b = gen.generate_batch(cfg, pc, count=10, seed=42)
@@ -178,8 +180,10 @@ class TestGeneratorBatch:
         assert answers_a != answers_b
 
     def test_batch_size_respected(self, gen):
+        # Exclude decimal type — it produces multiple cases per pair (approximate count)
+        weights = {"same_unit": 0.4, "mixed_unit": 0.3, "equal": 0.15, "incomparable": 0.15}
         for n in [1, 5, 50]:
-            cfg = _default_config()
+            cfg = _default_config(type_weights=weights)
             pc = _default_prompt_config()
             cases = gen.generate_batch(cfg, pc, count=n, seed=99)
             assert len(cases) == n

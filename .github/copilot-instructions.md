@@ -22,7 +22,7 @@ src/plugins/
 ├── carwash/                   # Carwash Paradox: goal-tracking test
 ├── inverted_cup/              # Inverted Cup: spatial orientation test
 ├── strawberry/                # Strawberry: character-level reasoning (6 sub-types)
-├── measure_comparison/        # Measure Comparison: quantity comparison with units
+├── measure_comparison/        # Measure Comparison: quantity comparison with units + decimal framing
 ├── grid_tasks/                # Grid Tasks: table reasoning
 ├── time_arithmetic/           # Time Arithmetic: temporal reasoning & impossible dates
 ├── misquote/                  # Misquote Attribution: sycophancy detection
@@ -83,7 +83,7 @@ src/
 │   ├── carwash/        # Carwash Paradox plugin (goal-tracking test)
 │   ├── inverted_cup/   # Inverted Cup plugin (spatial orientation test)
 │   ├── strawberry/     # Strawberry plugin (character-level reasoning, 6 sub-types)
-│   ├── measure_comparison/ # Measure Comparison plugin
+│   ├── measure_comparison/ # Measure Comparison plugin (incl. decimal framing)
 │   ├── grid_tasks/     # Grid Tasks plugin (table reasoning)
 │   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
 │   ├── misquote/       # Misquote Attribution plugin (sycophancy detection)
@@ -342,6 +342,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Time Arithmetic**: Expected 50-80% accuracy (noon/midnight traps and impossible dates are the hardest)
 - **Misquote Attribution**: Expected 40-70% accuracy (authority/constraint framings are the hardest sycophancy traps)
 - **Family Relations**: Expected 40-70% accuracy (self-counting traps are the classic failure mode)
+- **Measure Comparison (decimal)**: Expected 40-80% accuracy; framing sensitivity rate reveals how often models change answers based on framing context
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
@@ -396,12 +397,12 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.8.0 (March 26, 2026)
+**Version**: 2.8.1 (March 27, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery
 - Plugin-local prompt templates (PromptEngine user prompts deprecated)
 - Modern 3-stage architecture with enhanced parsing and analytics
-- 16 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations
+- 16 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison (with decimal framing), Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations
 - Remote Ollama support (`--ollama-host`)
 - Token counting throughout pipeline

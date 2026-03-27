@@ -19,7 +19,7 @@
 - **Carwash Paradox**: Practical-goal-tracking test — walk or drive? (answer: always drive)
 - **Inverted Cup**: Spatial-orientation reasoning — sealed top / open bottom cup (answer: flip it)
 - **Strawberry**: Character-level reasoning — letter counting, word reversal, nth-letter, anagram, pangram, lipogram
-- **Measure Comparison**: Quantity comparison with units and conversion traps
+- **Measure Comparison**: Quantity comparison with units, conversion traps, and decimal framing sensitivity
 - **Grid Tasks**: Table reasoning — cell lookups, row sums, column counts
 - **Misquote Attribution**: Sycophancy detection — false quote attributions with social-pressure framings
 - **False Premise**: Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic)
@@ -74,7 +74,7 @@ gol_eval/
 │   │   ├── carwash/       # Carwash Paradox plugin (v2.2.0)
 │   │   ├── inverted_cup/  # Inverted Cup plugin (v2.2.0)
 │   │   ├── strawberry/    # Character-level reasoning (6 sub-types)
-│   │   ├── measure_comparison/ # Quantity comparison plugin
+│   │   ├── measure_comparison/ # Quantity comparison plugin (incl. decimal framing)
 │   │   ├── grid_tasks/    # Table reasoning plugin
 │   │   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
 │   │   ├── misquote/      # Misquote Attribution (sycophancy detection)
@@ -127,7 +127,7 @@ gol_eval/
 | [src/plugins/carwash/](src/plugins/carwash/) | Carwash Paradox plugin |
 | [src/plugins/inverted_cup/](src/plugins/inverted_cup/) | Inverted Cup plugin |
 | [src/plugins/strawberry/](src/plugins/strawberry/) | Character-level reasoning plugin (6 sub-types) |
-| [src/plugins/measure_comparison/](src/plugins/measure_comparison/) | Quantity comparison plugin |
+| [src/plugins/measure_comparison/](src/plugins/measure_comparison/) | Quantity comparison plugin (incl. decimal framing) |
 | [src/plugins/grid_tasks/](src/plugins/grid_tasks/) | Table reasoning plugin |
 | [src/plugins/time_arithmetic/](src/plugins/time_arithmetic/) | Time Arithmetic plugin (temporal reasoning) |
 | [src/plugins/misquote/](src/plugins/misquote/) | Misquote Attribution plugin (sycophancy detection) |
@@ -196,6 +196,7 @@ All response parsers follow the principle of searching from the **end** of the m
 **Key exceptions where end-first does NOT apply:**
 
 - `measure_comparison` value+unit matching — both options are mentioned, the answer is identified by which matches, not position
+- `measure_comparison` decimal type — uses a separate 5-strategy parser (`_parse_decimal`) with end-first bare-value matching
 - `inverted_cup` classification — if "flip" is mentioned anywhere, the model understood the key insight (correct answer); "wrong" keywords alongside flip are just creative alternatives
 - `linda_fallacy` — extracts ordered rankings, not single answers
 
@@ -685,7 +686,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-26*
-*Version: 2.8.0*
-*Key additions: Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-03-27*
+*Version: 2.8.1*
+*Key additions: Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

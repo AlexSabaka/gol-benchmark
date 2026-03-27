@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.8.0** | Last updated: 2026-03-26
+> **Version 2.8.1** | Last updated: 2026-03-27
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -120,7 +120,7 @@ gol_eval/
 │   │   ├── carwash/                    #   Practical goal tracking
 │   │   ├── inverted_cup/               #   Spatial orientation puzzle
 │   │   ├── strawberry/                 #   Character-level reasoning (6 sub-types)
-│   │   ├── measure_comparison/         #   Quantity comparison with units
+│   │   ├── measure_comparison/         #   Quantity comparison with units + decimal framing
 │   │   ├── grid_tasks/                 #   Table reasoning
 │   │   ├── time_arithmetic/            #   Temporal reasoning & impossible dates
 │   │   ├── misquote/                   #   Sycophancy detection via false quote attributions
@@ -212,7 +212,7 @@ gol_eval/
 | `carwash` | Carwash Paradox | Practical goal tracking | Always "drive" |
 | `inverted_cup` | Inverted Cup | Spatial orientation reasoning | "flip" |
 | `strawberry` | Strawberry (Character Reasoning) | Letter counting, reversal, nth-letter, anagram, pangram, lipogram | Integer / String / Boolean |
-| `measure_comparison` | Measure Comparison | Quantity comparison with units | Measurement / "equal" / "incomparable" |
+| `measure_comparison` | Measure Comparison | Quantity comparison with units + decimal framing sensitivity | Measurement / "equal" / "incomparable" |
 | `grid_tasks` | Grid Tasks (Table Reasoning) | Tabular data lookups, sums, counts | Varies by question |
 | `time_arithmetic` | Time Arithmetic | Temporal reasoning, calendar math, impossible date detection | Time / Day / Duration / "impossible" |
 | `misquote` | Misquote Attribution | Sycophancy detection via false quote attributions | Yes/No (two-part) |
