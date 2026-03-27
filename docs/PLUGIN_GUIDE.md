@@ -239,7 +239,7 @@ The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt
 |---------------|---------|
 | **6 languages** (EN/ES/FR/DE/ZH/UA) | game_of_life, cellular_automata_1d, ascii_shapes, strawberry, measure_comparison, time_arithmetic |
 | **3 languages** (EN/ES/FR) | linda_fallacy |
-| **EN only** | arithmetic, grid_tasks, carwash, inverted_cup, misquote, false_premise, family_relations, object_tracking, sally_anne, encoding_cipher |
+| **EN only** | arithmetic, grid_tasks, carwash, inverted_cup, misquote, false_premise, family_relations, object_tracking, sally_anne, encoding_cipher, symbol_arithmetic |
 
 Adding further translations is a matter of adding entries to each plugin's `prompts.py` — no pipeline changes needed.
 
@@ -884,6 +884,56 @@ Two task modes:
 - `wrong_decode` (False) — decoded but got wrong answer
 - `parse_error` (False) — couldn't extract an answer
 - Aggregation: mode_breakdown, encoding_breakdown, caesar_shift_breakdown, hallucination rate, refusal rate
+
+---
+
+### 18. Symbol Arithmetic
+
+**Path**: `src/plugins/symbol_arithmetic/`
+**task_type**: `symbol_arithmetic`
+**Tests**: Evaluate expressions under arbitrary binary operations defined by a lookup table — pure rule-following with zero semantic anchor.
+
+The model is given an N×N operation table (e.g. A ★ B = C) and an expression tree, and must evaluate it step by step using only the table.
+
+**4 operation classes** (configurable):
+- `commutative` — a ★ b = b ★ a for all pairs
+- `non_commutative` — at least one pair where a ★ b ≠ b ★ a
+- `non_associative` — at least one triple where (a ★ b) ★ c ≠ a ★ (b ★ c)
+- `arbitrary` — no constraints
+
+**3 symbol types**: `alpha` (A, B, C…), `emoji` (🔴, 🟢, 🔵…), `nonsense_words` (ZIG, ZAG, MOP…)
+
+**2 table formats**: `matrix` (grid with row/column headers) and `pairs` (enumerated `A ★ B = C` lines)
+
+**Generator** (`generator.py`):
+- Builds N×N operation tables respecting operation_class constraints
+- Generates binary expression trees of configurable depth (1–4)
+- Bottom-up evaluation with UNDEFINED detection (for partial tables)
+- Commutativity trace: enumerates all 2^k swap combinations at internal nodes
+- Associativity trace: enumerates all Catalan-number regroupings (guarded at 7 leaves)
+- Partial tables: configurable fraction of entries removed
+- Config: `set_size` (3–8), `expression_depth` (1–4), `operation_class`, `table_completeness` (full/partial), `table_format` (matrix/pairs), `symbol_type`, `count`, `partial_missing_fraction`, `difficulty` (easy/medium/hard/nightmare presets)
+
+**Parser** (`parser.py`) — 6-strategy end-first parser:
+1. `undefined_detection` — keywords: "undefined", "cannot be determined", etc.
+2. `boxed_symbol` — `\boxed{X}`
+3. `labelled_answer` — "Answer: X", "Result: X"
+4. `equals_pattern` — `= X` at end of expression
+5. `bold_symbol` — `**X**`
+6. `last_symbol` — last token matching valid symbol set
+- All strategies filter against `task_params['symbols']`
+
+**Evaluator** (`evaluator.py`) — 8-type match taxonomy:
+- `correct` (True) — exact match
+- `wrong_assumed_commutative` (False) — answer matches a commuted evaluation (model assumed a ★ b = b ★ a)
+- `wrong_assumed_associative` (False) — answer matches a regrouped evaluation (model assumed associativity)
+- `wrong_arbitrary` (False) — wrong answer that doesn’t match any known assumption
+- `undefined_correct` (True) — correctly identified UNDEFINED (partial tables)
+- `undefined_wrong` (False) — said UNDEFINED but answer was deterministic
+- `undefined_missed` (False) — gave a symbol but expression was UNDEFINED
+- `parse_error` (False) — couldn’t extract an answer
+- Derived metrics: `commutativity_assumption_rate`, `associativity_assumption_rate`
+- Aggregation: per operation_class, expression_depth, table_format, symbol_type
 
 ---
 

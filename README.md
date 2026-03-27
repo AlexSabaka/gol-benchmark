@@ -41,6 +41,7 @@ Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, b
 | 15 | **False Premise** | Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic) |
 | 16 | **Family Relations** | Perspective-aware family counting puzzles — sibling count, shared children, generational, perspective shift |
 | 17 | **Encoding & Cipher Decoding** | Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection |
+| 18 | **Symbol Arithmetic** | Evaluate expressions under arbitrary binary operations (custom operation tables, commutativity/associativity detection) |
 
 ---
 

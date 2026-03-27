@@ -107,7 +107,7 @@ A modern web interface built with **FastAPI + HTMX + Jinja2** (replaced the depr
 ```
 gol_eval/
 ├── src/
-│   ├── plugins/                        # Plugin-based benchmark system (17 plugins)
+│   ├── plugins/                        # Plugin-based benchmark system (18 plugins)
 │   │   ├── base.py                     #   Abstract base classes + ConfigField
 │   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
 │   │   ├── parse_utils.py              #   End-first parsing utilities
@@ -127,7 +127,8 @@ gol_eval/
 │   │   ├── misquote/                   #   Sycophancy detection via false quote attributions
 │   │   ├── false_premise/              #   Dangerous/impossible premise detection
 │   │   ├── family_relations/           #   Perspective-aware family counting puzzles
-│   │   └── encoding_cipher/            #   Encoding & cipher decoding (Base64, Caesar, Morse)
+│   │   ├── encoding_cipher/            #   Encoding & cipher decoding (Base64, Caesar, Morse)
+│   │   └── symbol_arithmetic/          #   Custom operation tables on abstract symbol sets
 │   │
 │   ├── stages/                         # 3-stage pipeline
 │   │   ├── generate_testset.py         #   Stage 1: YAML → test sets
@@ -221,6 +222,7 @@ gol_eval/
 | `false_premise` | False Premise | Dangerous/impossible premise detection | Refusal / Compliance / Hedge |
 | `family_relations` | Family Relations | Perspective-aware family counting puzzles | Integer (person count) |
 | `encoding_cipher` | Encoding & Cipher Decoding | Decode Base64/Caesar/Morse and follow instructions | Decoded text / response word |
+| `symbol_arithmetic` | Symbol Arithmetic | Evaluate expressions under arbitrary binary operations | Symbol from operation table |
 
 Each plugin is self-contained in `src/plugins/<task_type>/` with its own generator, parser, and evaluator.
 

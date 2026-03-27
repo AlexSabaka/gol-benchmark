@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 17 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
+This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 18 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
 ## Architecture (v2.2.0)
 
@@ -28,7 +28,8 @@ src/plugins/
 ├── misquote/                  # Misquote Attribution: sycophancy detection
 ├── false_premise/             # False Premise: dangerous/impossible premise detection
 ├── family_relations/          # Family Relations: perspective-aware counting puzzles
-└── encoding_cipher/           # Encoding & Cipher Decoding: Base64, Caesar, Morse
+├── encoding_cipher/           # Encoding & Cipher Decoding: Base64, Caesar, Morse
+└── symbol_arithmetic/         # Symbol Arithmetic: custom operation tables
 ```
 
 **Benefits:**
@@ -90,7 +91,8 @@ src/
 │   ├── misquote/       # Misquote Attribution plugin (sycophancy detection)
 │   ├── false_premise/  # False Premise plugin (dangerous/impossible premise detection)
 │   ├── family_relations/ # Family Relations plugin (perspective-aware counting)
-│   └── encoding_cipher/ # Encoding & Cipher Decoding plugin (Base64, Caesar, Morse)
+│   ├── encoding_cipher/ # Encoding & Cipher Decoding plugin (Base64, Caesar, Morse)
+│   └── symbol_arithmetic/ # Symbol Arithmetic plugin (custom operation tables)
 ├── stages/             # 3-Stage Pipeline Scripts (uses plugins)
 │   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
 │   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
@@ -346,6 +348,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Family Relations**: Expected 40-70% accuracy (self-counting traps are the classic failure mode)
 - **Measure Comparison (decimal)**: Expected 40-80% accuracy; framing sensitivity rate reveals how often models change answers based on framing context
 - **Encoding & Cipher Decoding**: Expected 50-80% accuracy (Base64 easiest, Morse hardest; hallucinated execution is the interesting failure mode)
+- **Symbol Arithmetic**: Expected 40-70% accuracy (commutativity/associativity assumptions are the classic failure modes; partial tables and emoji symbols are hardest)
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
@@ -400,12 +403,12 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.9.0 (March 27, 2026)
+**Version**: 2.10.0 (March 27, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery
 - Plugin-local prompt templates (PromptEngine user prompts deprecated)
 - Modern 3-stage architecture with enhanced parsing and analytics
-- 17 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison (with decimal framing), Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding
+- 18 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison (with decimal framing), Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic
 - Remote Ollama support (`--ollama-host`)
 - Token counting throughout pipeline

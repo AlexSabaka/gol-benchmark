@@ -247,6 +247,8 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'family_relations'
         elif '_encoding_cipher' in test_id or test_id.startswith('encoding_cipher_'):
             task_type = 'encoding_cipher'
+        elif '_symbol_arithmetic' in test_id or test_id.startswith('symbol_arithmetic_'):
+            task_type = 'symbol_arithmetic'
         
         task_stats[task_type]['total'] += 1
         

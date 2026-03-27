@@ -2,6 +2,34 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.10.0] - March 27, 2026
+
+### Symbol Arithmetic Plugin — 18th Benchmark Task
+
+New plugin `src/plugins/symbol_arithmetic/` — evaluate expressions under arbitrary binary operations defined by lookup tables. Tests pure rule-following with zero semantic anchor: models must use only the given operation table, not prior mathematical knowledge.
+
+#### What Changed
+
+- **New plugin `symbol_arithmetic`** with 4 operation classes: `commutative`, `non_commutative`, `non_associative`, `arbitrary`
+- **3 symbol types**: `alpha` (A, B, C…), `emoji` (🔴, 🟢, 🔵…), `nonsense_words` (ZIG, ZAG, MOP…)
+- **2 table formats**: `matrix` (grid with row/column headers) and `pairs` (enumerated A ★ B = C lines)
+- **Configurable expression trees** of depth 1–4 with fully parenthesized output to eliminate grouping ambiguity
+- **Partial tables**: configurable fraction of entries removed; expressions may evaluate to UNDEFINED
+- **Commutativity trace**: enumerates all 2^k swap combinations at operator nodes to detect commutativity assumptions
+- **Associativity trace**: enumerates all Catalan-number regroupings (guarded at 7 leaves) to detect associativity assumptions
+- **6-strategy end-first parser**: undefined_detection → boxed_symbol → labelled_answer → equals_pattern → bold_symbol → last_symbol (all filtered against valid symbol set)
+- **8-type match taxonomy** in evaluator:
+  - `correct` (True) — exact match
+  - `wrong_assumed_commutative` (False) — matches commuted evaluation
+  - `wrong_assumed_associative` (False) — matches regrouped evaluation
+  - `wrong_arbitrary` (False) — wrong, no known assumption pattern
+  - `undefined_correct` / `undefined_wrong` / `undefined_missed` — partial table handling
+  - `parse_error` (False) — couldn't extract answer
+- **Derived metrics**: `commutativity_assumption_rate`, `associativity_assumption_rate`
+- **ConfigField schema**: set_size (3–8), expression_depth (1–4), operation_class, table_completeness, table_format, symbol_type, count, partial_missing_fraction, difficulty (easy/medium/hard/nightmare presets)
+- **Pipeline integration**: `analyze_results.py` — task type recognition for symbol_arithmetic test IDs
+- **42 unit tests** across 9 test classes — all passing
+
 ## [2.9.0] - March 27, 2026
 
 ### Encoding & Cipher Decoding Plugin — 17th Benchmark Task

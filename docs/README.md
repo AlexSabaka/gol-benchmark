@@ -1,6 +1,6 @@
 # GoL Benchmark Documentation
 
-Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 17 structured cognitive tasks.
+Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 18 structured cognitive tasks.
 
 ---
 
@@ -45,7 +45,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 ---
 
-## Benchmark Tasks (17 plugins)
+## Benchmark Tasks (18 plugins)
 
 | Task | Plugin | Answer Type |
 |------|--------|-------------|
@@ -66,6 +66,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | False Premise | `false_premise` | Refusal / Compliance / Hedge |
 | Family Relations | `family_relations` | Integer (person count) |
 | Encoding & Cipher Decoding | `encoding_cipher` | Decoded text / response word |
+| Symbol Arithmetic | `symbol_arithmetic` | Symbol from operation table |
 
 See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for detailed per-plugin documentation.
 
@@ -106,5 +107,5 @@ docs/
 
 ---
 
-**Version:** 2.9.0
+**Version:** 2.10.0
 **Last Updated:** March 2026
