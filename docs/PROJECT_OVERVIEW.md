@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.9.0** | Last updated: 2026-03-27
+> **Version 2.10.1** | Last updated: 2026-03-27
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -392,17 +392,18 @@ LLMs reason first, answer last. Searching from the end of responses instead of t
 
 ## Known Quirks & Gotchas
 
-### Emoji Markers = 0% Accuracy
+### Cell Markers — Emoji Now Supported (v2.10.1)
 
-Using emoji cell markers (e.g., `"⚪⚫"`) for Game of Life causes **complete failure**. Models cannot parse emoji grid representations reliably.
+Custom cell markers (including emoji like `"❤️,🖤"`) are now fully supported for Game of Life. Earlier versions had a parsing bug that silently ignored non-default markers.
 
 ```bash
-# WRONG — guaranteed 0% accuracy
---live-dead-cell-markers "⚪⚫"
-
-# CORRECT — always use numeric markers
---live-dead-cell-markers "1,0"
+# All of these now work correctly:
+--live-dead-cell-markers "1,0"        # numeric (recommended for best model accuracy)
+--live-dead-cell-markers "❤️,🖤"      # emoji (works, but models may parse less reliably)
+--live-dead-cell-markers "X,O"        # letters
 ```
+
+> **Note:** While the generator and pipeline handle any markers correctly, models still tend to perform best with numeric `"1,0"` markers. Emoji markers are a valid stress test for model robustness.
 
 ### `--no-think` for Structured Tasks
 

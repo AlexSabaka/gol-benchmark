@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.9.0** | Last updated: 2026-03-27
+> **Version 2.10.1** | Last updated: 2026-03-27
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 17 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -323,11 +323,13 @@ Re-parsed 1,933 results across 33 result files after implementing end-first pars
 Given an initial grid state, the model must predict the next generation by applying cellular automaton rules (cells with 2-3 neighbors survive, dead cells with exactly 3 neighbors are born, all others die).
 
 **Generator** (`generator.py`):
-- Grid sizes by difficulty: EASY 3x3, MEDIUM 5x5, HARD 8x8, NIGHTMARE 10x10
+- Grid sizes by difficulty: EASY 3×3, MEDIUM 5×5, HARD 8×8, NIGHTMARE 10×10
 - Configurable cell density and known-pattern ratio
 - Uses `GameOfLifeEngine` from `src/engine/` for computing expected state
-- Supports known Conway patterns from `data/conways_life/`
-- Config: `difficulty_levels`, `density`, `known_patterns_ratio`, `cell_markers`
+- **1,061 real-world patterns** from `data/conways_life/sorted_patterns/` auto-loaded by grid dimensions — falls back to 7 hardcoded `BASIC_KNOWN_PATTERNS` when none fit
+- Custom cell markers supported (including emoji, e.g. `"❤️,🖤"`); parsed via `_normalize_cell_markers()`
+- `exclude_empty` option to skip all-dead initial grids (retries up to 10 times)
+- Config: `difficulty_levels`, `density`, `known_patterns_ratio`, `cell_markers`, `exclude_empty`
 
 **Parser** (`parser.py`) — 4 strategies (end-first):
 1. `line_scan_reverse` — Scan from end for rows of 0s/1s
@@ -340,7 +342,7 @@ Given an initial grid state, the model must predict the next generation by apply
 - Match types: `exact`, `partial`, `mismatch`, `dimension_mismatch`, `parse_error`
 - Accuracy normalized: 50% random chance → 0.0 score
 
-**Quirk**: Emoji markers (`"⚪⚫"`) cause 0% accuracy. Always use `"1,0"`.
+**Note**: Custom cell markers (emoji, letters, etc.) are fully supported since v2.10.1. Earlier versions had a bug where non-default markers were silently ignored. Numeric `"1,0"` markers remain recommended for best model accuracy.
 
 ---
 

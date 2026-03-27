@@ -36,7 +36,20 @@ from dataclasses import dataclass
 # Helper function for Game of Life grid formatting
 def format_grid(g: List[List[int]], live_cell_mark: str = '1', dead_cell_mark: str = '0') -> str:
     """Format grid into string representation"""
-    return "\n".join([" ".join(map(str, row)) for row in g]).replace('1', live_cell_mark).replace('0', dead_cell_mark)
+    return "\n".join(
+        " ".join(live_cell_mark if cell else dead_cell_mark for cell in row)
+        for row in g
+    )
+
+
+def _normalize_cell_markers(raw) -> List[str]:
+    """Normalize cell_markers from any input format to a two-element list."""
+    if isinstance(raw, str):
+        parts = raw.split(',')
+        return [parts[0].strip(), parts[1].strip() if len(parts) > 1 else '0']
+    if isinstance(raw, (list, tuple)) and len(raw) >= 2:
+        return [str(raw[0]), str(raw[1])]
+    return ['1', '0']
 
 # Plugin system integration (optional - falls back to built-in generators if unavailable)
 try:
@@ -144,8 +157,10 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
             # Prepare generation config
             generation_config = {
                 **gen_params,
-                'cell_markers': config['execution'].get('cell_markers', ['1', '0']),
             }
+            # cell_markers: prefer per-task generation param, then execution-level, then default
+            raw_markers = gen_params.get('cell_markers') or config['execution'].get('cell_markers', ['1', '0'])
+            generation_config['cell_markers'] = _normalize_cell_markers(raw_markers)
 
             # Prepare prompt config
             prompt_conf = {
@@ -309,8 +324,8 @@ def generate_gol_tests(config: Dict) -> List[Dict]:
                 )
                 
                 # Set grid context
-                live_cell = config['execution'].get('cell_markers', ['1', '0'])[0]
-                dead_cell = config['execution'].get('cell_markers', ['1', '0'])[1]
+                live_cell = _normalize_cell_markers(config['execution'].get('cell_markers', ['1', '0']))[0]
+                dead_cell = _normalize_cell_markers(config['execution'].get('cell_markers', ['1', '0']))[1]
                 grid_str = format_grid(initial_grid, live_cell, dead_cell)
                 
                 context.set('initial_grid', initial_grid)
@@ -393,8 +408,8 @@ def generate_c14_tests(config: Dict) -> List[Dict]:
                 )
                 
                 # Prepare state strings
-                alive_char = config['execution'].get('cell_markers', ['1', '0'])[0]
-                dead_char = config['execution'].get('cell_markers', ['1', '0'])[1]
+                alive_char = _normalize_cell_markers(config['execution'].get('cell_markers', ['1', '0']))[0]
+                dead_char = _normalize_cell_markers(config['execution'].get('cell_markers', ['1', '0']))[1]
                 state_str = ca_engine.state_to_string(test_case_data['initial_state'], alive_char, dead_char)
                 expected_state_str = ca_engine.state_to_string(test_case_data['expected_states'][0], alive_char, dead_char)
                 

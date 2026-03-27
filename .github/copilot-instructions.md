@@ -219,7 +219,7 @@ sampling:
   
 execution:
   no_thinking: true
-  cell_markers: ["1", "0"]  # Critical: avoid emoji markers
+  cell_markers: ["1", "0"]  # Numeric recommended; emoji now supported (v2.10.1)
 ```
 
 ### **Config Dataclasses (in `src/core/types.py`)**
@@ -332,7 +332,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 8. **Remote Ollama support (2026-02-21)**: `OllamaProvider` now accepts a `host` parameter; non-default hosts use REST API for discovery and availability checks
 
 ### ⚠️ **Known Limitations**
-- **Emoji cell markers** (`🟩/🟥`) cause model failures—always use `1/0` markers  
+- **Emoji cell markers** (`🟩/🟥`) now work correctly (v2.10.1 fix), but models still perform best with `1/0` markers  
 - **Thinking mode** can hurt structured output accuracy—use `--no-think` for best results
 - **Quantized models** (Q2_K) sometimes outperform full precision (counterintuitive but documented)
 - **Cloud model timeouts**: Some cloud providers have longer response times
@@ -403,7 +403,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.10.0 (March 27, 2026)
+**Version**: 2.10.1 (March 27, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery

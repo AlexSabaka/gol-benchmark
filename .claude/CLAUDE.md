@@ -147,7 +147,7 @@ gol_eval/
 | **Core Infrastructure** | |
 | [src/core/types.py](src/core/types.py) | All config classes, types, difficulty levels |
 | [src/core/PromptEngine.py](src/core/PromptEngine.py) | System prompts + enums (user templates deprecated → plugins) |
-| [src/core/TestGenerator.py](src/core/TestGenerator.py) | Test case generation with known patterns |
+| [src/core/TestGenerator.py](src/core/TestGenerator.py) | Test case generation with 1,061 real-world patterns + known patterns |
 | [src/models/BaseModelInterface.py](src/models/BaseModelInterface.py) | Abstract base for model providers |
 | [src/models/OllamaInterface.py](src/models/OllamaInterface.py) | Ollama integration with retry logic |
 | [src/models/HuggingFaceInterface.py](src/models/HuggingFaceInterface.py) | HuggingFace/Transformers integration |
@@ -347,7 +347,7 @@ All response parsers follow the principle of searching from the **end** of the m
 # Languages
 --prompt-language en|es|fr|de|zh|uk
 
-# Cell markers (GoL only - NEVER use emoji!)
+# Cell markers (GoL only — emoji supported since v2.10.1, but numeric recommended)
 --live-dead-cell-markers "1,0"
 
 # Disable chain-of-thought (recommended for structured tasks)
@@ -377,9 +377,10 @@ All response parsers follow the principle of searching from the **end** of the m
 
 ### Critical Issues
 
-1. **Emoji markers cause 0% accuracy**
-   - Always use `--live-dead-cell-markers "1,0"` for GoL
-   - Never use "⚪⚫" or other emoji - models parse incorrectly
+1. **Emoji markers now work but reduce accuracy**
+   - Custom cell markers (including emoji) are supported since v2.10.1
+   - `--live-dead-cell-markers "1,0"` remains recommended for best model accuracy
+   - Emoji markers are a valid robustness test but expect lower scores
 
 2. **`--no-think` is critical for structured tasks**
    - Chain-of-thought hurts performance on GoL/ARI
@@ -601,7 +602,7 @@ Or use the 3-stage pipeline with a YAML config.
 
 ### Q: How do I debug why a model is scoring 0%?
 
-1. **Check cell markers**: Must be `"1,0"`, not emoji
+1. **Check cell markers**: `"1,0"` recommended (emoji now supported but models perform worse with them)
 2. **Inspect raw output**: Add `print(response)` before `parse_response()`
 3. **Check prompt**: Ensure format matches expected output
 4. **Try simpler test**: Use `--difficulty easy --batch-size 1`
@@ -694,6 +695,6 @@ pytest tests/
 ---
 
 *Last updated: 2026-03-27*
-*Version: 2.10.0*
-*Key additions: Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Version: 2.10.1*
+*Key additions: GoL cell markers fix (emoji support), 1,061 real-world GoL patterns from sorted_patterns, exclude_empty option • Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

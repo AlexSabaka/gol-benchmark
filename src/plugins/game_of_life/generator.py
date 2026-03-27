@@ -15,11 +15,26 @@ from src.core.types import DifficultyLevel
 from src.engine.GameOfLifeEngine import GameOfLifeEngine
 
 
+def _normalize_cell_markers(raw) -> List[str]:
+    """Normalize cell_markers from any input format to a two-element list."""
+    if isinstance(raw, str):
+        parts = raw.split(',')
+        return [parts[0].strip(), parts[1].strip() if len(parts) > 1 else '0']
+    if isinstance(raw, (list, tuple)) and len(raw) >= 2:
+        return [str(raw[0]), str(raw[1])]
+    return ['1', '0']
+
+
 def format_grid(grid: List[List[int]], live_cell: str = '1', dead_cell: str = '0') -> str:
-    """Format grid into string representation."""
+    """Format grid into string representation.
+
+    Maps cell values directly to avoid chained .replace() which breaks
+    when markers contain characters that collide (e.g. live='0' or dead='1').
+    """
     return "\n".join(
-        [" ".join(map(str, row)) for row in grid]
-    ).replace('1', live_cell).replace('0', dead_cell)
+        " ".join(live_cell if cell else dead_cell for cell in row)
+        for row in grid
+    )
 
 
 class GoLTestCaseGenerator(TestCaseGenerator):
@@ -94,9 +109,9 @@ class GoLTestCaseGenerator(TestCaseGenerator):
         density = config.get('density', 0.5)
         known_patterns_ratio = config.get('known_patterns_ratio', 0.3)
         grids_per_difficulty = config.get('grids_per_difficulty', count // len(difficulty_levels) or 1)
-        cell_markers = config.get('cell_markers', ['1', '0'])
-        live_cell = cell_markers[0] if cell_markers else '1'
-        dead_cell = cell_markers[1] if len(cell_markers) > 1 else '0'
+        cell_markers = _normalize_cell_markers(config.get('cell_markers', ['1', '0']))
+        live_cell = cell_markers[0]
+        dead_cell = cell_markers[1]
 
         # Parse prompt configuration
         language_str = prompt_config.get('language', 'en')
@@ -118,17 +133,24 @@ class GoLTestCaseGenerator(TestCaseGenerator):
                     break
 
                 # Generate a test grid
-                game_states = test_generator.create_test_batch(
-                    difficulty=difficulty,
-                    batch_size=1,
-                    density=density,
-                    known_patterns_ratio=known_patterns_ratio
-                )
+                exclude_empty = config.get('exclude_empty', False)
+                for _attempt in range(10 if exclude_empty else 1):
+                    game_states = test_generator.create_test_batch(
+                        difficulty=difficulty,
+                        batch_size=1,
+                        density=density,
+                        known_patterns_ratio=known_patterns_ratio
+                    )
+                    if not game_states:
+                        break
+                    game_state = game_states[0]
+                    initial_grid = game_state.grid
+                    if not exclude_empty or any(c for row in initial_grid for c in row):
+                        break
 
                 if not game_states:
                     continue
 
-                game_state = game_states[0]
                 initial_grid = game_state.grid
 
                 # Compute expected next state
@@ -209,4 +231,7 @@ class GoLTestCaseGenerator(TestCaseGenerator):
             ConfigField(name='cell_markers', label='Cell markers', field_type='text',
                         default='1,0', group='advanced',
                         help='Live,dead cell markers (comma-separated)'),
+            ConfigField(name='exclude_empty', label='Exclude empty grids', field_type='checkbox',
+                        default=False, group='advanced',
+                        help='Re-generate if initial grid is all dead cells'),
         ]

@@ -2,6 +2,28 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.10.1] - March 27, 2026
+
+### Game of Life Plugin — Cell Markers Fix, Real-World Patterns, Empty Grid Exclusion
+
+Three improvements to the `game_of_life` plugin: a critical bug fix for custom cell markers (including emoji), expanded known patterns from the Conway's Life pattern database, and an option to exclude empty initial grids.
+
+#### What Changed
+
+- **Fixed cell marker parsing**: Custom cell markers (e.g., `"❤️,🖤"`) now work correctly. Previously, comma-separated string markers were indexed character-by-character instead of being split, so only the first character was used as the live marker. Added `_normalize_cell_markers()` in both `generator.py` and `generate_testset.py` to handle string, list, and tuple inputs.
+- **Fixed `format_grid()` double-replacement bug**: The old implementation used chained `.replace('1', live).replace('0', dead)` which corrupted output when markers contained `'0'` or `'1'` characters. Now uses direct per-cell mapping.
+- **Expanded known patterns**: `TestGenerator` now loads 1,061 real-world patterns from `data/conways_life/sorted_patterns/` (Conway's Life pattern database). Patterns are filtered by grid dimensions (all patterns where W ≤ grid width AND H ≤ grid height), cached per dimension pair, and preferred over the 7 hardcoded `BASIC_KNOWN_PATTERNS`. Falls back to hardcoded patterns when no sorted files fit.
+- **`exclude_empty` option**: New ConfigField (checkbox, advanced group, default `False`). When enabled, regenerates test cases if the initial grid is all-dead (up to 10 retries).
+- **Cell markers precedence**: Per-task `cell_markers` from generation config now takes priority over the global `execution.cell_markers` setting.
+- **13 new tests** in `tests/test_gol_changes.py` — all passing, 0 regressions in existing GoL tests
+
+#### Design Decisions
+
+- `sorted_patterns` loaded with "all fitting" strategy (W ≤ grid_w, H ≤ grid_h), not just exact-size matches
+- `exclude_empty` checks initial state only (not next-generation state)
+- `BASIC_KNOWN_PATTERNS` kept as fallback when no sorted_patterns files are found
+- Retry limit of 10 for empty grid regeneration to prevent infinite loops
+
 ## [2.10.0] - March 27, 2026
 
 ### Symbol Arithmetic Plugin — 18th Benchmark Task

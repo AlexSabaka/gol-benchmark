@@ -205,14 +205,18 @@ Improvement from minimal → linguistic user prompts:
 
 ## Key Findings from Game of Life & Other Tasks
 
-### The Emoji Catastrophe 🟩🟥
+### The Emoji Catastrophe 🟩🟥 *(Fixed in v2.10.1)*
 
-**Using emoji markers (`🟩/🟥`) instead of numeric (`1/0`) causes complete failure:**
+**Historical note:** Using emoji markers (`🟩/🟥`) instead of numeric (`1/0`) used to cause complete failure due to a generator bug. This has been fixed — custom cell markers (including emoji) now work correctly.
+
+However, models still perform significantly better with numeric markers:
 
 | Model | Numeric (1/0) | Emoji (🟩/🟥) |
 |-------|---------------|----------------|
 | qwen3:0.6b | 61.67% | **0.00%** |
 | gemma3:1b | 66.11% | **0.00%** |
+
+> The accuracy difference above reflects both the old generator bug and genuine model difficulty with emoji grids. With the fix, emoji markers are a valid robustness test.
 
 ### Prompt Style Impact
 
