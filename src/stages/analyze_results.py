@@ -84,6 +84,7 @@ TASK_COLORS = {
     'measure_comparison': '#2980b9',   # Blue (measurement)
     'misquote': '#c0392b',             # Dark red (misattribution)
     'family_relations': '#d35400',     # Burnt orange (family tree)
+    'encoding_cipher': '#27ae60',      # Green (encoding)
     'multi-task': '#95a5a6',           # Light gray
 }
 
@@ -244,6 +245,8 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
             task_type = 'false_premise'
         elif '_family_relations' in test_id or test_id.startswith('family_relations_'):
             task_type = 'family_relations'
+        elif '_encoding_cipher' in test_id or test_id.startswith('encoding_cipher_'):
+            task_type = 'encoding_cipher'
         
         task_stats[task_type]['total'] += 1
         
@@ -821,7 +824,8 @@ def _render_sample_cards(all_results_for_model: List[Dict], num_correct: int = 5
         for tname in ['arithmetic', 'game_of_life', 'gol', 'linda', 'ascii_shapes',
                        'cellular_automata_1d', 'c14', 'object_tracking', 'sally_anne',
                        'carwash', 'inverted_cup', 'strawberry', 'measure_comparison', 'grid_tasks',
-                       'misquote']:
+                       'misquote', 'time_arithmetic', 'false_premise', 'family_relations',
+                       'encoding_cipher']:
             if tname in tid:
                 nice = tname.replace('_', ' ').title()
                 task_badge = f"<span class='badge badge-primary'>{nice}</span>"

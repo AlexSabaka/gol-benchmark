@@ -24,6 +24,7 @@
 - **Misquote Attribution**: Sycophancy detection — false quote attributions with social-pressure framings
 - **False Premise**: Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic)
 - **Family Relations**: Perspective-aware family counting puzzles — sibling count, shared children, generational chains, perspective shifts
+- **Encoding & Cipher Decoding**: Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection
 
 ### Key Characteristics
 
@@ -60,7 +61,7 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (16 plugins)
+│   ├── plugins/           # Plugin-based benchmark system (17 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
 │   │   ├── parse_utils.py # End-first parsing utilities
@@ -78,7 +79,9 @@ gol_eval/
 │   │   ├── grid_tasks/    # Table reasoning plugin
 │   │   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
 │   │   ├── misquote/      # Misquote Attribution (sycophancy detection)
-│   │   └── false_premise/ # False Premise (dangerous/impossible premise detection)
+│   │   ├── false_premise/ # False Premise (dangerous/impossible premise detection)
+│   │   ├── family_relations/ # Family Relations (perspective-aware counting)
+│   │   └── encoding_cipher/ # Encoding & Cipher Decoding (Base64, Caesar, Morse)
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
 │   │   ├── generate_testset.py  # Stage 1: YAML → test sets
 │   │   ├── run_testset.py       # Stage 2: Execute tests
@@ -113,7 +116,7 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (16 plugins)** | |
+| **Plugin System (17 plugins)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
 | [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
@@ -133,6 +136,7 @@ gol_eval/
 | [src/plugins/misquote/](src/plugins/misquote/) | Misquote Attribution plugin (sycophancy detection) |
 | [src/plugins/false_premise/](src/plugins/false_premise/) | False Premise plugin (dangerous/impossible premise detection) |
 | [src/plugins/family_relations/](src/plugins/family_relations/) | Family Relations plugin (perspective-aware counting) |
+| [src/plugins/encoding_cipher/](src/plugins/encoding_cipher/) | Encoding & Cipher Decoding plugin (Base64, Caesar, Morse) |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
@@ -687,6 +691,6 @@ pytest tests/
 ---
 
 *Last updated: 2026-03-27*
-*Version: 2.8.1*
-*Key additions: Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Version: 2.9.0*
+*Key additions: Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

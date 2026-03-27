@@ -1,8 +1,8 @@
 # Plugin System Guide
 
-> **Version 2.8.1** | Last updated: 2026-03-27
+> **Version 2.9.0** | Last updated: 2026-03-27
 
-Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 16 benchmark plugins, and a step-by-step walkthrough for adding new ones.
+Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 17 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
 ---
 
@@ -29,6 +29,7 @@ Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, 
   - [Misquote Attribution](#14-misquote-attribution)
   - [False Premise](#15-false-premise)
   - [Family Relations](#16-family-relations)
+  - [Encoding & Cipher Decoding](#17-encoding--cipher-decoding)
 - [Adding a New Plugin](#adding-a-new-plugin)
 - [Integration Points](#integration-points)
 - [Testing Plugins](#testing-plugins)
@@ -57,7 +58,7 @@ PluginRegistry (auto-discovers at first access)
     │                       ├── CarwashParser
     │                       └── CarwashEvaluator
     │
-    └── ... (16 plugins total)
+    └── ... (17 plugins total)
 ```
 
 ### Base Classes
@@ -238,7 +239,7 @@ The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt
 |---------------|---------|
 | **6 languages** (EN/ES/FR/DE/ZH/UA) | game_of_life, cellular_automata_1d, ascii_shapes, strawberry, measure_comparison, time_arithmetic |
 | **3 languages** (EN/ES/FR) | linda_fallacy |
-| **EN only** | arithmetic, grid_tasks, carwash, inverted_cup, misquote, false_premise, family_relations, object_tracking, sally_anne |
+| **EN only** | arithmetic, grid_tasks, carwash, inverted_cup, misquote, false_premise, family_relations, object_tracking, sally_anne, encoding_cipher |
 
 Adding further translations is a matter of adding entries to each plugin's `prompts.py` — no pipeline changes needed.
 
@@ -847,6 +848,42 @@ Classic riddles that trip up both humans and LLMs: "Sally has 3 brothers. Each b
 - Match types: `correct`, `overcounting` (predicted > expected — classic self-counting trap), `undercounting` (predicted < expected), `parse_error`
 - Details include `sub_type`, `template`, `trap`, `difficulty`
 - Aggregation: per-sub-type accuracy, per-trap-type accuracy, overcounting rate, undercounting rate
+
+---
+
+### 17. Encoding & Cipher Decoding
+
+**Path**: `src/plugins/encoding_cipher/`
+**task_type**: `encoding_cipher`
+**Tests**: Decode-and-respond tasks across encoding schemes — can the model decode an encoded message and follow instructions inside it?
+
+Two task modes:
+- `decode_only` — Decode the encoded message and return the plaintext
+- `decode_and_act` — Decode the message, find an embedded instruction, and respond with only the specified word
+
+**3 encoding schemes**:
+- `base64` — Standard Base64 encoding
+- `caesar` — Caesar/ROT-N cipher with configurable shifts (3, 7, 13); preserves case and punctuation
+- `morse` — ITU Morse code (dots/dashes, spaces between letters, ` / ` between words)
+
+**Generator** (`generator.py`):
+- Sentence fragments for `decode_only` plaintext; curated word list (`data/encoding_cipher/words.txt`) for `decode_and_act` response words
+- Weighted random selection of modes and encoding types
+- Config: `count`, `task_modes` (multi-select), `encoding_types` (multi-select), `caesar_shifts` (multi-select: 3/7/13), `message_length` (short/medium/long), `mode_weights`, `encoding_weights`
+- Pure-function encoding engine in `encoding.py` — all encode/decode roundtrips verified
+
+**Parser** (`parser.py`) — mode-specific strategies (end-first):
+- Refusal detection checked first (returns `__REFUSAL__` sentinel)
+- `decode_only`: code_block → quoted_text → labelled_answer → full_response_strip
+- `decode_and_act`: single_word_response → labelled_word → quoted_word → bold_word → last_standalone_word
+
+**Evaluator** (`evaluator.py`) — 5-type failure taxonomy:
+- `correct` (True) — exact case-insensitive match
+- `hallucinated_execution` (True, flagged) — model produced the right word without decoding evidence (decode_and_act only)
+- `paranoid_refusal` (False) — model refused to decode
+- `wrong_decode` (False) — decoded but got wrong answer
+- `parse_error` (False) — couldn't extract an answer
+- Aggregation: mode_breakdown, encoding_breakdown, caesar_shift_breakdown, hallucination rate, refusal rate
 
 ---
 

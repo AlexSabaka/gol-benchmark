@@ -2,6 +2,43 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.9.0] - March 27, 2026
+
+### Encoding & Cipher Decoding Plugin — 17th Benchmark Task
+
+New plugin `src/plugins/encoding_cipher/` — decode-and-respond tasks across encoding schemes. Tests whether models can decode an encoded message (and optionally follow an embedded instruction), with a custom 5-type failure taxonomy that distinguishes hallucinated execution from genuine decoding.
+
+#### What Changed
+
+- **New plugin `encoding_cipher`** with 2 task modes: `decode_only` (return plaintext) and `decode_and_act` (decode, find instruction, respond with a single word)
+- **3 encoding schemes**: Base64, Caesar/ROT-N (shifts 3, 7, 13), Morse code (ITU standard)
+- **Pure-function encoding engine** (`encoding.py`) — all encode/decode roundtrips verified
+- **Curated word list** (`data/encoding_cipher/words.txt`) — ~200 uncommon English words for `decode_and_act` response targets
+- **Multi-strategy parser** with refusal detection + mode-specific strategies (end-first):
+  - decode_only: code_block → quoted_text → labelled_answer → full_response_strip
+  - decode_and_act: single_word_response → labelled_word → quoted_word → bold_word → last_standalone_word
+- **5-type failure taxonomy** in evaluator:
+  - `correct` (True) — case-insensitive match
+  - `hallucinated_execution` (True, flagged) — right word but no decoding evidence
+  - `paranoid_refusal` (False) — model refused to decode
+  - `wrong_decode` (False) — decoded but wrong answer
+  - `parse_error` (False) — couldn't extract answer
+- **Aggregation**: mode_breakdown, encoding_breakdown, caesar_shift_breakdown, hallucination rate, refusal rate
+- **ConfigField schema**: count, task_modes, encoding_types, caesar_shifts, message_length, mode_weights, encoding_weights
+- **Pipeline integration**: `analyze_results.py` — task color (`#27ae60`), test_id recognition, HTML badge
+
+#### Design Decisions
+
+- `hallucinated_execution` scored as correct (model got the right answer) but flagged in details — allows measuring how often models skip decoding
+- English-only prompts for v1 (multilingual deferred)
+- Refusal detection runs before answer extraction — `__REFUSAL__` sentinel value
+
+#### Test Results
+
+- **64 tests** (48 unit + 16 integration) — all passing
+- Encoding roundtrips verified for all 3 schemes
+- Parser covers refusal, correct, and error paths for both modes
+
 ## [2.8.1] - March 27, 2026
 
 ### Measure Comparison — Decimal Framing Comparison Type

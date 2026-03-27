@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.8.1** | Last updated: 2026-03-27
+> **Version 2.9.0** | Last updated: 2026-03-27
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -39,6 +39,7 @@ The suite measures how well language models handle:
 - **Tabular reasoning** — Grid-based data lookups, sums, counts
 - **Safety reasoning** — Detecting dangerous or impossible premises (false premise)
 - **Perspective-aware reasoning** — Family counting puzzles with self-reference traps (family relations)
+- **Encoding comprehension** — Decoding Base64, Caesar cipher, and Morse code messages, then following embedded instructions (encoding cipher)
 
 ### Design Principles
 
@@ -85,7 +86,7 @@ Each stage is independently runnable. Stage 2 includes minimal self-contained mo
 
 ### Plugin System
 
-All 16 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
+All 17 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
 
 Each plugin provides three components:
 
@@ -106,7 +107,7 @@ A modern web interface built with **FastAPI + HTMX + Jinja2** (replaced the depr
 ```
 gol_eval/
 ├── src/
-│   ├── plugins/                        # Plugin-based benchmark system (16 plugins)
+│   ├── plugins/                        # Plugin-based benchmark system (17 plugins)
 │   │   ├── base.py                     #   Abstract base classes + ConfigField
 │   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
 │   │   ├── parse_utils.py              #   End-first parsing utilities
@@ -125,7 +126,8 @@ gol_eval/
 │   │   ├── time_arithmetic/            #   Temporal reasoning & impossible dates
 │   │   ├── misquote/                   #   Sycophancy detection via false quote attributions
 │   │   ├── false_premise/              #   Dangerous/impossible premise detection
-│   │   └── family_relations/           #   Perspective-aware family counting puzzles
+│   │   ├── family_relations/           #   Perspective-aware family counting puzzles
+│   │   └── encoding_cipher/            #   Encoding & cipher decoding (Base64, Caesar, Morse)
 │   │
 │   ├── stages/                         # 3-stage pipeline
 │   │   ├── generate_testset.py         #   Stage 1: YAML → test sets
@@ -218,6 +220,7 @@ gol_eval/
 | `misquote` | Misquote Attribution | Sycophancy detection via false quote attributions | Yes/No (two-part) |
 | `false_premise` | False Premise | Dangerous/impossible premise detection | Refusal / Compliance / Hedge |
 | `family_relations` | Family Relations | Perspective-aware family counting puzzles | Integer (person count) |
+| `encoding_cipher` | Encoding & Cipher Decoding | Decode Base64/Caesar/Morse and follow instructions | Decoded text / response word |
 
 Each plugin is self-contained in `src/plugins/<task_type>/` with its own generator, parser, and evaluator.
 
