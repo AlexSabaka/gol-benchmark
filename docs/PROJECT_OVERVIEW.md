@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.10.1** | Last updated: 2026-03-27
+> **Version 2.10.2** | Last updated: 2026-03-28
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -392,9 +392,9 @@ LLMs reason first, answer last. Searching from the end of responses instead of t
 
 ## Known Quirks & Gotchas
 
-### Cell Markers — Emoji Now Supported (v2.10.1)
+### Cell Markers — Emoji Now Supported (v2.10.1+)
 
-Custom cell markers (including emoji like `"❤️,🖤"`) are now fully supported for Game of Life. Earlier versions had a parsing bug that silently ignored non-default markers.
+Custom cell markers (including emoji like `"❤️,🖤"`) are now fully supported for both **Game of Life** (v2.10.1) and **Cellular Automata 1D** (v2.10.2). Earlier versions had a parsing bug that silently ignored non-default markers.
 
 ```bash
 # All of these now work correctly:
@@ -402,6 +402,8 @@ Custom cell markers (including emoji like `"❤️,🖤"`) are now fully support
 --live-dead-cell-markers "❤️,🖤"      # emoji (works, but models may parse less reliably)
 --live-dead-cell-markers "X,O"        # letters
 ```
+
+For C14, custom markers appear in state strings, rule tables, and boundary descriptions.
 
 > **Note:** While the generator and pipeline handle any markers correctly, models still tend to perform best with numeric `"1,0"` markers. Emoji markers are a valid stress test for model robustness.
 

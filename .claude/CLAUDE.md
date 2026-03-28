@@ -378,7 +378,7 @@ All response parsers follow the principle of searching from the **end** of the m
 ### Critical Issues
 
 1. **Emoji markers now work but reduce accuracy**
-   - Custom cell markers (including emoji) are supported since v2.10.1
+   - Custom cell markers (including emoji) are supported for GoL (v2.10.1) and C14 (v2.10.2)
    - `--live-dead-cell-markers "1,0"` remains recommended for best model accuracy
    - Emoji markers are a valid robustness test but expect lower scores
 
@@ -694,7 +694,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-27*
-*Version: 2.10.1*
-*Key additions: GoL cell markers fix (emoji support), 1,061 real-world GoL patterns from sorted_patterns, exclude_empty option • Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-03-28*
+*Version: 2.10.2*
+*Key additions: C14 custom cell markers (state, rule table, boundary descriptions) • Report: expected value N/A fix, collapsible thinking blocks, parsed answer formatting • Web UI: task types column in results page • GoL cell markers fix (emoji support), 1,061 real-world GoL patterns from sorted_patterns, exclude_empty option • Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

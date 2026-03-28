@@ -21,7 +21,8 @@ with open(OUT, 'w', encoding='utf-8') as out_f:
             model = data.get('model_info', {}).get('model_name', 'unknown_model')
             results = data.get('results', [])
             for r in results:
-                if r.get('output', {}).get('raw_response', '').strip() == "":
+                raw_response = r.get('output', {}).get('raw_response', '')
+                if raw_response is None or raw_response.strip() == "":
                     continue  # Skip if no raw_response
                 test_id = r.get('test_id', 'unknown')
                 test_id = re.sub(r'^multi_\d+_', '', test_id)
@@ -31,7 +32,7 @@ with open(OUT, 'w', encoding='utf-8') as out_f:
                         'test_id': test_id,
                         'model': model,
                         'user_prompt': r.get('input', {}).get('user_prompt', ''),
-                        'raw_response': r.get('output', {}).get('raw_response', ''),
+                        'raw_response': raw_response,
                         'parsed_answer': r.get('output', {}).get('parsed_answer', {}),
                         'expected_answer': r.get('input', {}).get('task_params', {}).get('expected_answer', ''),
                     }

@@ -15,6 +15,16 @@ from src.plugins.cellular_automata_1d.prompts import (
 )
 
 
+def _normalize_cell_markers(raw) -> List[str]:
+    """Normalize cell_markers from any input format to a two-element list."""
+    if isinstance(raw, str):
+        parts = raw.split(',')
+        return [parts[0].strip(), parts[1].strip() if len(parts) > 1 else '0']
+    if isinstance(raw, (list, tuple)) and len(raw) >= 2:
+        return [str(raw[0]), str(raw[1])]
+    return ['1', '0']
+
+
 class C14TestCaseGenerator(TestCaseGenerator):
     """
     Test case generator for 1D Cellular Automata benchmark.
@@ -74,6 +84,11 @@ class C14TestCaseGenerator(TestCaseGenerator):
         boundary = config.get('boundary', 'wrap')
         tests_per_rule = config.get('tests_per_rule', count // len(rules) or 1)
 
+        # Cell markers
+        cell_markers = _normalize_cell_markers(config.get('cell_markers', ['1', '0']))
+        live_cell = cell_markers[0]
+        dead_cell = cell_markers[1]
+
         # Parse prompt configuration
         language_str = prompt_config.get('language', 'en')
         user_style_str = prompt_config.get('user_style', 'linguistic')
@@ -83,10 +98,13 @@ class C14TestCaseGenerator(TestCaseGenerator):
         # Generate tests for each rule
         for rule in rules:
             # Pre-compute rule table (same for all cases with this rule)
-            rule_table = CellularAutomata1DEngine.format_rule_table(rule)
-            # Boundary description
+            rule_table = CellularAutomata1DEngine.format_rule_table(
+                rule, alive_char=live_cell, dead_char=dead_cell
+            )
+            # Boundary description — resolve {l}/{d} marker placeholders
             lang_boundaries = BOUNDARY_DESCRIPTIONS.get(language_str, BOUNDARY_DESCRIPTIONS['en'])
             boundary_description = lang_boundaries.get(boundary, boundary)
+            boundary_description = boundary_description.replace('{l}', live_cell).replace('{d}', dead_cell)
 
             for _ in range(tests_per_rule):
                 if test_id >= count:
@@ -106,8 +124,10 @@ class C14TestCaseGenerator(TestCaseGenerator):
                 initial_state = test_data['initial_state']
                 expected_states = test_data['expected_states']
 
-                # Format state for prompt
-                state_str = ' '.join(str(x) for x in initial_state)
+                # Format state for prompt using cell markers
+                state_str = ' '.join(
+                    live_cell if cell else dead_cell for cell in initial_state
+                )
 
                 # Generate prompts
                 user_prompt, system_prompt, full_prompt = self._build_prompts(
@@ -119,6 +139,8 @@ class C14TestCaseGenerator(TestCaseGenerator):
                     rule_table=rule_table,
                     state_str=state_str,
                     boundary_description=boundary_description,
+                    l=live_cell,
+                    d=dead_cell,
                 )
 
                 # Create test case
@@ -138,7 +160,9 @@ class C14TestCaseGenerator(TestCaseGenerator):
                         'width': width,
                         'steps': steps,
                         'boundary': boundary,
-                        'difficulty': test_data.get('difficulty', 'medium')
+                        'difficulty': test_data.get('difficulty', 'medium'),
+                        'live_cell': live_cell,
+                        'dead_cell': dead_cell,
                     },
                     prompt_metadata={
                         'user_style': user_style_str,
@@ -182,4 +206,7 @@ class C14TestCaseGenerator(TestCaseGenerator):
                         default=1, min_value=1, max_value=20),
             ConfigField(name='boundary', label='Boundary condition', field_type='select',
                         default='wrap', options=['wrap', 'dead', 'alive'], group='advanced'),
+            ConfigField(name='cell_markers', label='Cell markers', field_type='text',
+                        default='1,0', group='advanced',
+                        help='Alive,dead cell markers (comma-separated)'),
         ]

@@ -2,6 +2,30 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.10.2] - March 28, 2026
+
+### C14 Cell Markers, Report Improvements, Web UI Results Page
+
+Custom cell markers for the `cellular_automata_1d` plugin (matching GoL), three report rendering improvements, and a task-types column in the web UI results page.
+
+#### What Changed
+
+- **C14 custom cell markers**: Added `cell_markers` config option (default `"1,0"`) to `cellular_automata_1d` plugin, matching the GoL pattern. State strings, rule tables, and boundary descriptions all use custom markers. Added `_normalize_cell_markers()` helper, `ConfigField` (text, advanced group), and `live_cell`/`dead_cell` in `task_params`.
+- **C14 rule table with custom markers**: `CellularAutomata1DEngine.format_rule_table()` now accepts `alive_char`/`dead_char` parameters. Rule table headers show `❤️❤️❤️ ❤️❤️🖤` (not `111 110`) when custom markers are active.
+- **C14 boundary descriptions**: Boundary description strings in all 6 languages use `{l}`/`{d}` placeholders, resolved to the active cell markers before prompt assembly.
+- **Report: expected value N/A fix**: Added `_get_expected_display()` helper in `analyze_results.py` that checks all known key names (`expected_answer`, `expected_state`, `expected_next_state`, `expected_fallacy`). 1D arrays format as space-separated, 2D arrays as rows joined with ` | `.
+- **Report: parsed answer formatting**: Added `_format_parsed_display()` that formats parsed answers identically to expected answers (e.g., `0 0 0 | 1 1 1` instead of Python list repr).
+- **Report: collapsible thinking block**: Added `_extract_thinking()` helper that checks `output['reasoning']` first, then falls back to `<think>...</think>` tag extraction. Thinking is rendered as a collapsible `<details>` section with amber styling.
+- **Web UI: task types in results table**: Results page now shows a "Tasks" column with chip badges (matching the testsets page pattern). Data was already available from the API.
+- **28 tests** in `tests/test_c14_and_report_fixes.py` — all passing
+
+#### Design Decisions
+
+- C14 cell markers follow the same `_normalize_cell_markers()` pattern as GoL for consistency
+- `format_rule_table()` defaults to `'1'`/`'0'` — existing callers unaffected
+- Thinking extraction prefers structured `reasoning` key over regex tag extraction
+- `_get_expected_display()` uses priority order: `expected_answer` > `expected_state` > `expected_next_state` > `expected_fallacy`
+
 ## [2.10.1] - March 27, 2026
 
 ### Game of Life Plugin — Cell Markers Fix, Real-World Patterns, Empty Grid Exclusion

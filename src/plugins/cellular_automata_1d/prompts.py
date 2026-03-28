@@ -11,33 +11,33 @@ Note: EXAMPLES and RULES_MATH styles are deprecated and not included.
 BOUNDARY_DESCRIPTIONS = {
     "en": {
         "wrap": "Cells wrap around (the last cell is neighbor to the first cell)",
-        "dead": "Cells outside the boundary are treated as dead (0)",
-        "alive": "Cells outside the boundary are treated as alive (1)",
+        "dead": "Cells outside the boundary are treated as dead ({d})",
+        "alive": "Cells outside the boundary are treated as alive ({l})",
     },
     "es": {
         "wrap": "Las celdas envuelven (la última celda es vecina de la primera)",
-        "dead": "Las celdas fuera del límite se consideran muertas (0)",
-        "alive": "Las celdas fuera del límite se consideran vivas (1)",
+        "dead": "Las celdas fuera del límite se consideran muertas ({d})",
+        "alive": "Las celdas fuera del límite se consideran vivas ({l})",
     },
     "fr": {
         "wrap": "Les cellules bouclent (la dernière cellule est voisine de la première)",
-        "dead": "Les cellules hors limites sont considérées comme mortes (0)",
-        "alive": "Les cellules hors limites sont considérées comme vivantes (1)",
+        "dead": "Les cellules hors limites sont considérées comme mortes ({d})",
+        "alive": "Les cellules hors limites sont considérées comme vivantes ({l})",
     },
     "de": {
         "wrap": "Zellen umbrechen (die letzte Zelle ist Nachbar der ersten Zelle)",
-        "dead": "Zellen außerhalb der Grenze werden als tot (0) behandelt",
-        "alive": "Zellen außerhalb der Grenze werden als lebendig (1) behandelt",
+        "dead": "Zellen außerhalb der Grenze werden als tot ({d}) behandelt",
+        "alive": "Zellen außerhalb der Grenze werden als lebendig ({l}) behandelt",
     },
     "zh": {
         "wrap": "细胞环绕（最后一个细胞与第一个细胞相邻）",
-        "dead": "边界外的细胞视为死亡（0）",
-        "alive": "边界外的细胞视为存活（1）",
+        "dead": "边界外的细胞视为死亡（{d}）",
+        "alive": "边界外的细胞视为存活（{l}）",
     },
     "ua": {
         "wrap": "Комірки обертаються (остання комірка є сусідом першої)",
-        "dead": "Комірки за межами вважаються мертвими (0)",
-        "alive": "Комірки за межами вважаються живими (1)",
+        "dead": "Комірки за межами вважаються мертвими ({d})",
+        "alive": "Комірки за межами вважаються живими ({l})",
     },
 }
 

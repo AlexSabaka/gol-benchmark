@@ -332,7 +332,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 8. **Remote Ollama support (2026-02-21)**: `OllamaProvider` now accepts a `host` parameter; non-default hosts use REST API for discovery and availability checks
 
 ### ⚠️ **Known Limitations**
-- **Emoji cell markers** (`🟩/🟥`) now work correctly (v2.10.1 fix), but models still perform best with `1/0` markers  
+- **Emoji cell markers** (`🟩/🟥`) now work correctly for GoL (v2.10.1) and C14 (v2.10.2), but models still perform best with `1/0` markers  
 - **Thinking mode** can hurt structured output accuracy—use `--no-think` for best results
 - **Quantized models** (Q2_K) sometimes outperform full precision (counterintuitive but documented)
 - **Cloud model timeouts**: Some cloud providers have longer response times
@@ -403,12 +403,14 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.10.1 (March 27, 2026)
+**Version**: 2.10.2 (March 28, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery
 - Plugin-local prompt templates (PromptEngine user prompts deprecated)
 - Modern 3-stage architecture with enhanced parsing and analytics
 - 18 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison (with decimal framing), Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic
+- Custom cell markers for GoL and C14 (including emoji)
 - Remote Ollama support (`--ollama-host`)
 - Token counting throughout pipeline
+- HTML reports with collapsible thinking blocks and consistent value formatting

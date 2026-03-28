@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.10.1** | Last updated: 2026-03-27
+> **Version 2.10.2** | Last updated: 2026-03-28
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 17 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -411,7 +411,9 @@ Given a rule number (0–255), initial binary state, and boundary condition, pre
 **Generator** (`generator.py`):
 - Uses `CellularAutomata1DEngine` / `CellularAutomataTestGenerator` from `src/engine/`
 - Rule difficulty tiers: Easy (0, 51, 204, 255), Medium (90, 150, 184), Hard (30, 110, 45)
-- Config: `rules`, `width`, `steps`, `boundary` (wrap/dead/alive), `tests_per_rule`
+- Config: `rules`, `width`, `steps`, `boundary` (wrap/dead/alive), `tests_per_rule`, `cell_markers` (default `"1,0"`)
+- Custom cell markers supported (v2.10.2): state strings, rule tables, and boundary descriptions all use the configured markers
+- Boundary descriptions use `{l}`/`{d}` placeholders resolved to active markers (6 languages)
 
 **Parser** (`parser.py`) — 4 strategies (end-first):
 1. `marker_search` — "Final Answer:", "Next state:" from end

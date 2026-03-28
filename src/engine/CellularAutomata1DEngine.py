@@ -252,26 +252,39 @@ class CellularAutomata1DEngine:
         )
     
     @staticmethod
-    def format_rule_table(rule_number: int) -> str:
+    def format_rule_table(rule_number: int, alive_char: str = "1", dead_char: str = "0") -> str:
         """
         Format the rule as a visual truth table.
         
         Returns ASCII representation like:
         111 110 101 100 011 010 001 000
          0   0   0   1   1   1   1   0   (Rule 30)
+
+        When alive_char/dead_char differ from '1'/'0', the markers are
+        substituted in both the neighbourhood patterns and the output row.
         """
+        def _m(v):
+            return alive_char if v else dead_char
+
         neighborhoods = [
             (1,1,1), (1,1,0), (1,0,1), (1,0,0),
             (0,1,1), (0,1,0), (0,0,1), (0,0,0)
         ]
         
-        pattern_line = " ".join(f"{l}{c}{r}" for l, c, r in neighborhoods)
-        output_line = " ".join(
-            f" {CellularAutomata1DEngine.apply_rule(rule_number, n)} "
-            for n in neighborhoods
+        pattern_rules = "\n".join(
+            f"{_m(l)}{_m(c)}{_m(r)} -> {_m(CellularAutomata1DEngine.apply_rule(rule_number, (l, c, r)))}"
+            for l, c, r in neighborhoods
         )
         
-        return f"{pattern_line}\n{output_line}  (Rule {rule_number})"
+        return pattern_rules
+        
+        # pattern_line = " ".join(f"{_m(l)}{_m(c)}{_m(r)}" for l, c, r in neighborhoods)
+        # output_line = " ".join(
+        #     f" {_m(CellularAutomata1DEngine.apply_rule(rule_number, n))} "
+        #     for n in neighborhoods
+        # )
+        
+        # return f"{pattern_line}\n{output_line}  (Rule {rule_number})"
 
 
 class CellularAutomataTestGenerator:

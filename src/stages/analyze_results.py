@@ -650,8 +650,8 @@ def generate_markdown_report(results: List[Dict], output_path: str, grouped_by_m
                 report.append(f"**Test {j+1}** (`{sample['test_id']}`):\n")
                 report.append(f"- Input: `{sample['input']['user_prompt'][:100]}...`\n")
                 if sample['status'] == 'success':
-                    report.append(f"- Expected: `{sample['input']['task_params'].get('expected_answer', 'N/A')}`\n")
-                    report.append(f"- Parsed: `{sample['output']['parsed_answer']}`\n")
+                    report.append(f"- Expected: `{_get_expected_display(sample['input'].get('task_params', {}))}`\n")
+                    report.append(f"- Parsed: `{_format_parsed_display(sample['output'].get('parsed_answer'))}`\n")
                     report.append(f"- Correct: {sample['evaluation']['correct']}\n")
                 else:
                     report.append(f"- Error: `{sample.get('error', 'Unknown')}`\n")
@@ -675,6 +675,65 @@ def _html_escape(text) -> str:
     if text is None:
         return ''
     return html_mod.escape(str(text))
+
+
+def _get_expected_display(task_params: dict) -> str:
+    """Extract expected answer from task_params, checking all known key names.
+
+    Plugins use different keys: expected_answer, expected_state,
+    expected_next_state, expected_fallacy.  Format arrays nicely.
+    """
+    val = (
+        task_params.get('expected_answer')
+        or task_params.get('expected_state')
+        or task_params.get('expected_next_state')
+        or task_params.get('expected_fallacy')
+    )
+    if val is None:
+        return 'N/A'
+    # 2-D list (e.g. GoL grid): rows joined with " | "
+    if isinstance(val, list) and val and isinstance(val[0], list):
+        return ' | '.join(' '.join(str(c) for c in row) for row in val)
+    # 1-D list (e.g. C14 state): space-separated
+    if isinstance(val, list):
+        return ' '.join(str(c) for c in val)
+    return str(val)
+
+
+def _format_parsed_display(val) -> str:
+    """Format a parsed answer value the same way as _get_expected_display."""
+    if val is None:
+        return 'N/A'
+    if isinstance(val, list) and val and isinstance(val[0], list):
+        return ' | '.join(' '.join(str(c) for c in row) for row in val)
+    if isinstance(val, list):
+        return ' '.join(str(c) for c in val)
+    return str(val)
+
+
+_THINK_TAG_RE = _re.compile(r'<think>(.*?)</think>', _re.DOTALL)
+
+
+def _extract_thinking(sample: dict):
+    """Return (thinking_text, response_without_thinking).
+
+    Checks output['reasoning'] first, then falls back to <think> tags.
+    Returns (None, raw) when no thinking content is found.
+    """
+    raw = sample.get('output', {}).get('raw_response', '')
+    # Structured reasoning field (from API)
+    reasoning = sample.get('output', {}).get('reasoning')
+    if reasoning:
+        # Also strip <think> tags from raw if present, to avoid duplication
+        cleaned = _THINK_TAG_RE.sub('', raw).strip()
+        return reasoning, cleaned
+    # Fallback: extract <think>...</think> tags
+    m = _THINK_TAG_RE.search(raw)
+    if m:
+        thinking = m.group(1).strip()
+        cleaned = _THINK_TAG_RE.sub('', raw).strip()
+        return thinking, cleaned
+    return None, raw
 
 
 def _make_slug(name: str) -> str:
@@ -749,6 +808,12 @@ def _get_shared_css() -> str:
         .prompt-section pre { background: #f0f4ff; border: 1px solid #d0d8e8; border-radius: 4px; padding: 12px; font-size: 12px;
                               white-space: pre-wrap; word-break: break-word; max-height: 300px; overflow-y: auto; }
         .no-samples { color: #95a5a6; font-style: italic; padding: 20px 0; }
+
+        /* ── Thinking block ── */
+        .thinking-section { margin-top: 10px; }
+        .thinking-section summary { cursor: pointer; font-weight: 600; color: #b8860b; font-size: 13px; }
+        .thinking-content { background: #fef9e7; border: 1px solid #f9e79f; border-radius: 4px; padding: 12px; font-family: 'Courier New', monospace;
+                            font-size: 12px; white-space: pre-wrap; word-break: break-word; max-height: 400px; overflow-y: auto; line-height: 1.5; }
 
         /* ── Chart grid ── */
         .chart-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(500px, 1fr)); gap: 30px; margin: 20px 0; }
@@ -851,13 +916,22 @@ def _render_sample_cards(all_results_for_model: List[Dict], num_correct: int = 5
 
         h += f"  <div class='sample-body'>\n"
         if sample.get('status') == 'success':
-            expected = _html_escape(sample['input']['task_params'].get('expected_answer', 'N/A'))
-            parsed = _html_escape(sample['output'].get('parsed_answer', 'N/A'))
+            expected = _html_escape(_get_expected_display(sample['input'].get('task_params', {})))
+            parsed = _html_escape(_format_parsed_display(sample['output'].get('parsed_answer')))
             h += f"    <div class='field'><strong>Expected:</strong> <code>{expected}</code></div>\n"
             h += f"    <div class='field'><strong>Parsed:</strong> <code>{parsed}</code></div>\n"
 
-            raw = _html_escape(sample['output'].get('raw_response', ''))
-            char_count = len(sample['output'].get('raw_response', ''))
+            thinking_text, response_clean = _extract_thinking(sample)
+
+            if thinking_text:
+                think_esc = _html_escape(thinking_text)
+                think_len = len(thinking_text)
+                h += f"    <details class='thinking-section'><summary>\U0001f4ad Thinking ({think_len} chars)</summary>\n"
+                h += f"      <div class='thinking-content'>{think_esc}</div>\n"
+                h += f"    </details>\n"
+
+            raw = _html_escape(response_clean)
+            char_count = len(response_clean)
             h += f"    <div class='collapsible-toggle' onclick='toggleCollapsible(this)'>&#9654; Show full response ({char_count} chars)</div>\n"
             h += f"    <div class='collapsible-content' style='display:none'>\n"
             h += f"      <div class='raw-response'>{raw}</div>\n"
