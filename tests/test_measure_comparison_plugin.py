@@ -552,13 +552,13 @@ class TestParserValueUnitMatch:
         tp = _make_task_params()
         pa = parser.parse("I think 10 cm is bigger.", tp)
         assert pa.value == "10 cm"
-        assert pa.parse_strategy == "value_unit_match"
+        assert pa.parse_strategy in ("value_unit_match", "value_unit_comparative")
 
     def test_match_second_option(self, parser):
         tp = _make_task_params()
         pa = parser.parse("5 cm is smaller, but wait, 5 cm is the answer.", tp)
         assert pa.value == "5 cm"
-        assert pa.parse_strategy == "value_unit_match"
+        assert pa.parse_strategy in ("value_unit_match", "value_unit_comparative")
 
     def test_fraction_value(self, parser):
         tp = _make_task_params(
@@ -656,6 +656,227 @@ class TestParserMultilingual:
         tp = _make_task_params(comparison_type="incomparable")
         pa = parser.parse("无法比较这两个量。", tp)
         assert pa.value == "incomparable"
+
+
+# ===========================================================================
+# False-negative regression tests (v2.10.5)
+# ===========================================================================
+
+class TestParserSmartQuotes:
+    """Fix 1: Smart/curly quotes must not break keyword detection."""
+
+    def test_incomparable_curly_apostrophe(self, parser):
+        tp = _make_task_params(
+            value1="755.8", unit1_symbol="lb",
+            value2="152.8", unit2_symbol="min",
+            comparison_type="incomparable",
+        )
+        pa = parser.parse(
+            "They can\u2019t be compared \u2013 one is a weight (lb) "
+            "and the other a time (min).",
+            tp,
+        )
+        assert pa.value == "incomparable"
+
+    def test_incomparable_curly_cant_be_directly(self, parser):
+        tp = _make_task_params(
+            value1="580.44", unit1_symbol="mL",
+            value2="358.82", unit2_symbol="km/h",
+            comparison_type="incomparable",
+        )
+        pa = parser.parse(
+            "They\u2019re different kinds of units, so you can\u2019t "
+            "directly compare them.",
+            tp,
+        )
+        assert pa.value == "incomparable"
+
+    def test_arent_comparable_curly(self, parser):
+        tp = _make_task_params(comparison_type="incomparable")
+        pa = parser.parse("These aren\u2019t comparable.", tp)
+        assert pa.value == "incomparable"
+
+
+class TestParserEqualKeywordContext:
+    """Fix 2: 'same' in explanatory context must NOT trigger 'equal'."""
+
+    def test_same_unit_explanatory(self, parser):
+        """'the same unit' in explanation, value in conclusion."""
+        tp = _make_task_params(
+            value1="87.761", unit1_symbol="ft",
+            value2="87.760", unit2_symbol="ft",
+            expected_answer="87.761 ft",
+        )
+        pa = parser.parse(
+            "Since both numbers share the same whole number part, "
+            "87.761 feet is longer. **Answer:** 87.761 ft.",
+            tp,
+        )
+        assert pa.value == "87.761 ft"
+        assert pa.value != "equal"
+
+    def test_convert_to_same_unit(self, parser):
+        """'convert to the same unit' should not trigger equal."""
+        tp = _make_task_params(
+            value1="332", unit1_symbol="mg",
+            value2="614", unit2_symbol="lb",
+            expected_answer="332 mg",
+        )
+        pa = parser.parse(
+            "Let's convert both quantities to the same unit. "
+            "332 mg = 0.332 g, 614 lb = 278950 g. "
+            "Clearly, 0.332 g is lighter. Answer: 332 mg",
+            tp,
+        )
+        assert pa.value == "332 mg"
+
+    def test_genuine_equal_still_works(self, parser):
+        """Genuine 'equal' answers must still parse correctly."""
+        tp = _make_task_params(comparison_type="equal")
+        pa = parser.parse("They are the same.", tp)
+        assert pa.value == "equal"
+
+    def test_genuine_both_equal(self, parser):
+        tp = _make_task_params(comparison_type="equal")
+        pa = parser.parse("Both values are the same.", tp)
+        assert pa.value == "equal"
+
+    def test_neither_is_shorter(self, parser):
+        """'Neither is shorter' pattern for equal values."""
+        tp = _make_task_params(comparison_type="equal")
+        pa = parser.parse(
+            "Neither is shorter — they are exactly equal.",
+            tp,
+        )
+        assert pa.value == "equal"
+
+
+class TestParserBoldIteration:
+    """Fix 3: Bold iteration should find answer keyword, not last value."""
+
+    def test_bold_equal_then_value(self, parser):
+        """Equal keyword in earlier bold, value in later bold."""
+        tp = _make_task_params(
+            value1="880/1", unit1_symbol="yd",
+            value2="1/2", unit2_symbol="mi",
+            comparison_type="equal",
+        )
+        pa = parser.parse(
+            "They are **exactly the same distance**.\n\n"
+            "1 mile = 1,760 yards.\nTherefore, 1/2 mile = **880 yards**.",
+            tp,
+        )
+        assert pa.value == "equal"
+
+    def test_bold_equal_then_conversion(self, parser):
+        tp = _make_task_params(
+            value1="500/1", unit1_symbol="mL",
+            value2="1/2", unit2_symbol="L",
+            comparison_type="equal",
+        )
+        pa = parser.parse(
+            "They are **equal**.\n\n0.5 Liters = **500 mL**.",
+            tp,
+        )
+        assert pa.value == "equal"
+
+    def test_bold_temp_equal(self, parser):
+        tp = _make_task_params(
+            value1="0.00", unit1_symbol="°C",
+            value2="32.00", unit2_symbol="°F",
+            comparison_type="equal",
+        )
+        pa = parser.parse(
+            "Let's convert both temperatures to the same unit "
+            "(Celsius) to compare them.\n\n"
+            "*   **32.00 °F to °C:**  °C = (°F - 32) * 5/9\n"
+            "    °C = (32 - 32) * 5/9 = 0 * 5/9 = 0 °C\n\n"
+            "Now we can compare:\n\n"
+            "*   0.00 °C vs 0.00 °C\n\n"
+            "They are equal.\n\nAnswer: equal",
+            tp,
+        )
+        assert pa.value == "equal"
+
+
+class TestParserExpandedIncomparable:
+    """Fix 4: Expanded incomparable patterns."""
+
+    def test_different_kinds_of_units(self, parser):
+        tp = _make_task_params(comparison_type="incomparable")
+        pa = parser.parse(
+            "These are different kinds of units — one is volume, "
+            "the other is speed.",
+            tp,
+        )
+        assert pa.value == "incomparable"
+
+    def test_measure_different_things(self, parser):
+        tp = _make_task_params(comparison_type="incomparable")
+        pa = parser.parse("They measure different things entirely.", tp)
+        assert pa.value == "incomparable"
+
+    def test_different_types_of_measurements(self, parser):
+        tp = _make_task_params(comparison_type="incomparable")
+        pa = parser.parse(
+            "You're comparing different types of measurements.", tp)
+        assert pa.value == "incomparable"
+
+    def test_not_meaningful_comparison(self, parser):
+        tp = _make_task_params(comparison_type="incomparable")
+        pa = parser.parse(
+            "This is not a meaningful comparison.", tp)
+        assert pa.value == "incomparable"
+
+    def test_incomparable_with_value_mentions(self, parser):
+        """Incomparable even when values are mentioned in explanation."""
+        tp = _make_task_params(
+            value1="9782", unit1_symbol="s",
+            value2="1305", unit2_symbol="mph",
+            comparison_type="incomparable",
+        )
+        pa = parser.parse(
+            "These are different kinds of units:\n"
+            "- 9782 s = time\n"
+            "- 1305 mph = speed\n\n"
+            "So asking which is 'longer' doesn't make sense.",
+            tp,
+        )
+        assert pa.value == "incomparable"
+
+
+class TestParserReverseComparative:
+    """Fix 5: 'the lighter one is X' reverse comparative pattern."""
+
+    def test_lighter_one_is(self, parser):
+        tp = _make_task_params(
+            value1="758.337", unit1_symbol="oz",
+            value2="609.413", unit2_symbol="kg",
+            expected_answer="758.337 oz",
+        )
+        pa = parser.parse(
+            "609.413 kg is much heavier.\n\n"
+            "Quick conversion: 758.337 oz ≈ 21.5 kg.\n\n"
+            "Therefore, the lighter one is 758.337 oz.",
+            tp,
+        )
+        assert pa.value == "758.337 oz"
+
+
+class TestParserBareValue:
+    """Fix 6: Bare value match when model omits the unit."""
+
+    def test_bare_number_answer(self, parser):
+        tp = _make_task_params(
+            value1="2.73", unit1_symbol="s",
+            value2="0.699", unit2_symbol="s",
+            expected_answer="0.699 s",
+        )
+        pa = parser.parse(
+            "0.699 is shorter than 2.73.\n\n**Answer: 0.699**\n",
+            tp,
+        )
+        assert pa.value == "0.699 s"
 
 
 # ===========================================================================

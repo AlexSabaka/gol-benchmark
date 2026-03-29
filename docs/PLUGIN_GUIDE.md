@@ -673,18 +673,23 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 - Each decimal pair generates one `TestCase` per framing, linked by `framing_group_id`
 - Config: `number_format`, `comparison_type`, `unit_categories`, `decimal_trap_ratio`, `decimal_framings`, `decimal_adversarial_ratio`
 
-**Parser** (`parser.py`) — 9 strategies + decimal-specific pipeline:
+**Parser** (`parser.py`) — 11 strategies + decimal-specific pipeline (v2.10.5):
+
+Smart/curly quotes (`\u2018`/`\u2019`/`\u201C`/`\u201D`) normalized to ASCII before parsing.
 
 *Standard strategies (for same_unit, mixed_unit, equal, incomparable):*
-1. `boxed` — `\boxed{answer}`
-2. `bold` — `**answer**`
-3. `keyword_equal` — "equal", "same", "equivalent" (multilingual)
-4. `keyword_incomparable` — "cannot compare", "different dimensions"
-5. `label_line` — "Answer:" labels
-6. `value_unit_match` — Extract value+unit, match against known options
-7. `position_match` — "first" / "second" keywords
-8. `last_value_unit` — Last value+unit found
-9. `fallback`
+
+1. `boxed` (0.95) — `\boxed{answer}`
+2. `bold` (0.90) — Two-pass: keyword bolds first (equal/incomparable), then last-resolvable value bold. Skips header bolds ending with `:`
+3. `label_line` (0.88) — "Answer:" / "Result:" labels
+4. `value_unit_comparative` (0.87) — `{value} {unit} is {comparative}` + reverse pattern `{comparative} one is {value} {unit}`
+5. `keyword_incomparable` (0.86) — "cannot compare", "different dimensions/kinds/types", "measure different things", "aren't comparable" (multilingual)
+6. `value_unit_match` (0.85) — Extract value+unit, match against known options
+7. `keyword_equal` (0.82) — "equal", "are the same", "same value/weight/length" (multilingual, context-sensitive)
+8. `position_match` (0.75) — "first" / "second" keywords
+9. `last_value_unit` (0.65) — Last value+unit found
+10. `bare_value_match` (0.60) — Bare number match against option values (for models that omit units)
+11. `fallback` (0.10)
 
 *Decimal-specific strategies (5-strategy pipeline):*
 1. `decimal_boxed` — `\boxed{value}`
@@ -693,7 +698,9 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 4. `decimal_value_match` — Bare number match (end-first) with float normalization
 5. `decimal_position` — "first" / "second" keywords
 
-**End-first exception**: `value_unit_match` (strategy 6) does NOT reverse because both options are mentioned in the response. Identification is by which option matches, not by position.
+**End-first exception**: `value_unit_match` does NOT reverse because both options are mentioned in the response. Identification is by which option matches, not by position.
+
+**Pipeline design note** (v2.10.5): `keyword_incomparable` is ordered ABOVE `value_unit_match` because incomparable responses always restate both values (value extraction would incorrectly pick one up). `keyword_equal` is ordered BELOW because models say "the same unit" in normal comparison explanations.
 
 **Evaluator** (`evaluator.py`):
 - Match types: `correct`, `wrong`, `parse_error`, `correct_equal`, `correct_incomparable`, `missed_equal`, `missed_incomparable`

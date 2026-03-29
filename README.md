@@ -307,6 +307,7 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] End-first parsing convention across all parsers
 - [x] Verification-section stripping for end-first parsers (v2.10.3, ~91 false negatives fixed)
 - [x] Carwash parser expanded conditional/dismissive walk filtering (v2.10.4, 15 false negatives fixed)
+- [x] Measure comparison parser overhaul (v2.10.5, 38 false negatives fixed — smart quote normalization, pipeline reorder, expanded keyword patterns)
 
 ### 🔄 In Progress
 

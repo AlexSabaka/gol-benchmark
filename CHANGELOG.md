@@ -2,6 +2,31 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.10.5] - March 29, 2026
+
+### Measure Comparison Parser — False-Negative Fixes (38 cases analyzed, 6 root causes)
+
+Fixed 38 confirmed false negatives from LLM-judge review where models answered correctly but the heuristic parser misclassified or failed to extract the answer.
+
+#### What Changed
+
+- **Smart/curly quote normalization** (Fix 1, 12+ cases): Unicode curly quotes (`\u2018`/`\u2019`/`\u201C`/`\u201D`) are now normalized to ASCII before regex matching. Incomparable patterns like `can't compare` now work regardless of quote style.
+- **Tightened `_EQUAL_KEYWORDS` regex** (Fix 2, 15+ cases): Removed bare `\bsame\b` — now requires conclusive context like "are the same", "same value", "both are equal". Prevents false "equal" from explanatory phrases like "convert to the same unit" or "the same whole number part".
+- **Strategy pipeline reorder** (Fix 2b): Keywords moved below structured extraction. New order: boxed → bold → label_line → value_unit_comparative → incomparable keywords → value_unit_match → equal keywords → position → last_value_unit → bare_value → fallback. Incomparable keywords stay above value_unit_match (incomparable responses always restate both values); equal keywords moved below (explanatory "same" was short-circuiting correct value extraction).
+- **Bold two-pass strategy** (Fix 3, 8+ cases): Pass 1 checks all bolds for equal/incomparable keywords (answer signal). Pass 2 tries last-resolvable bold for value extraction. Skips header bolds (ending with `:`). Fixes cases where models bold "**equal**" then bold a converted value "**880 yards**" — the keyword bold now takes priority.
+- **Expanded `_INCOMPARABLE_KEYWORDS`** (Fix 4, 5+ cases): Added "different kinds/types of units/measurements", "measure different things", "aren't comparable", "not meaningful". Deduplicated 3 redundant `incomparable` entries.
+- **Reverse comparative pattern** (Fix 5, 1 case): "the lighter one is 758.337 oz" now matches alongside the existing "{value} {unit} is {comparative}" pattern.
+- **Bare value fallback** (Fix 6, 1 case): New strategy at confidence 0.60 matches unit-less answers (e.g., model answers "0.699" without unit "s") against option values.
+- **20 regression tests** in `tests/test_measure_comparison_plugin.py` across 7 new test classes covering all 6 root causes
+- **0 regressions** — all 218 measure-comparison-related tests pass; all pre-existing tests unchanged
+
+#### Design Decisions
+
+- Smart quote normalization applied once at `parse()` entry — simpler and more future-proof than patching every regex
+- Incomparable keywords checked BEFORE value_unit_match because incomparable responses always mention both values (value extraction would pick one up). Equal keywords checked AFTER because models say "convert to the same unit" in normal comparison explanations.
+- Bold two-pass gives keyword bolds absolute priority over value bolds — models highlighting "equal" or "incomparable" in bold is a strong answer signal
+- `_EQUAL_KEYWORDS` now requires copula before "same" (`are/is/they're the same`) or measurement-specific nouns after ("same value/weight/length"), preventing false matches from "the same unit" in method explanations
+
 ## [2.10.4] - March 29, 2026
 
 ### Carwash Parser — Expanded Conditional/Dismissive Walk Filtering

@@ -10,15 +10,17 @@ Four answer categories:
   4. Position   — "first"/"second" fallback
 
 Strategy pipeline (tried in order, highest confidence first):
-  1. boxed              \\boxed{...}                          0.95
-  2. bold               **...**                               0.90
-  3. keyword_equal      detects "equal"/"same" etc.           0.90
-  4. keyword_incomparable  detects "cannot compare" etc.      0.90
-  5. label_line         "Answer: ..."                         0.88
-  6. value_unit_match   extract value+unit, match to options  0.85
-  7. position_match     "first"/"second"                      0.75
-  8. last_value_unit    last value+unit found                 0.65
-  9. fallback           parse error                           0.10
+  1. boxed                \\boxed{...}                         0.95
+  2. bold                 **...** (two-pass: keywords, values) 0.90
+  3. label_line           "Answer: ..."                        0.88
+  4. value_unit_comparative  "{val} {unit} is {comp}" + reverse  0.87
+  5. keyword_incomparable detects "cannot compare" etc.        0.86
+  6. value_unit_match     extract value+unit, match to options 0.85
+  7. keyword_equal        detects "equal"/"same" etc.          0.82
+  8. position_match       "first"/"second"                     0.75
+  9. last_value_unit      last value+unit found                0.65
+  10. bare_value_match    bare number match (no unit)          0.60
+  11. fallback            parse error                          0.10
 """
 from __future__ import annotations
 
@@ -86,19 +88,28 @@ _VALUE_UNIT_RE = re.compile(
 
 # Equal keywords
 _EQUAL_KEYWORDS = re.compile(
-    r"(?:\b(?:equal|same|equivalent|identical|both.{0,15}(?:equal|same)|no\s+difference|"
-    r"igual|iguales|même|mêmes|gleich|рівні|однакові|égal|égales|égaux)\b"
+    r"(?:\b(?:equal|equivalent|identical|no\s+difference)\b"
+    r"|\bboth.{0,15}(?:equal|same)\b"
+    r"|\b(?:are|is|they'?re|that'?s)\s+(?:exactly\s+)?(?:the\s+)?same\b"
+    r"|\bsame\s+(?:value|amount|quantity|measurement|weight|length|distance|volume|speed|temperature|size)\b"
+    r"|\bneither\s+is\s+(?:shorter|longer|heavier|lighter|hotter|colder|faster|slower|bigger|smaller|more|less)\b"
+    r"|\bigual\b|\biguales\b|\bmême\b|\bmêmes\b|\bgleich\b|\bрівні\b|\bоднакові\b|\bégal\b|\bégales\b|\bégaux\b"
     r"|相等|相同)",
     re.IGNORECASE,
 )
 
 # Incomparable keywords
 _INCOMPARABLE_KEYWORDS = re.compile(
-    r"(?:cannot\s+(?:be\s+)?compare|can'?t\s+(?:be\s+)?compare|incomparable|"
-    r"not\s+comparable|different\s+(?:physical\s+)?(?:dimensions?|categories|units?|quantities)|"
+    r"(?:cannot\s+(?:be\s+)?compare|can'?t\s+(?:be\s+)?compare|aren'?t\s+comparable|incomparable|"
+    r"not\s+comparable|not\s+(?:a\s+)?meaningful|"
+    r"different\s+(?:physical\s+)?(?:dimensions?|categories|units?|quantities"
+    r"|kinds?\s+of\s+(?:units?|measurements?|quantities)"
+    r"|types?\s+of\s+(?:units?|measurements?|quantities)"
+    r"|things)|"
+    r"measure\s+different\s+things|"
     r"impossible\s+to\s+compare|apples?\s+and\s+oranges?|"
-    r"no\s+(?:se\s+)?puede[n]?\s+comparar|incomparable|"
-    r"ne\s+(?:peut|peuvent)\s+pas\s+être\s+comparé|incomparable|"
+    r"no\s+(?:se\s+)?puede[n]?\s+comparar|"
+    r"ne\s+(?:peut|peuvent)\s+pas\s+être\s+comparé|"
     r"nicht\s+vergleichbar|"
     r"无法比较|不能比较|不可比较|"
     r"непорівнянні|неможливо\s+порівняти|"
@@ -245,6 +256,9 @@ class MeasureComparisonParser(ResponseParser):
             )
 
         text = response.strip()
+        # Normalise curly/smart quotes to ASCII equivalents
+        text = text.replace('\u2018', "'").replace('\u2019', "'")
+        text = text.replace('\u201C', '"').replace('\u201D', '"')
         tp = task_params or {}
 
         # Route decimal comparison type to a specialised parser (bare numbers)
@@ -262,10 +276,24 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="boxed", confidence=0.95,
                 )
 
-        # --- Strategy 2: Bold (last match) ---
-        bold = re_search_last(r"\*\*([^*]{1,40})\*\*", text)
-        if bold:
+        # --- Strategy 2: Bold (two-pass: keywords first, then values) ---
+        # Pass 1: any bold with equal/incomparable keywords takes priority.
+        # Pass 2: last-resolvable bold for value+unit extraction.
+        bold_matches = list(re.finditer(r"\*\*([^*]{1,40})\*\*", text))
+        for bold in bold_matches:
             inner = bold.group(1).strip()
+            if _EQUAL_KEYWORDS.search(inner) or _INCOMPARABLE_KEYWORDS.search(inner):
+                result = self._try_resolve(inner, tp)
+                if result is not None:
+                    return ParsedAnswer(
+                        value=result, raw_response=text,
+                        parse_strategy="bold", confidence=0.90,
+                    )
+        for bold in reversed(bold_matches):
+            inner = bold.group(1).strip()
+            # Skip bolds ending with ':' — they are headers, not answers
+            if inner.endswith(':'):
+                continue
             result = self._try_resolve(inner, tp)
             if result is not None:
                 return ParsedAnswer(
@@ -273,27 +301,7 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="bold", confidence=0.90,
                 )
 
-        # --- Strategy 3: Equal keywords ---
-        if _EQUAL_KEYWORDS.search(text):
-            # Only count as "equal" if the model seems conclusive
-            # (avoid matching "they are not equal" / "they are definitely not equal")
-            negated = re.search(r"\b(?:not|no|n't|aren'?t|isn'?t)\b.{0,30}" + _EQUAL_KEYWORDS.pattern, text, re.IGNORECASE)
-            if not negated:
-                return ParsedAnswer(
-                    value="equal", raw_response=text,
-                    parse_strategy="keyword_equal", confidence=0.90,
-                )
-
-        # --- Strategy 4: Incomparable keywords ---
-        if _INCOMPARABLE_KEYWORDS.search(text):
-            negated = re.search(r"\b(?:not|no|n't)\b.{0,30}" + _INCOMPARABLE_KEYWORDS.pattern, text, re.IGNORECASE)
-            if not negated:
-                return ParsedAnswer(
-                    value="incomparable", raw_response=text,
-                    parse_strategy="keyword_incomparable", confidence=0.90,
-                )
-
-        # --- Strategy 5: Label line (last match) ---
+        # --- Strategy 3: Label line (last match) ---
         label = re_search_last(
             r"(?:answer|result|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
             text,
@@ -308,17 +316,28 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="label_line", confidence=0.88,
                 )
 
-        # --- Strategy 5.5: "{value} {unit} is {comparative}" pattern ---
+        # --- Strategy 4: "{value} {unit} is {comparative}" pattern ---
         # Handles responses like "18.68 h is shorter." where the answer is
         # stated plainly without labels, bold, or boxed formatting.
+        _COMPARATIVES = (
+            r"shorter|longer|heavier|lighter|hotter|colder|warmer|cooler|"
+            r"faster|slower|bigger|smaller|greater|less|more|fewer|"
+            r"larger|higher|lower|taller|wider"
+        )
         comp_m = re_search_last(
             r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)\s+is\s+"
-            r"(?:shorter|longer|heavier|lighter|hotter|colder|warmer|cooler|"
-            r"faster|slower|bigger|smaller|greater|less|more|fewer|"
-            r"larger|higher|lower|taller|wider)",
+            r"(?:" + _COMPARATIVES + r")",
             text,
             re.IGNORECASE,
         )
+        # Also try reverse pattern: "the {comparative} one is {value} {unit}"
+        if not comp_m:
+            comp_m = re_search_last(
+                r"(?:" + _COMPARATIVES + r")\s+(?:one\s+)?is\s+"
+                r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)",
+                text,
+                re.IGNORECASE,
+            )
         if comp_m:
             val_str = comp_m.group(1)
             unit_text = comp_m.group(2).strip()
@@ -331,6 +350,18 @@ class MeasureComparisonParser(ResponseParser):
                         value=answer, raw_response=text,
                         parse_strategy="value_unit_comparative", confidence=0.87,
                     )
+
+        # --- Strategy 5: Incomparable keywords ---
+        # Checked BEFORE value_unit_match: incomparable responses always
+        # restate both values in explanation, so value extraction would
+        # incorrectly pick one up.
+        if _INCOMPARABLE_KEYWORDS.search(text):
+            negated = re.search(r"\b(?:not|no|n't)\b.{0,30}" + _INCOMPARABLE_KEYWORDS.pattern, text, re.IGNORECASE)
+            if not negated:
+                return ParsedAnswer(
+                    value="incomparable", raw_response=text,
+                    parse_strategy="keyword_incomparable", confidence=0.86,
+                )
 
         # --- Strategy 6: Value+unit match against known options ---
         # NOTE: Do NOT reverse here. Both options are typically mentioned in
@@ -346,7 +377,18 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="value_unit_match", confidence=0.85,
                 )
 
-        # --- Strategy 7: Position keywords (last match) ---
+        # --- Strategy 7: Equal keywords ---
+        # Checked AFTER value_unit_match and incomparable: "same" can appear
+        # in explanatory context (e.g. "the same unit").
+        if _EQUAL_KEYWORDS.search(text):
+            negated = re.search(r"\b(?:not|no|n't|aren'?t|isn'?t)\b.{0,30}" + _EQUAL_KEYWORDS.pattern, text, re.IGNORECASE)
+            if not negated:
+                return ParsedAnswer(
+                    value="equal", raw_response=text,
+                    parse_strategy="keyword_equal", confidence=0.82,
+                )
+
+        # --- Strategy 8: Position keywords (last match) ---
         pos_m = re_search_last(_POSITION_RE, text)
         if pos_m:
             pos_word = pos_m.group(1).lower()
@@ -358,7 +400,7 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="position_match", confidence=0.75,
                 )
 
-        # --- Strategy 8: Last value+unit found ---
+        # --- Strategy 9: Last value+unit found ---
         if vus:
             last_val, last_unit, _, raw = vus[-1]
             answer = f"{last_val} {last_unit}"
@@ -366,6 +408,27 @@ class MeasureComparisonParser(ResponseParser):
                 value=answer, raw_response=text,
                 parse_strategy="last_value_unit", confidence=0.65,
             )
+
+        # --- Strategy 10: Bare value match (no unit) ---
+        # Some models omit units entirely. Match bare numbers against
+        # option values (end-first).
+        v1 = tp.get("value1", "")
+        v2 = tp.get("value2", "")
+        if v1 or v2:
+            bare_nums = re.findall(r"(?<!\d)(?<!\.)(" + _VALUE_RE + r")(?!\d)(?!\.)", text)
+            for num_str in reversed(bare_nums):
+                if v1 and _values_match(num_str, v1):
+                    answer = _position_to_answer("first", tp)
+                    return ParsedAnswer(
+                        value=answer, raw_response=text,
+                        parse_strategy="bare_value_match", confidence=0.60,
+                    )
+                if v2 and _values_match(num_str, v2):
+                    answer = _position_to_answer("second", tp)
+                    return ParsedAnswer(
+                        value=answer, raw_response=text,
+                        parse_strategy="bare_value_match", confidence=0.60,
+                    )
 
         # --- Fallback ---
         return ParsedAnswer(
