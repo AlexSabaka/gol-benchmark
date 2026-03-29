@@ -148,6 +148,188 @@ class TestCarwashParser:
         result = parser.parse(response, {})
         assert result.value == "drive"
 
+    # -- False-negative regression tests (LLM-judge cases) ----------------
+
+    def test_fn_bold_drive_with_conditional_walk(self, parser):
+        """Case 1: bold **drive** first, conditional **walk** second."""
+        response = (
+            "I\u2019d **drive**\u2014since the car is already quite dirty, driving "
+            "a short distance is unlikely to make things much worse, and walking "
+            "just adds hassle (and you may arrive sweaty/dirty too).  \n\n"
+            "The only time I\u2019d **walk** is if the weather is dry/nice and it\u2019s "
+            "truly only a couple minutes away, and you don\u2019t mind arriving on foot."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walk_alternative_section(self, parser):
+        """Case 2: 'When you might choose walking instead:' section."""
+        response = (
+            "Drive there.\n\nWhy: 100 metres is very short.\n\n"
+            "When you might choose walking instead:\n"
+            "- If you\u2019re trying to save fuel or reduce emissions for this tiny trip.\n"
+            "- If you\u2019re not ready to start the car or there\u2019s a queue at the wash."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walk_wont_accomplish(self, parser):
+        """Case 3: 'walking won't result in a car wash'."""
+        response = (
+            "Drive there.\n\nReason:\n"
+            "- To get your car cleaned, you need to drive the car to the wash. "
+            "Walking there won\u2019t result in a car wash being performed.\n"
+            "If you\u2019re worried about exhaust or want more activity, you could walk "
+            "for exercise but you\u2019d forgo washing today."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walking_would_complicate(self, parser):
+        """Case 4: 'Walking there would complicate things'."""
+        response = (
+            "Drive. Since you\u2019re taking your car to the carwash, you\u2019ll get "
+            "there faster and more easily by driving (you can drop off or use a "
+            "drive\u2011through). Walking there would complicate things because you\u2019d "
+            "have to return to your car to use the service."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walking_wont_wash(self, parser):
+        """Case 5: 'Walking there won't actually wash the car'."""
+        response = (
+            "Drive. Here\u2019s why:\n\n"
+            "- A carwash works on your vehicle being moved into the wash. "
+            "Walking there won\u2019t actually wash the car\u2014you\u2019d still need to "
+            "drive the car onto the lot to have it cleaned.\n"
+            "If you want a bit of exercise, you could walk to the carwash."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_conditional_if_mud(self, parser):
+        """Case 6: 'if the mud makes driving unsafe ... walk instead'."""
+        response = (
+            "Drive it.\n\nReasoning (brief):\n"
+            "- The carwash is only about 200 metres away, so driving is faster.\n\n"
+            "If, for any reason, the mud makes driving unsafe or the plate/light "
+            "visibility is compromised, walk instead."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walking_wont_get_cleaned(self, parser):
+        """Case 7: 'Walking to the location won't get your car cleaned'."""
+        response = (
+            "Drive there.\n\nReason:\n"
+            "- A carwash cleans a vehicle, so the car has to be at the wash. "
+            "Walking to the location won\u2019t get your car cleaned.\n"
+            "- Even though the place is close, bringing the car in is the "
+            "straightforward way to get the wash done in one trip."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walking_might_be_safer(self, parser):
+        """Case 8: 'if ... walking might be safer'."""
+        response = (
+            "Drive to the carwash.\n\nReason: 200 meters is a very short distance.\n\n"
+            "If the mud completely covers essential visibility areas or the road "
+            "is dangerous to drive on, walking might be safer."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walking_is_fine_but(self, parser):
+        """Case 9: 'walking is fine, but it won't accomplish washing'."""
+        response = (
+            "Drive the car there.\n\nReason:\n"
+            "- A carwash is designed for vehicles, and you typically need to "
+            "drive the car into the wash. Walking there won\u2019t get your car washed.\n"
+            "If you\u2019re not planning to use the car wash, or if you\u2019re just trying "
+            "to exercise, walking is fine, but it won\u2019t accomplish washing the car."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walk_instead_conditional(self, parser):
+        """Case 10: 'walk to the carwash instead or wait until...'."""
+        response = (
+            "Drive it, but only if you can do so safely and with visibility preserved.\n\n"
+            "If any of the above can\u2019t be met (e.g., mud covers the plate or you "
+            "can\u2019t see well), walk to the carwash instead or wait until you can "
+            "clean the crucial areas first."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_only_reason_walk(self, parser):
+        """Case 11: 'The only reason I'd walk is if...'."""
+        response = (
+            "I'd drive, honestly. Here's my thinking:\n\n"
+            "- **50 metres is walkable but awkward** \u2014 far enough that walking "
+            "feels a bit silly when you have a car right there\n"
+            "- **You're already in the car** (presumably) to get to the carwash\n\n"
+            "The only reason I'd walk is if I needed the exercise or wanted to "
+            "avoid using fuel for such a short trip on principle. But in practical "
+            "terms, drive."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_only_reason_to_walk_would_be(self, parser):
+        """Case 12: 'The only reason to walk would be if...'."""
+        response = (
+            "Driving makes more sense here. A few practical reasons:\n\n"
+            "- **You need the car clean anyway** \u2014 driving it there gets that done\n"
+            "- **Walking leaves your car sitting dirty** while you're gone\n"
+            "- **It's more efficient** \u2014 one trip by car vs. walking there and driving back\n\n"
+            "The only reason to walk would be if you wanted the exercise, but that "
+            "seems secondary to your actual goal of getting the car washed."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_walkable_but_awkward(self, parser):
+        """Case 13: 'walkable but awkward' and reasoning about walking back."""
+        response = (
+            "Drive. Here's why:\n\n"
+            "- **200m is walkable but awkward** \u2013 it's far enough that walking "
+            "feels like a chore, but close enough that driving seems silly.\n\n"
+            "- **You need your car there anyway** \u2013 you're washing it, so you "
+            "have to get it there somehow. Driving solves that directly.\n\n"
+            "- **Walking back matters** \u2013 after washing, you'd either walk back "
+            "wet/tired or need a ride anyway."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_only_reason_no_fuel(self, parser):
+        """Case 14: 'The only reason to walk would be if you wanted exercise or had no fuel'."""
+        response = (
+            "Driving makes more sense here. Even though it's close:\n\n"
+            "- **Your car is muddy** \u2014 driving it there is fine\n"
+            "- **100 metres is short but not trivial** \u2014 walking takes a few minutes\n\n"
+            "The only reason to walk would be if you wanted the exercise or had "
+            "no fuel, but neither seems to apply here."
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
+    def test_fn_main_argument_for_walking(self, parser):
+        """Case 15: 'The main argument for walking would be if...'."""
+        response = (
+            "Driving makes more sense here. A few practical reasons:\n\n"
+            "- **Your car needs to arrive clean**, so driving it there defeats "
+            "the purpose less than you might think\n"
+            "- **Walking back would be awkward** \u2014 you'd have a wet car\n\n"
+            "The main argument for walking would be if you wanted the exercise, "
+            "but that's outweighed by the logistics.\n\nJust drive it over!"
+        )
+        result = parser.parse(response, {})
+        assert result.value == "drive"
+
 
 # ── Inverted Cup parser ───────────────────────────────────────────────
 

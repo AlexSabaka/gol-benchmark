@@ -9,7 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import re_search_last, strip_verification_tail
 
 
 class ObjectTrackingResponseParser(ResponseParser):
@@ -90,13 +90,17 @@ class ObjectTrackingResponseParser(ResponseParser):
         known_locations = self._get_known_locations(task_params)
         obj = task_params.get('object', 'object')
 
+        # Strip verification/confirmation tails for pattern-based strategies
+        # so we don't grab locations from re-computation sections
+        cleaned = strip_verification_tail(response)
+
         # Try each strategy in order
         strategies = [
             ('single_word', lambda: self._strategy_single_word(response)),
             ('answer_prefix', lambda: self._strategy_answer_prefix(response)),
-            ('sentence_pattern', lambda: self._strategy_sentence_pattern(response, obj)),
-            ('location_keyword', lambda: self._strategy_location_keyword(response, known_locations)),
-            ('last_word', lambda: self._strategy_last_word(response)),
+            ('sentence_pattern', lambda: self._strategy_sentence_pattern(cleaned, obj)),
+            ('location_keyword', lambda: self._strategy_location_keyword(cleaned, known_locations)),
+            ('last_word', lambda: self._strategy_last_word(cleaned)),
         ]
 
         for name, strategy_func in strategies:

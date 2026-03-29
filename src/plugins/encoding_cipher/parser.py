@@ -71,6 +71,10 @@ def _try_labelled_answer(text: str) -> Optional[str]:
     labels = [
         r"(?:decoded\s+(?:message|text)|plaintext|the\s+message\s+(?:says|reads|is))\s*[:=]\s*(.+)",
         r"(?:answer|result|output)\s*[:=]\s*(.+)",
+        # Multi-line: bold/heading label on its own line, content on next line
+        # Handles: **Plaintext**\n\nThe decoded text.
+        # Handles: **Plaintext (decoded by shifting back 3):**\n\nThe decoded text.
+        r"(?:\*\*|#{1,3}\s*)(?:decoded\s+(?:message|text)|plaintext|the\s+message|answer|result|output)\s*(?:\([^)]*\)\s*:?)?\s*\*?\*?\s*\n+\s*(.+)",
     ]
     for pattern in labels:
         m = re_search_last(pattern, text, re.IGNORECASE)

@@ -1,8 +1,8 @@
 # Plugin System Guide
 
-> **Version 2.10.2** | Last updated: 2026-03-28
+> **Version 2.10.4** | Last updated: 2026-03-29
 
-Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 17 benchmark plugins, and a step-by-step walkthrough for adding new ones.
+Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
 ---
 
@@ -266,7 +266,8 @@ re_search_last(r'\d+', response)  →  "12" (CORRECT — final answer)
 
 ```python
 from src.plugins.parse_utils import (
-    safe_enum, re_search_last, re_findall_last, last_sentences, last_keyword_position
+    safe_enum, re_search_last, re_findall_last, last_sentences,
+    last_keyword_position, strip_verification_tail,
 )
 
 # Parse string to enum with fallback (used by all 12 generators)
@@ -304,11 +305,35 @@ Three plugins deviate from strict end-first parsing:
 | `inverted_cup` | "flip" anywhere = correct | If the model mentions "flip" at all, it demonstrated the key insight. Wrong alternatives (drill, cut) don't negate a correct understanding. |
 | `linda_fallacy` | Extracts ordered rankings | The task requires parsing a ranked list, not finding a single positional answer. |
 
+### Verification-Section Stripping (v2.10.3)
+
+End-first parsing can backfire when models append verification/confirmation sections that re-mention intermediate values. For example:
+
+```text
+"The answer is 12:02 AM.
+
+Verification: 12:02 AM + 1h53m = 1:55 AM. This matches."
+
+re_search_last(time_pattern, response)  →  "1:55 AM" (WRONG — verification value)
+```
+
+The shared `strip_verification_tail()` utility detects verification headers ("Verification:", "Let me verify:", "This confirms", "Working backward") and returns only the text before them. Applied to `time_arithmetic`, `object_tracking`, and `sally_anne` parsers before their lower-confidence pattern-matching strategies.
+
+The `carwash` parser uses a complementary approach: three regex pattern groups filter walk mentions that are conditional, negative, or dismissive — not actual walk recommendations:
+
+- `_PRE_WALK_CONDITIONAL` — exception/hypothetical language before walk ("the only time/reason", "when you might", "if the mud/road/weather", "the main argument for")
+- `_WALK_CONDITIONAL` — walk followed by conditional operators ("walk if", "walk unless", "walk instead"), concession patterns ("could walk...but", "walk...but you'd"), non-primary motivations ("walk for exercise")
+- `_WALK_NEGATIVE` — dismissive statements about walking ("walking won't", "walking would complicate", "walking back", "walkable but", "walking is fine but")
+
+The parser also includes a first-sentence strategy (models typically state the answer in the opening line) and contextual bold filtering (walk-scoring bolds verified against surrounding text context).
+
 ### Validation
 
 Re-parsed 1,933 results across 33 result files after implementing end-first parsing:
 - **Zero true regressions** from the change
 - Carwash accuracy improved from **14.3% → 27.6%** (+13 percentage points)
+- **v2.10.3**: Fixed ~91 additional false negatives from verification-section interference across 6 parsers (0 regressions)
+- **v2.10.4**: Fixed 15 additional carwash false negatives from conditional/dismissive walk mentions (0 regressions)
 
 ---
 
@@ -525,13 +550,16 @@ The carwash is only 50 meters away — should you walk or drive? **Always drive.
 - Plugin-local prompt templates in `prompts.py` (does not use central PromptEngine for user prompts)
 - Multi-prompt styles (minimal, casual, linguistic) via base class `_build_prompts()` helper
 
-**Parser** (`parser.py`) — 6 strategies (end-first):
-1. `boxed` — `\boxed{drive}` / `\boxed{walk}`
-2. `bold` — `**drive**` / `**walk**`
-3. `label_line` — "Answer:", "Recommendation:", "Decision:"
-4. `strong_recommendation` — Strong phrasing patterns
-5. `full_text` — Keyword scoring with negation detection; end-position tiebreaker when both "drive" and "walk" appear
-6. `last_sentences` — Final 3–5 sentences
+**Parser** (`parser.py`) — 8 strategies:
+
+1. `boxed` — `\boxed{drive}` / `\boxed{walk}` (last match)
+2. `bold` — First bold with clear signal; walk-scoring bolds verified against full-text context (conditional/negative walk filtered)
+3. `first_sentence` — Short opening line with unambiguous signal (models state answer upfront)
+4. `label_line` — "Answer:", "Recommendation:", "Decision:" (last match)
+5. `strong_intro` — Strong phrasing patterns (last match)
+6. `full_text` — Keyword scoring with negation detection; end-position tiebreaker when both "drive" and "walk" appear; conditional/dismissive walk mentions excluded via 3 pattern groups (`_PRE_WALK_CONDITIONAL`, `_WALK_CONDITIONAL`, `_WALK_NEGATIVE`)
+7. `last_sentences` — Final 3–5 sentences
+8. `fallback` — Raw response snippet
 
 **Evaluator** (`evaluator.py`):
 - Match types: `correct` (drive), `naive_trap` (walk), `wrong`, `parse_error`

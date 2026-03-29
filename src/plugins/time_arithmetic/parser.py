@@ -10,7 +10,7 @@ import re
 from typing import Any, Dict
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import re_search_last, strip_verification_tail
 
 # ── refusal / validity keywords ──────────────────────────────────────
 
@@ -183,6 +183,9 @@ class TimeArithmeticParser(ResponseParser):
 
     def _parse_time(self, response: str, time_fmt: str) -> ParsedAnswer:
         text = response.strip()
+        # Strip verification/confirmation tails so we don't grab re-computed values
+        # (e.g. "time: 11:50 PM" in a validation section)
+        cleaned = strip_verification_tail(text)
 
         # Strategy 1: boxed
         m = re_search_last(_BOXED, text)
@@ -200,8 +203,8 @@ class TimeArithmeticParser(ResponseParser):
             if t:
                 return ParsedAnswer(value=t, raw_response=response, parse_strategy="bold")
 
-        # Strategy 3: label line
-        m = re_search_last(_LABEL, text)
+        # Strategy 3: label line (use cleaned text to avoid labels in verification)
+        m = re_search_last(_LABEL, cleaned)
         if m:
             inner = m.group(1).strip()
             # Check for refusal in label
@@ -213,13 +216,13 @@ class TimeArithmeticParser(ResponseParser):
 
         # Strategy 4: last time pattern in response
         if time_fmt == "12h":
-            m = re_search_last(_TIME_12H, text)
+            m = re_search_last(_TIME_12H, cleaned)
             if m:
                 t = self._normalize_12h(m.group(1), m.group(2), m.group(3))
                 if t:
                     return ParsedAnswer(value=t, raw_response=response, parse_strategy="time_pattern_12h")
 
-        m = re_search_last(_TIME_24H, text)
+        m = re_search_last(_TIME_24H, cleaned)
         if m:
             h, mn = int(m.group(1)), int(m.group(2))
             if 0 <= h <= 23 and 0 <= mn <= 59:
@@ -238,6 +241,9 @@ class TimeArithmeticParser(ResponseParser):
 
     def _parse_day(self, response: str) -> ParsedAnswer:
         text = response.strip()
+        # Strip verification/confirmation tails so we don't grab re-computed values
+        # (e.g. "day = Tuesday" in a step-by-step verification section)
+        cleaned = strip_verification_tail(text)
 
         # Strategy 1: boxed
         m = re_search_last(_BOXED, text)
@@ -253,15 +259,15 @@ class TimeArithmeticParser(ResponseParser):
             if d:
                 return ParsedAnswer(value=d, raw_response=response, parse_strategy="bold")
 
-        # Strategy 3: label line
-        m = re_search_last(_LABEL, text)
+        # Strategy 3: label line (use cleaned text to avoid "day =" in verification)
+        m = re_search_last(_LABEL, cleaned)
         if m:
             d = self._extract_day(m.group(1))
             if d:
                 return ParsedAnswer(value=d, raw_response=response, parse_strategy="label_line")
 
         # Strategy 4: last day name in text
-        m = re_search_last(_DAY_PATTERN, text)
+        m = re_search_last(_DAY_PATTERN, cleaned)
         if m:
             d = _ALL_DAY_NAMES.get(m.group(1).lower())
             if d:
@@ -299,14 +305,16 @@ class TimeArithmeticParser(ResponseParser):
                 return ParsedAnswer(value=str(d), raw_response=response, parse_strategy="label_line")
 
         # Strategy 4: duration pattern
-        m = re_search_last(_DURATION_PATTERN, text)
+        # Strip verification/confirmation tails so we don't grab re-computed values
+        cleaned = strip_verification_tail(text)
+        m = re_search_last(_DURATION_PATTERN, cleaned)
         if m:
             d = self._duration_match_to_minutes(m)
             if d is not None:
                 return ParsedAnswer(value=str(d), raw_response=response, parse_strategy="duration_pattern")
 
         # Strategy 5: last plain number (treat as minutes)
-        m = re_search_last(_PURE_NUMBER, text)
+        m = re_search_last(_PURE_NUMBER, cleaned)
         if m:
             val = int(m.group(1))
             if 1 <= val <= 1440:

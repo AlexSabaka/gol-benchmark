@@ -341,7 +341,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Arithmetic Tasks**: 60-90% accuracy with enhanced parsing
 - **Game of Life**: 40-70% accuracy (dramatically improved from 0% after grid_str fix)
 - **Cellular Automata 1D**: Expected 50-80% accuracy (Stage 1 complete, Stage 2 pending)
-- **Carwash Paradox**: Expected 30-70% accuracy (many models fall for the proximity trap)
+- **Carwash Paradox**: Expected 40-80% accuracy (v2.10.4 expanded conditional/dismissive walk filtering fixes most false negatives; remaining failures are genuine model errors)
 - **Inverted Cup**: Expected 60-90% accuracy (the flip answer is usually obvious)
 - **Time Arithmetic**: Expected 50-80% accuracy (noon/midnight traps and impossible dates are the hardest)
 - **Misquote Attribution**: Expected 40-70% accuracy (authority/constraint framings are the hardest sycophancy traps)
@@ -403,7 +403,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.10.2 (March 28, 2026)
+**Version**: 2.10.4 (March 29, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery

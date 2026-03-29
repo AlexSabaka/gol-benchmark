@@ -197,6 +197,7 @@ All response parsers follow the principle of searching from the **end** of the m
 
 - `safe_enum(enum_cls, value, default)` — parse string to enum with fallback (used by all 12 generators)
 - `re_search_last(pattern, text)` — drop-in replacement for `re.search()` that returns the last match
+- `strip_verification_tail(text)` — removes trailing verification/confirmation sections before end-first matching (v2.10.3)
 - `last_sentences(text, n)` — returns the last N sentences
 - `last_keyword_position(text, keywords)` — position of last keyword occurrence
 
@@ -208,6 +209,10 @@ All response parsers follow the principle of searching from the **end** of the m
 - `linda_fallacy` — extracts ordered rankings, not single answers
 
 **Validated**: Re-parsed 1,933 results across 33 files. Zero true regressions from end-first changes. Carwash accuracy improved from 14.3% to 27.6% (+13pp).
+
+**Verification-section stripping** (v2.10.3): End-first parsing can pick up values from model verification/confirmation sections (e.g., "Let me verify: 12:02 + 1h53m = 1:55 AM"). The shared `strip_verification_tail()` utility in `parse_utils.py` detects verification headers and truncates text before applying end-first search. Applied to `time_arithmetic`, `object_tracking`, `sally_anne` parsers. Fixed ~91 false negatives with 0 regressions.
+
+**Carwash conditional/dismissive walk filtering** (v2.10.3 → v2.10.4): The `carwash` parser filters walk mentions that are conditional, negative, or dismissive — not actual walk recommendations. Three pattern groups: `_PRE_WALK_CONDITIONAL` (exception/hypothetical language before walk), `_WALK_CONDITIONAL` (walk followed by if/unless/but, concession patterns, "walk for exercise", "walk instead"), `_WALK_NEGATIVE` (dismissive statements: "walking won't", "walking would complicate", "walking back", "walkable but"). v2.10.4 also added a first-sentence strategy (models state the answer upfront) and contextual bold filtering (walk-scoring bolds verified against surrounding text). Fixed 15 additional false negatives with 0 regressions.
 
 ---
 
@@ -405,7 +410,7 @@ from src.plugins.base import (
     BenchmarkPlugin, TestCaseGenerator, ResponseParser, ResultEvaluator,
     TestCase, ParsedAnswer, EvaluationResult, ConfigField
 )
-from src.plugins.parse_utils import safe_enum, re_search_last
+from src.plugins.parse_utils import safe_enum, re_search_last, strip_verification_tail
 
 # Plugin-local prompt templates (inside each plugin's generator.py)
 from .prompts import TEMPLATES  # Each plugin defines its own
@@ -694,7 +699,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-28*
-*Version: 2.10.2*
-*Key additions: C14 custom cell markers (state, rule table, boundary descriptions) • Report: expected value N/A fix, collapsible thinking blocks, parsed answer formatting • Web UI: task types column in results page • GoL cell markers fix (emoji support), 1,061 real-world GoL patterns from sorted_patterns, exclude_empty option • Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-03-29*
+*Version: 2.10.4*
+*Key additions: Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed, 3 pattern groups, first-sentence strategy, contextual bold filtering) • Parser false-negative fixes (verification section stripping, conditional walk detection, ~91 FNs fixed across 6 parsers) • C14 custom cell markers (state, rule table, boundary descriptions) • Report: expected value N/A fix, collapsible thinking blocks, parsed answer formatting • Web UI: task types column in results page • GoL cell markers fix (emoji support), 1,061 real-world GoL patterns from sorted_patterns, exclude_empty option • Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

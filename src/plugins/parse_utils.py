@@ -73,6 +73,47 @@ def last_sentences(text: str, n: int = 3) -> List[str]:
     return parts[-n:] if parts else []
 
 
+# ---------------------------------------------------------------------------
+# Verification-section stripping
+# ---------------------------------------------------------------------------
+
+_VERIFICATION_HEADER = re.compile(
+    r"(?:^|\n)\s*(?:"
+    # Explicit section headers (optionally bold / markdown heading)
+    r"(?:\*{0,2}|#{1,3}\s*)"
+    r"(?:verification|verify|check(?:ing)?|confirm(?:ation|ing)?|"
+    r"validate|validation|proof|double[\s-]?check)"
+    r"(?:\s*\*{0,2})\s*[:.]?"
+    # "Let's verify / Let me check / To confirm"
+    r"|let(?:['\u2019]s|\s+us|\s+me)\s+(?:verify|check|confirm|double[\s-]?check|trace)"
+    r"|to\s+(?:verify|check|confirm|double[\s-]?check)"
+    # Working backward / counting forward patterns
+    r"|(?:working|counting|going)\s+(?:backward|forward|back)\b"
+    # "This confirms / This matches" (standalone verification conclusion)
+    r"|this\s+(?:confirms?|matches|verif(?:ies|y))\b"
+    r")",
+    re.IGNORECASE | re.MULTILINE,
+)
+
+
+def strip_verification_tail(text: str) -> str:
+    """Remove trailing verification / confirmation sections from *text*.
+
+    Models often verify their answer by re-computing, mentioning intermediate
+    values that confuse end-first parsers.  This function finds the **first**
+    verification-style header and returns only the text before it.
+
+    Returns the original text unchanged when no header is detected or when
+    stripping would leave an empty string.
+    """
+    m = _VERIFICATION_HEADER.search(text)
+    if m:
+        before = text[:m.start()].rstrip()
+        if before:
+            return before
+    return text
+
+
 def last_keyword_position(
     text: str,
     keywords: Sequence[str | re.Pattern],

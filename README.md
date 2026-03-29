@@ -305,6 +305,8 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Remote Ollama + OpenAI-compatible + HuggingFace providers
 - [x] Token counting throughout pipeline
 - [x] End-first parsing convention across all parsers
+- [x] Verification-section stripping for end-first parsers (v2.10.3, ~91 false negatives fixed)
+- [x] Carwash parser expanded conditional/dismissive walk filtering (v2.10.4, 15 false negatives fixed)
 
 ### 🔄 In Progress
 

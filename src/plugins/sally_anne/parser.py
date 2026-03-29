@@ -8,7 +8,7 @@ import re
 import json
 from typing import Dict, Any, Optional
 from ..base import ResponseParser, ParsedAnswer
-from ..parse_utils import re_search_last
+from ..parse_utils import re_search_last, strip_verification_tail
 
 
 class SallyAnneResponseParser(ResponseParser):
@@ -107,7 +107,10 @@ class SallyAnneResponseParser(ResponseParser):
             )
         
         # Strategy 5: Last sentence container mention (end-first)
-        parsed, strategy = self._try_last_sentence(response_clean, containers)
+        # Strip verification/confirmation tails so we don't grab containers
+        # from re-computation sections
+        cleaned = strip_verification_tail(response_clean)
+        parsed, strategy = self._try_last_sentence(cleaned, containers)
         if parsed:
             return ParsedAnswer(
                 value=self._normalize_container(parsed, task_params),
@@ -115,7 +118,7 @@ class SallyAnneResponseParser(ResponseParser):
                 parse_strategy=strategy,
                 confidence=0.8
             )
-        
+
         # Strategy 6: JSON extraction
         parsed, strategy = self._try_json_extraction(response_clean)
         if parsed and self._is_valid_container(parsed, containers):
@@ -125,9 +128,9 @@ class SallyAnneResponseParser(ResponseParser):
                 parse_strategy=strategy,
                 confidence=0.75
             )
-        
+
         # Strategy 7: Direct container match
-        parsed, strategy = self._try_direct_container_match(response_clean, containers, task_params)
+        parsed, strategy = self._try_direct_container_match(cleaned, containers, task_params)
         if parsed:
             return ParsedAnswer(
                 value=parsed,

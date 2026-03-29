@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.10.2** | Last updated: 2026-03-28
+> **Version 2.10.4** | Last updated: 2026-03-29
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -86,7 +86,7 @@ Each stage is independently runnable. Stage 2 includes minimal self-contained mo
 
 ### Plugin System
 
-All 17 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
+All 18 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
 
 Each plugin provides three components:
 
@@ -386,7 +386,7 @@ Q2_K achieves 87.5% model size reduction with a net accuracy gain. Hypothesis: q
 
 ### 4. End-First Parsing
 
-LLMs reason first, answer last. Searching from the end of responses instead of the beginning improved carwash accuracy from 14.3% to 27.6% with zero regressions across 1,933 re-parsed results. See [PLUGIN_GUIDE.md — End-First Parsing Convention](PLUGIN_GUIDE.md#end-first-parsing-convention).
+LLMs reason first, answer last. Searching from the end of responses instead of the beginning improved carwash accuracy from 14.3% to 27.6% with zero regressions across 1,933 re-parsed results. v2.10.3 added `strip_verification_tail()` to handle models that append verification sections, fixing ~91 additional false negatives. v2.10.4 expanded the carwash parser's conditional/dismissive walk filtering (3 pattern groups, first-sentence strategy, contextual bold filtering), fixing 15 additional false negatives with 0 regressions. See [PLUGIN_GUIDE.md — End-First Parsing Convention](PLUGIN_GUIDE.md#end-first-parsing-convention).
 
 ---
 

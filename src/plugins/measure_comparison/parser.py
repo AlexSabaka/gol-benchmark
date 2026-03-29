@@ -125,11 +125,14 @@ def _normalise_unit(text: str) -> Optional[str]:
     low = text.lower()
     if low in _ALIAS_TO_CANON:
         return _ALIAS_TO_CANON[low]
-    # Try progressively shorter prefixes (min 2 chars to avoid
-    # single-letter false positives like "k"→kelvin for "kilometer")
-    for length in range(len(low), 1, -1):
-        prefix = low[:length]
+    # Try progressively shorter prefixes.
+    # Allow single-char matches only when the next char is non-alpha
+    # (avoids "k"→kelvin for "kilometer" while allowing "h" from "h is shorter")
+    for length in range(len(low), 0, -1):
+        prefix = low[:length].rstrip()
         if prefix in _ALIAS_TO_CANON:
+            if len(prefix) == 1 and len(low) > 1 and low[1:2].isalpha():
+                continue
             return _ALIAS_TO_CANON[prefix]
     return None
 
@@ -304,6 +307,30 @@ class MeasureComparisonParser(ResponseParser):
                     value=result, raw_response=text,
                     parse_strategy="label_line", confidence=0.88,
                 )
+
+        # --- Strategy 5.5: "{value} {unit} is {comparative}" pattern ---
+        # Handles responses like "18.68 h is shorter." where the answer is
+        # stated plainly without labels, bold, or boxed formatting.
+        comp_m = re_search_last(
+            r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)\s+is\s+"
+            r"(?:shorter|longer|heavier|lighter|hotter|colder|warmer|cooler|"
+            r"faster|slower|bigger|smaller|greater|less|more|fewer|"
+            r"larger|higher|lower|taller|wider)",
+            text,
+            re.IGNORECASE,
+        )
+        if comp_m:
+            val_str = comp_m.group(1)
+            unit_text = comp_m.group(2).strip()
+            unit_canon = _normalise_unit(unit_text)
+            if unit_canon:
+                pos = _match_to_option(val_str, unit_canon, tp)
+                if pos:
+                    answer = _position_to_answer(pos, tp)
+                    return ParsedAnswer(
+                        value=answer, raw_response=text,
+                        parse_strategy="value_unit_comparative", confidence=0.87,
+                    )
 
         # --- Strategy 6: Value+unit match against known options ---
         # NOTE: Do NOT reverse here. Both options are typically mentioned in

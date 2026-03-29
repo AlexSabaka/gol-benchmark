@@ -22,7 +22,7 @@ with open(OUT, 'w', encoding='utf-8') as out_f:
             results = data.get('results', [])
             for r in results:
                 raw_response = r.get('output', {}).get('raw_response', '')
-                if raw_response is None or raw_response.strip() == "":
+                if raw_response is None or raw_response.strip() == "" or raw_response.strip().lower() == "timed out":
                     continue  # Skip if no raw_response
                 test_id = r.get('test_id', 'unknown')
                 test_id = re.sub(r'^multi_\d+_', '', test_id)

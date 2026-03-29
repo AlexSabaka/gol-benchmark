@@ -156,7 +156,7 @@ class C14TestCaseGenerator(TestCaseGenerator):
                     task_params={
                         'rule': rule,
                         'initial_state': initial_state,
-                        'expected_state': expected_states[0],
+                        'expected_answer': expected_states[0],
                         'width': width,
                         'steps': steps,
                         'boundary': boundary,

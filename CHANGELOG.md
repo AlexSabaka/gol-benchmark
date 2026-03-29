@@ -2,6 +2,53 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.10.4] - March 29, 2026
+
+### Carwash Parser — Expanded Conditional/Dismissive Walk Filtering
+
+Fixed 15 confirmed false negatives where models correctly recommended "drive" but the parser extracted "walk" from conditional, negative, or dismissive walk mentions later in the response.
+
+#### What Changed
+
+- **Expanded `_PRE_WALK_CONDITIONAL` patterns**: Added "the only time/reason/scenario", "when you might", "the main/real argument for", "if for any reason", "if any of the above", domain-specific conditionals ("if the mud/road/weather/plate/visibility")
+- **Expanded `_WALK_CONDITIONAL` patterns**: Added "could walk...but" (dismissive concession), "walk...but you/it/that" (concession), "walk for exercise/fitness/health" (non-primary motivation), "walk instead" (preceded by conditional context)
+- **New `_WALK_NEGATIVE` pattern group**: Catches walk mentioned in dismissive/negative context — "walking won't/wouldn't/doesn't/can't", "walking [back] would complicate/be awkward", "walking [there] leaves", "walking is fine/okay but", "walking feels like a chore/silly", "walkable but", "walking back" (return trip logistics)
+- **New first-sentence strategy** (Strategy 3): Short opening lines with unambiguous drive/walk signal extracted before full-text scan. Catches the dominant pattern where models open with "Drive." / "Drive there." / "I'd drive."
+- **Fixed bold strategy** (Strategy 2): Walk-scoring bolds now verified against surrounding full-text context via `_is_conditional_walk()`. When all signalling bolds agree, first match used; when conflicting (self-correction), last wins
+- **15 regression tests added** in `tests/test_parser_end_first.py` covering all false negative responses from LLM-judge review
+- **0 regressions** — all 50 end-first parser tests pass; all pre-existing plugin tests unchanged
+
+#### Design Decisions
+
+- Conditional walk window expanded from 100→120 chars before and 60→80 chars after for better context capture
+- `_WALK_NEGATIVE` patterns allow one intervening word (e.g., "walking back would" matches via `(?:\w+\s+)?`)
+- Bold strategy uses contextual filtering rather than position-based heuristics — each walk-scoring bold is checked against `_is_conditional_walk()` on the full response text
+- First-sentence strategy does not violate end-first principle — it's a high-specificity strategy for short opening answer lines, not reasoning text
+
+## [2.10.3] - March 28, 2026
+
+### Parser False-Negative Fixes — Verification Section Stripping, Conditional Walk Detection
+
+Fixed ~91 confirmed false negatives across 6 parsers where models gave correct answers but parsers extracted wrong values from verification/confirmation sections or conditional language.
+
+#### What Changed
+
+- **New shared utility `strip_verification_tail()`** in `parse_utils.py`: Regex-based function that finds verification/confirmation section headers ("Verification:", "Let me verify:", "This confirms", "Working backward") and returns only the text before them. Prevents end-first parsers from grabbing re-computed values from validation sections.
+- **`time_arithmetic` parser (~47 FNs fixed)**: Applied `strip_verification_tail()` to Strategies 3-4 (`_parse_time`, `_parse_day`, `_parse_duration`). Models that verify answers by re-computing ("12:02 AM + 1h53m = 1:55 AM") no longer have the verification value extracted instead of the actual answer.
+- **`object_tracking` parser (~18 FNs fixed)**: Applied `strip_verification_tail()` to Strategies 3-5 (sentence_pattern, location_keyword, last_word). Step-by-step traces mentioning intermediate locations no longer override the correct answer.
+- **`carwash` parser (~14 FNs fixed)**: Added conditional walk detection in `_score()`. Two new regex patterns (`_PRE_WALK_CONDITIONAL`, `_WALK_CONDITIONAL`) detect walk mentions inside conditional/exception language ("only walk if...", "if you prefer to walk...", "exception: walk when...") and exclude them from the drive/walk tie-break.
+- **`measure_comparison` parser (8 FNs fixed)**: New "value_unit_comparative" strategy (confidence 0.87) handles `{value} {unit} is {adjective}` patterns (e.g., "18.68 h is shorter"). Fixed `_normalise_unit()` to accept single-char unit prefixes when followed by non-alpha characters.
+- **`encoding_cipher` parser (3 FNs fixed)**: Added multi-line label regex to `_try_labelled_answer()` handling `**Plaintext**\n\nDecoded text` and `**Plaintext (decoded by shifting back 3):**\n\nText` formats.
+- **`sally_anne` parser (1 FN fixed)**: Applied `strip_verification_tail()` to Strategies 5 and 7 (last_sentence, direct_container_match).
+- **0 regressions** — all 178 passing plugin tests remain passing; all pre-existing failures unchanged
+
+#### Design Decisions
+
+- `strip_verification_tail()` placed in shared `parse_utils.py` for reuse across parsers
+- Verification stripping applied only to lower-confidence strategies (pattern/keyword search), not to high-confidence strategies (boxed, bold) which are already scoped to specific formatting
+- Carwash conditional detection is conservative: only filters walk mentions preceded by explicit conditional language ("if", "unless", "only when", "exception")
+- `_normalise_unit()` single-char fix uses next-char-is-alpha guard to prevent false matches (e.g., "k" in "kilometer")
+
 ## [2.10.2] - March 28, 2026
 
 ### C14 Cell Markers, Report Improvements, Web UI Results Page
