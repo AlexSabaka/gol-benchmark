@@ -403,7 +403,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.10.5 (March 29, 2026)
+**Version**: 2.10.6 (March 30, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery

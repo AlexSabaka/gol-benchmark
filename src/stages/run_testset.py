@@ -117,7 +117,9 @@ def parse_answer_via_plugin(response: str, task_type: str, task_params: Dict = N
         if parsed.success:
             return parsed.value
         return None
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Plugin parsing failed for %s: %s", task_type, e)
         return None
 
 
@@ -155,7 +157,9 @@ def evaluate_via_plugin(parsed_answer: Any, expected_answer: Any, task_type: str
         evaluator = plugin.get_evaluator()
         result = evaluator.evaluate(parsed_answer, expected_answer, task_params or {})
         return result.to_dict()
-    except Exception:
+    except Exception as e:
+        import logging
+        logging.getLogger(__name__).warning("Plugin evaluation failed for %s: %s", task_type, e)
         return None
 
 
@@ -1469,7 +1473,9 @@ def run_testset(
                 expected_answer = task_params.get('expected_answer')
             else:
                 # For other tasks, use existing logic
-                expected_answer = task_params.get('expected_answer') or task_params.get('expected_next_state')
+                expected_answer = task_params.get('expected_answer')
+                if expected_answer is None:
+                    expected_answer = task_params.get('expected_next_state')
 
             # Try plugin-based evaluation first
             evaluation = evaluate_via_plugin(parsed_answer, expected_answer, individual_task_type, task_params)

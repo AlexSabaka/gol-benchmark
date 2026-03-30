@@ -308,6 +308,7 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Verification-section stripping for end-first parsers (v2.10.3, ~91 false negatives fixed)
 - [x] Carwash parser expanded conditional/dismissive walk filtering (v2.10.4, 15 false negatives fixed)
 - [x] Measure comparison parser overhaul (v2.10.5, 38 false negatives fixed — smart quote normalization, pipeline reorder, expanded keyword patterns)
+- [x] Object tracking, time arithmetic, inverted cup, encoding cipher parser fixes (v2.10.6, 28 false negatives fixed — first-bold/first-sentence strategies, validity yes/no detection, tilt/tip patterns, Unicode whitespace normalization)
 
 ### 🔄 In Progress
 

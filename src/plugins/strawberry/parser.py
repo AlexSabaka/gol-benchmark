@@ -18,7 +18,7 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import re_search_last, strip_verification_tail
 
 # ---------------------------------------------------------------------------
 # Spelled-out number map (0–20 + common larger ones)
@@ -316,7 +316,7 @@ class StrawberryParser(ResponseParser):
     # ------------------------------------------------------------------
 
     def _parse_boolean(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
-        text = response.strip()
+        text = strip_verification_tail(response.strip())
 
         def _to_bool(candidate: str) -> Optional[bool]:
             c = candidate.strip().strip(".,;:!?'\"-").lower()
@@ -360,11 +360,27 @@ class StrawberryParser(ResponseParser):
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="answer_is", confidence=0.85)
 
-        # Strategy 5: Last yes/no keyword
+        # Strategy 4b: First yes/no keyword in opening fragment
+        # Models often state their answer first ("Yes.", "False."), then explain.
+        # Check the first line / first sentence for an unambiguous keyword.
         yes_no_pattern = re.compile(
             r"\b(" + "|".join(re.escape(w) for w in (_YES_WORDS | _NO_WORDS)) + r")\b",
             re.IGNORECASE,
         )
+        first_line = text.split('\n', 1)[0].strip()
+        first_sent = re.split(r'[.!?\n]', text, maxsplit=1)[0].strip()
+        for fragment in (first_line, first_sent):
+            if fragment and len(fragment) < 80:
+                first_kw = yes_no_pattern.search(fragment)
+                if first_kw:
+                    val = _to_bool(first_kw.group(1))
+                    if val is not None:
+                        return ParsedAnswer(
+                            value=val, raw_response=text,
+                            parse_strategy="first_keyword", confidence=0.78,
+                        )
+
+        # Strategy 5: Last yes/no keyword
         last_kw = re_search_last(yes_no_pattern, text)
         if last_kw:
             val = _to_bool(last_kw.group(1))

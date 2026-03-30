@@ -2,6 +2,62 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.10.6] - March 30, 2026
+
+### Parser & Evaluator False-Negative Fixes — 4 Plugins (28 cases analyzed, 28 fixes)
+
+Fixed 28 confirmed false negatives from LLM-judge review across object tracking, inverted cup, time arithmetic, and encoding cipher plugins.
+
+#### Object Tracking Parser (9 FNs fixed)
+
+**Root cause**: End-first parsing grabbed distractor locations from explanations instead of the bolded/first-sentence answer. Models consistently write "The keys are on the **counter**." then explain "Moving the cup to the refrigerator..."
+
+- **New `bold_keyword` strategy** (first-bold, not end-first): Extracts the FIRST `**bold**` text matching a known location. Runs on full response (not verification-stripped) since first-bold is position-aware.
+- **New `first_sentence_location` strategy**: Finds a known location in the first sentence only, avoiding distractors in explanations.
+- **Added `must` to stop_words**: Was missing alongside would/could/should, causing false extraction from "the answer must be..."
+- **Strategy order**: single_word → answer_prefix → **bold_keyword** → **first_sentence_location** → sentence_pattern → location_keyword → last_word
+- **9 regression tests** added to `tests/plugins/test_object_tracking.py`
+
+#### Inverted Cup Parser (3 FNs fixed)
+
+**Root cause**: Missing "tilt" and "tip" as flip synonyms in `FLIP_PATTERNS`. Models wrote "tilt the cup so the mouth is facing up" — semantically correct but not matched.
+
+- **5 new patterns** added to `FLIP_PATTERNS`: `\btilt\s+(?:it|the\s+cup)\b`, `\btip\s+(?:it|the\s+cup)\b`, `\bmouth\b.*\bfacing\s+up\b`, `\brim\b.*\b(?:facing\s+up|on\s+top)\b`, `\bopen(?:ing)?\s+(?:end|side)\s+(?:facing\s+)?up\b`
+- **11 tests** in new `tests/plugins/test_inverted_cup_parser.py` (3 fixable FNs + 2 non-fixable confirmations + 6 existing pattern coverage)
+
+#### Time Arithmetic Parser (14 FNs fixed)
+
+**3 root causes**: (1) Validity parser didn't handle "No"/"Yes" as answers for DST/leap-year questions. (2) `"no" in "not divisible"` substring false positive. (3) Label strategy grabbed intermediate "Current time:" from computation steps.
+
+- **New `first_yes_no` strategy**: Detects "No"/"Yes" at response start (including after `##` headings or `**` bold)
+- **New `label_yes_no` strategy**: Handles "**Final Answer:** No." and multi-line variants where content is on next line
+- **Validity bold changed to first-bold**: First bold has the yes/no answer; later bolds contain explanation (same pattern as object tracking)
+- **Word-boundary matching**: `_validity_has_no()` / `_validity_has_yes()` helpers use `\bno\b` / `\byes\b` regex, preventing "no" from matching inside "not"/"nothing"
+- **New `final_answer_label` strategy** for time and day parsing: Specifically matches "Final Answer:" before generic labels like "time:" or "day:" that appear in computation steps
+- **Reordered time strategies**: `time_pattern` now runs before generic `label_line` — the last 12h time in the response is more reliable than intermediate label values
+- **New `_extract_day_last()` helper**: Returns the LAST day name from bold text (old `_extract_day` returned first, grabbing "Saturday" from "before Saturday was a Sunday")
+- **13 regression tests** added to `tests/plugins/test_time_arithmetic.py` (10 validity + 2 time + 1 day)
+
+#### Encoding Cipher Evaluator (2 FNs fixed)
+
+**Root cause**: Evaluator's `_normalize()` didn't handle Unicode whitespace or internal punctuation differences between model output and expected answer.
+
+- **Unicode whitespace normalization**: `_normalize()` now uses `re.sub(r'\s+', ' ', text)` to collapse NNBSP (`\u202f`), NBSP, etc. to regular spaces
+- **Punctuation-stripped comparison** for `decode_only` mode: Strips internal `.`,`,`,`;` etc. before comparing, since source texts have no punctuation but models may add periods
+- **2 regression tests** added to `tests/plugins/test_encoding_cipher.py`
+
+#### Design Decisions
+
+- Object tracking `bold_keyword` uses FIRST match (not end-first) — intentional exception because models bold the answer in the first sentence, then bold distractors in explanations
+- Time arithmetic validity uses first-bold and first-sentence detection — yes/no questions have the answer upfront, unlike computation questions where the answer is at the end
+- Word-boundary matching (`\bno\b`) prevents "no" matching inside "not", "nothing", "know" — a recurring false-positive pattern in validity keyword scanning
+- Encoding cipher punctuation stripping only applies to `decode_only` mode — `decode_and_act` expects exact word matches
+
+#### Test Results
+
+- **0 regressions** — all 275 plugin tests pass (14 pre-existing failures in unrelated plugins unchanged)
+- **36 new regression tests** across 4 test files
+
 ## [2.10.5] - March 29, 2026
 
 ### Measure Comparison Parser — False-Negative Fixes (38 cases analyzed, 6 root causes)

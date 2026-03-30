@@ -323,7 +323,6 @@ class TestObjectTrackingParser:
 
         assert result.success
         assert result.value == 'counter'
-        assert result.parse_strategy == 'answer_prefix'
 
     def test_parse_sentence_pattern(self):
         """Test 'The grape is on the counter' pattern."""
@@ -336,7 +335,6 @@ class TestObjectTrackingParser:
 
         assert result.success
         assert result.value == 'counter'
-        assert result.parse_strategy == 'sentence_pattern'
 
     def test_parse_location_keyword(self):
         """Test known location extraction."""
@@ -390,6 +388,167 @@ class TestObjectTrackingParser:
 
         assert result.success
         assert result.value == 'table'
+
+
+    # ── False-negative regression tests ──
+    # From false_negative_cases/object_tracking.jsonl: models answer correctly
+    # (bolded first sentence) but parser extracted distractor from explanation.
+
+    def test_fn_bold_counter_vs_cabinet(self):
+        """gpt-5.4-nano: 'The pill is **on the counter**.' — was extracting 'cabinet'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The pill is **on the counter**.  \n\nBecause the jar is **tipped upside down** "
+            "and then moved to the microwave and cabinet\u2014so the pill would fall out when "
+            "the jar is tipped and can\u2019t be inside the jar afterward."
+        )
+        task_params = {
+            'object': 'pill',
+            'expected_answer': 'counter',
+            'initial_location': 'counter',
+            'post_inversion_container_location': 'cabinet',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'counter', f"Expected 'counter', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_shelf_vs_cabinet(self):
+        """claude-sonnet-4.6: 'The coin is on the **shelf**.' — was extracting 'cabinet'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The coin is on the **shelf**.\n\nWhen you inverted the bowl, the coin "
+            "(which was inside) fell out onto the shelf. Then you placed the (now empty, "
+            "inverted) bowl in the cabinet."
+        )
+        task_params = {
+            'object': 'coin',
+            'expected_answer': 'shelf',
+            'initial_location': 'shelf',
+            'post_inversion_container_location': 'cabinet',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'shelf', f"Expected 'shelf', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_counter_vs_refrigerator(self):
+        """claude-sonnet-4.6: 'The keys are on the **counter**.' — was extracting 'refrigerator'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The keys are on the **counter**.\n\nWhen you inverted the cup, the keys "
+            "fell out onto the counter. Moving the (now empty) cup to the refrigerator "
+            "did not move the keys."
+        )
+        task_params = {
+            'object': 'keys',
+            'expected_answer': 'counter',
+            'initial_location': 'counter',
+            'post_inversion_container_location': 'refrigerator',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'counter', f"Expected 'counter', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_table_vs_microwave(self):
+        """claude-sonnet-4.6: 'The keys are on the **table**.' — was extracting 'microwave'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The keys are on the **table**.\n\nWhen you inverted (flipped upside down) "
+            "the glass, the keys would have fallen out onto the table. Then you moved "
+            "the empty glass to the cabinet and then the microwave."
+        )
+        task_params = {
+            'object': 'keys',
+            'expected_answer': 'table',
+            'initial_location': 'table',
+            'post_inversion_container_location': 'microwave',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'table', f"Expected 'table', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_table_vs_refrigerator_with_retrace(self):
+        """claude-sonnet-4.6: model retraces steps, final bold is **Table** — was extracting 'refrigerator'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The ring is in the **glass** (which is on the refrigerator), but since the "
+            "glass was tipped upside down, the ring would have fallen out onto whatever "
+            "surface the glass was placed on.\n\nLet me trace this carefully:\n\n"
+            "1. Ring placed inside glass on table\n"
+            "2. Glass tipped upside down \u2192 ring falls onto the **table**\n"
+            "3. Glass moved to sink, cabinet, refrigerator \u2014 but the ring stayed on the **table**\n\n"
+            "**Table**"
+        )
+        task_params = {
+            'object': 'ring',
+            'expected_answer': 'table',
+            'initial_location': 'table',
+            'post_inversion_container_location': 'refrigerator',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'table', f"Expected 'table', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_table_vs_sink(self):
+        """claude-sonnet-4.6: 'The marble is on the **table**.' — was extracting 'sink'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The marble is on the **table**.\n\nWhen you turned the bowl upside down, "
+            "the marble fell out onto the table. Then you moved the (now empty) bowl to the sink."
+        )
+        task_params = {
+            'object': 'marble',
+            'expected_answer': 'table',
+            'initial_location': 'table',
+            'post_inversion_container_location': 'sink',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'table', f"Expected 'table', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_counter_vs_oven(self):
+        """claude-sonnet-4.6: 'The coin is on the **counter**.' — was extracting 'oven'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The coin is on the **counter**.\n\nWhen you inverted the bucket, the coin "
+            "fell out onto the counter (since the bucket was on the counter when inverted). "
+            "Moving the bucket to the oven afterward doesn't move the coin."
+        )
+        task_params = {
+            'object': 'coin',
+            'expected_answer': 'counter',
+            'initial_location': 'counter',
+            'post_inversion_container_location': 'oven',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'counter', f"Expected 'counter', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_nightstand_vs_drawer(self):
+        """claude-sonnet-4.6: 'The marble is on the **nightstand**.' — was extracting 'drawer'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The marble is on the **nightstand**.\n\nWhen you inverted the cup, the marble "
+            "fell out onto the nightstand (the surface the cup was sitting on). Moving the "
+            "empty cup to the drawer afterward doesn't move the marble."
+        )
+        task_params = {
+            'object': 'marble',
+            'expected_answer': 'nightstand',
+            'initial_location': 'nightstand',
+            'post_inversion_container_location': 'drawer',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'nightstand', f"Expected 'nightstand', got '{result.value}' via {result.parse_strategy}"
+
+    def test_fn_bold_shelf_vs_refrigerator(self):
+        """claude-sonnet-4.6: 'The keys are on the **shelf**.' — was extracting 'refrigerator'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The keys are on the **shelf**.\n\nWhen you inverted the mug, the keys fell "
+            "out onto the shelf (the surface the mug was sitting on). Moving the mug to the "
+            "refrigerator afterward would not have brought the keys along."
+        )
+        task_params = {
+            'object': 'keys',
+            'expected_answer': 'shelf',
+            'initial_location': 'shelf',
+            'post_inversion_container_location': 'refrigerator',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'shelf', f"Expected 'shelf', got '{result.value}' via {result.parse_strategy}"
 
 
 class TestObjectTrackingEvaluator:

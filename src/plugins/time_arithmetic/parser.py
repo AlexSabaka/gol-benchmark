@@ -103,8 +103,25 @@ _LABEL = re.compile(
     re.IGNORECASE,
 )
 
+# "Final Answer:" label — higher priority than generic labels
+_FINAL_ANSWER_LABEL = re.compile(
+    r"final\s+answer\s*[:=]\s*(.+)",
+    re.IGNORECASE,
+)
+
 # Pure number (for duration in minutes)
 _PURE_NUMBER = re.compile(r"\b(\d{1,5})\b")
+
+# First-sentence yes/no for validity parsing
+_FIRST_YES_NO = re.compile(
+    r"^(?:\s*(?:#{1,3}\s*)?(?:\*\*)?)\s*"      # optional heading/bold prefix
+    r"(yes|no)\b",
+    re.IGNORECASE,
+)
+
+# Word-boundary "no"/"yes" matcher (avoids "not"/"know" substring false positives)
+_WORD_NO = re.compile(r"\bno\b", re.IGNORECASE)
+_WORD_YES = re.compile(r"\byes\b", re.IGNORECASE)
 
 
 class TimeArithmeticParser(ResponseParser):
@@ -137,22 +154,48 @@ class TimeArithmeticParser(ResponseParser):
         text = response.strip()
         lower = text.lower()
 
+        # Strategy 0: first-sentence yes/no — models commonly start with
+        # "No.", "**No.**", "## Yes!", "Yes, ..." for validity questions.
+        m = _FIRST_YES_NO.match(text)
+        if m:
+            word = m.group(1).lower()
+            if word == "no":
+                return ParsedAnswer(value="impossible", raw_response=response, parse_strategy="first_yes_no")
+            return ParsedAnswer(value="valid", raw_response=response, parse_strategy="first_yes_no")
+
+        # Strategy 0b: label line with yes/no content
+        # Handles: "**Final Answer:** No.", "Answer: Yes",
+        # and multi-line: "**Final Answer:**\n\nNo, ..."
+        m = re_search_last(
+            r"(?:final\s+answer|answer|result)\s*[:=]\s*(?:\*{0,2})\s*\n*\s*(.+)",
+            text, re.IGNORECASE,
+        )
+        if m:
+            label_content = m.group(1).strip().lower()
+            # Only use if the label content is short (actual yes/no answer, not explanation)
+            if len(label_content) < 80:
+                if self._validity_has_no(label_content):
+                    return ParsedAnswer(value="impossible", raw_response=response, parse_strategy="label_yes_no")
+                if self._validity_has_yes(label_content):
+                    return ParsedAnswer(value="valid", raw_response=response, parse_strategy="label_yes_no")
+
         # Strategy 1: boxed
         m = re_search_last(_BOXED, text)
         if m:
             inner = m.group(1).strip().lower()
-            if any(kw in inner for kw in ["no", "impossible", "invalid", "doesn't", "does not", "不存在", "不", "ні"]):
+            if self._validity_has_no(inner):
                 return ParsedAnswer(value="impossible", raw_response=response, parse_strategy="boxed")
-            if any(kw in inner for kw in ["yes", "valid", "exists", "是", "так"]):
+            if self._validity_has_yes(inner):
                 return ParsedAnswer(value="valid", raw_response=response, parse_strategy="boxed")
 
-        # Strategy 2: bold
-        m = re_search_last(_BOLD, text)
+        # Strategy 2: first bold — for yes/no questions, the first bold
+        # typically contains the answer; later bolds are explanation.
+        m = _BOLD.search(text)
         if m:
             inner = m.group(1).strip().lower()
-            if any(kw in inner for kw in ["no", "impossible", "invalid", "doesn't", "does not"]):
+            if self._validity_has_no(inner):
                 return ParsedAnswer(value="impossible", raw_response=response, parse_strategy="bold")
-            if any(kw in inner for kw in ["yes", "valid", "exists"]):
+            if self._validity_has_yes(inner):
                 return ParsedAnswer(value="valid", raw_response=response, parse_strategy="bold")
 
         # Strategy 3: refusal keyword scan (end-weighted — check last 500 chars first)
@@ -179,6 +222,25 @@ class TimeArithmeticParser(ResponseParser):
             parse_strategy="none", error="Could not determine validity",
         )
 
+    @staticmethod
+    def _validity_has_no(text: str) -> bool:
+        """Check if text signals 'impossible' using word-boundary matching."""
+        if _WORD_NO.search(text):
+            return True
+        return any(kw in text for kw in [
+            "impossible", "invalid", "doesn't", "does not",
+            "不存在", "不", "ні",
+        ])
+
+    @staticmethod
+    def _validity_has_yes(text: str) -> bool:
+        """Check if text signals 'valid' using word-boundary matching."""
+        if _WORD_YES.search(text):
+            return True
+        return any(kw in text for kw in [
+            "valid", "exists", "是", "так",
+        ])
+
     # ── time parsing ─────────────────────────────────────────────────
 
     def _parse_time(self, response: str, time_fmt: str) -> ParsedAnswer:
@@ -203,18 +265,20 @@ class TimeArithmeticParser(ResponseParser):
             if t:
                 return ParsedAnswer(value=t, raw_response=response, parse_strategy="bold")
 
-        # Strategy 3: label line (use cleaned text to avoid labels in verification)
-        m = re_search_last(_LABEL, cleaned)
+        # Strategy 3a: "Final Answer:" label — takes priority over generic labels
+        # to avoid matching intermediate "time:" or "result:" in computation steps
+        m = re_search_last(_FINAL_ANSWER_LABEL, cleaned)
         if m:
             inner = m.group(1).strip()
-            # Check for refusal in label
             if any(kw in inner.lower() for kw in ["impossible", "doesn't exist", "invalid"]):
                 return ParsedAnswer(value="impossible", raw_response=response, parse_strategy="label_refusal")
             t = self._extract_time_from_str(inner, time_fmt)
             if t:
-                return ParsedAnswer(value=t, raw_response=response, parse_strategy="label_line")
+                return ParsedAnswer(value=t, raw_response=response, parse_strategy="final_answer_label")
 
-        # Strategy 4: last time pattern in response
+        # Strategy 4: last time pattern in response — runs before generic
+        # label scan because labels like "Current time:" and "Total time:"
+        # match intermediate computation values, not the final answer.
         if time_fmt == "12h":
             m = re_search_last(_TIME_12H, cleaned)
             if m:
@@ -231,6 +295,17 @@ class TimeArithmeticParser(ResponseParser):
                 else:
                     val = f"{h:02d}:{mn:02d}"
                 return ParsedAnswer(value=val, raw_response=response, parse_strategy="time_pattern_24h")
+
+        # Strategy 5: generic label line (fallback — use cleaned text)
+        m = re_search_last(_LABEL, cleaned)
+        if m:
+            inner = m.group(1).strip()
+            # Check for refusal in label
+            if any(kw in inner.lower() for kw in ["impossible", "doesn't exist", "invalid"]):
+                return ParsedAnswer(value="impossible", raw_response=response, parse_strategy="label_refusal")
+            t = self._extract_time_from_str(inner, time_fmt)
+            if t:
+                return ParsedAnswer(value=t, raw_response=response, parse_strategy="label_line")
 
         return ParsedAnswer(
             value=None, raw_response=response,
@@ -252,17 +327,26 @@ class TimeArithmeticParser(ResponseParser):
             if d:
                 return ParsedAnswer(value=d, raw_response=response, parse_strategy="boxed")
 
-        # Strategy 2: bold
+        # Strategy 2: bold — extract the LAST day name from bold text.
+        # Models say "X days before OldDay was AnswerDay" so the answer
+        # is the last day mentioned in the bold.
         m = re_search_last(_BOLD, text)
         if m:
-            d = self._extract_day(m.group(1))
+            d = self._extract_day_last(m.group(1))
             if d:
                 return ParsedAnswer(value=d, raw_response=response, parse_strategy="bold")
 
-        # Strategy 3: label line (use cleaned text to avoid "day =" in verification)
+        # Strategy 3a: "Final Answer:" label — takes priority over generic labels
+        m = re_search_last(_FINAL_ANSWER_LABEL, cleaned)
+        if m:
+            d = self._extract_day_last(m.group(1))
+            if d:
+                return ParsedAnswer(value=d, raw_response=response, parse_strategy="final_answer_label")
+
+        # Strategy 3b: generic label line (use cleaned text to avoid "day =" in verification)
         m = re_search_last(_LABEL, cleaned)
         if m:
-            d = self._extract_day(m.group(1))
+            d = self._extract_day_last(m.group(1))
             if d:
                 return ParsedAnswer(value=d, raw_response=response, parse_strategy="label_line")
 
@@ -365,6 +449,20 @@ class TimeArithmeticParser(ResponseParser):
             if canonical:
                 return canonical
         return None
+
+    @staticmethod
+    def _extract_day_last(s: str) -> str | None:
+        """Extract the LAST day name from a string.
+
+        Models often write "X days before OldDay was AnswerDay" — the answer
+        is the last day mentioned, not the first.
+        """
+        last = None
+        for word in re.split(r"[\s,.:;]+", s.strip()):
+            canonical = _ALL_DAY_NAMES.get(word.lower())
+            if canonical:
+                last = canonical
+        return last
 
     @staticmethod
     def _extract_minutes(s: str) -> int | None:

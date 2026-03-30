@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.10.4** | Last updated: 2026-03-29
+> **Version 2.10.6** | Last updated: 2026-03-30
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -301,6 +301,8 @@ Three plugins deviate from strict end-first parsing:
 
 | Plugin | Exception | Reason |
 |--------|-----------|--------|
+| `object_tracking` | `bold_keyword` and `first_sentence_location` use FIRST match | Models bold the answer in the first sentence, then mention distractor locations in explanations. (v2.10.6) |
+| `time_arithmetic` | Validity parsing uses first-bold and first-sentence yes/no | Models answer "No"/"Yes" upfront for existence questions; later bolds are explanation. (v2.10.6) |
 | `measure_comparison` | `value_unit_match` strategy does NOT reverse | Both options are mentioned in the response. The match identifies *which* option was chosen, not position. |
 | `inverted_cup` | "flip" anywhere = correct | If the model mentions "flip" at all, it demonstrated the key insight. Wrong alternatives (drill, cut) don't negate a correct understanding. |
 | `linda_fallacy` | Extracts ordered rankings | The task requires parsing a ranked list, not finding a single positional answer. |
@@ -334,6 +336,8 @@ Re-parsed 1,933 results across 33 result files after implementing end-first pars
 - Carwash accuracy improved from **14.3% → 27.6%** (+13 percentage points)
 - **v2.10.3**: Fixed ~91 additional false negatives from verification-section interference across 6 parsers (0 regressions)
 - **v2.10.4**: Fixed 15 additional carwash false negatives from conditional/dismissive walk mentions (0 regressions)
+- **v2.10.5**: Fixed 38 measure comparison false negatives (smart quote normalization, pipeline reorder, bold two-pass, 0 regressions)
+- **v2.10.6**: Fixed 28 false negatives across object tracking (9), inverted cup (3), time arithmetic (14), encoding cipher (2) — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization (0 regressions)
 
 ---
 
@@ -493,12 +497,14 @@ The critical test: when a container (cup) holding an object (grape) is inverted,
 - Configurable distractor steps and post-inversion moves
 - Config: `object`, `container`, `location_initial`, `distractor_count`, `post_inversion_moves`, `sticky_objects`
 
-**Parser** (`parser.py`) — 5 strategies (end-first):
+**Parser** (`parser.py`) — 7 strategies (mixed first/end):
 1. `single_word` — Single-word response matching known location
 2. `answer_prefix` — "Answer:", "Location:" label lines from end
-3. `sentence_pattern` — "{object} is on the {location}" from end
-4. `location_keyword` — Last occurrence of known location names
-5. `last_word` — Final word in response
+3. `bold_keyword` — **First** bold text matching a known location (v2.10.6, first-match exception to end-first — models bold the answer in the first sentence, later bolds are explanation distractors)
+4. `first_sentence_location` — Known location in first sentence only (v2.10.6, avoids distractors in explanations)
+5. `sentence_pattern` — "{object} is on the {location}" from end
+6. `location_keyword` — Last occurrence of known location names
+7. `last_word` — Final word in response
 
 **Evaluator** (`evaluator.py`):
 - Location string match with synonym normalization
@@ -586,7 +592,7 @@ A cup with a sealed top and open bottom is already inverted. The correct action 
 5. `full_text` — Keyword scan
 6. `last_sentences` — Final sentences
 
-**End-first exception**: If "flip" (or synonyms: turn over, invert, rotate) appears **anywhere** in the response, the model demonstrated the key insight. Wrong keywords (drill, cut, return) only classify the answer as wrong when "flip" is entirely absent.
+**End-first exception**: If "flip" (or synonyms: turn over, invert, rotate, tilt, tip, upend, reorient, mouth/rim facing up) appears **anywhere** in the response, the model demonstrated the key insight. Wrong keywords (drill, cut, return) only classify the answer as wrong when "flip" is entirely absent. v2.10.6 added tilt/tip/mouth-facing-up/rim-facing-up patterns.
 
 **Evaluator** (`evaluator.py`):
 - Match types: `correct` (flip), `wrong`, `parse_error`
@@ -761,10 +767,10 @@ Smart/curly quotes (`\u2018`/`\u2019`/`\u201C`/`\u201D`) normalized to ASCII bef
 - Multilingual templates × 6 languages (EN, ES, FR, DE, ZH, UA)
 
 **Parser** (`parser.py`) — dispatches by `question_mode`:
-- `result_time`: 4 strategies — boxed, bold, label_line, last time pattern (12h then 24h)
-- `day`: 4 strategies — boxed, bold, label_line, last day name (multilingual)
+- `result_time`: 5 strategies — boxed, bold, final_answer_label (v2.10.6), last time pattern (12h then 24h), generic label_line (fallback). v2.10.6 reordered time_pattern before generic label to avoid grabbing intermediate "Current time:" values.
+- `day`: 5 strategies — boxed, bold (uses `_extract_day_last` v2.10.6), final_answer_label, generic label_line, last day name (multilingual)
 - `duration`: 5 strategies — boxed, bold, label_line, duration pattern (X hours Y minutes), last number
-- `date_validity`: 5 strategies — boxed, bold, refusal keywords (tail-weighted), validity keywords, full scan
+- `date_validity`: 7 strategies — first_yes_no (v2.10.6), label_yes_no (v2.10.6), boxed, first-bold (v2.10.6, not last-bold), refusal keywords (tail-weighted), validity keywords, full scan. v2.10.6 added word-boundary matching (`\bno\b`/`\byes\b`) to prevent "no" matching inside "not"/"nothing".
 - Multilingual refusal/validity keyword sets
 
 **Evaluator** (`evaluator.py`):
@@ -917,7 +923,7 @@ Two task modes:
 - `decode_and_act`: single_word_response → labelled_word → quoted_word → bold_word → last_standalone_word
 
 **Evaluator** (`evaluator.py`) — 5-type failure taxonomy:
-- `correct` (True) — exact case-insensitive match
+- `correct` (True) — case-insensitive match with Unicode whitespace normalization (v2.10.6: NNBSP/NBSP collapsed to regular spaces) and punctuation-stripped comparison for `decode_only` mode (v2.10.6: models adding internal periods no longer cause mismatches)
 - `hallucinated_execution` (True, flagged) — model produced the right word without decoding evidence (decode_and_act only)
 - `paranoid_refusal` (False) — model refused to decode
 - `wrong_decode` (False) — decoded but got wrong answer

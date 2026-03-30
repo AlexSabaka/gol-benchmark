@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.10.5** | Last updated: 2026-03-29
+> **Version 2.10.6** | Last updated: 2026-03-30
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -386,7 +386,7 @@ Q2_K achieves 87.5% model size reduction with a net accuracy gain. Hypothesis: q
 
 ### 4. End-First Parsing
 
-LLMs reason first, answer last. Searching from the end of responses instead of the beginning improved carwash accuracy from 14.3% to 27.6% with zero regressions across 1,933 re-parsed results. v2.10.3 added `strip_verification_tail()` to handle models that append verification sections, fixing ~91 additional false negatives. v2.10.4 expanded the carwash parser's conditional/dismissive walk filtering (3 pattern groups, first-sentence strategy, contextual bold filtering), fixing 15 additional false negatives with 0 regressions. v2.10.5 overhauled the measure comparison parser (smart quote normalization, tightened equal keywords, pipeline reorder, bold two-pass, expanded incomparable patterns), fixing 38 false negatives with 0 regressions. See [PLUGIN_GUIDE.md — End-First Parsing Convention](PLUGIN_GUIDE.md#end-first-parsing-convention).
+LLMs reason first, answer last. Searching from the end of responses instead of the beginning improved carwash accuracy from 14.3% to 27.6% with zero regressions across 1,933 re-parsed results. v2.10.3 added `strip_verification_tail()` to handle models that append verification sections, fixing ~91 additional false negatives. v2.10.4 expanded the carwash parser's conditional/dismissive walk filtering (3 pattern groups, first-sentence strategy, contextual bold filtering), fixing 15 additional false negatives with 0 regressions. v2.10.5 overhauled the measure comparison parser (smart quote normalization, tightened equal keywords, pipeline reorder, bold two-pass, expanded incomparable patterns), fixing 38 false negatives with 0 regressions. v2.10.6 added first-bold/first-sentence strategies to object tracking and time arithmetic parsers for tasks where models state the answer upfront then explain with distractors — fixing 28 false negatives across 4 plugins (object tracking, inverted cup, time arithmetic, encoding cipher) with 0 regressions. See [PLUGIN_GUIDE.md — End-First Parsing Convention](PLUGIN_GUIDE.md#end-first-parsing-convention).
 
 ---
 

@@ -203,6 +203,8 @@ All response parsers follow the principle of searching from the **end** of the m
 
 **Key exceptions where end-first does NOT apply:**
 
+- `object_tracking` bold_keyword and first_sentence_location — uses FIRST match because models bold the answer in the first sentence, then mention distractor locations in explanations
+- `time_arithmetic` validity parsing — uses first-bold and first-sentence yes/no detection because models answer "No"/"Yes" upfront for existence questions
 - `measure_comparison` value+unit matching — both options are mentioned, the answer is identified by which matches, not position
 - `measure_comparison` decimal type — uses a separate 5-strategy parser (`_parse_decimal`) with end-first bare-value matching
 - `inverted_cup` classification — if "flip" is mentioned anywhere, the model understood the key insight (correct answer); "wrong" keywords alongside flip are just creative alternatives
@@ -215,6 +217,8 @@ All response parsers follow the principle of searching from the **end** of the m
 **Carwash conditional/dismissive walk filtering** (v2.10.3 → v2.10.4): The `carwash` parser filters walk mentions that are conditional, negative, or dismissive — not actual walk recommendations. Three pattern groups: `_PRE_WALK_CONDITIONAL` (exception/hypothetical language before walk), `_WALK_CONDITIONAL` (walk followed by if/unless/but, concession patterns, "walk for exercise", "walk instead"), `_WALK_NEGATIVE` (dismissive statements: "walking won't", "walking would complicate", "walking back", "walkable but"). v2.10.4 also added a first-sentence strategy (models state the answer upfront) and contextual bold filtering (walk-scoring bolds verified against surrounding text). Fixed 15 additional false negatives with 0 regressions.
 
 **Measure comparison parser overhaul** (v2.10.5): Fixed 38 false negatives via 6 fixes: (1) smart/curly quote normalization before regex matching, (2) tightened `_EQUAL_KEYWORDS` — bare `\bsame\b` replaced with context-requiring patterns ("are the same", "same value"), (3) bold two-pass — keyword bolds take priority over value bolds, header bolds skipped, (4) expanded `_INCOMPARABLE_KEYWORDS` — "different kinds/types of", "measure different things", "aren't comparable", (5) reverse comparative pattern ("the lighter one is X oz"), (6) bare value fallback for unit-less answers. Pipeline reordered: incomparable keywords above value_unit_match, equal keywords below. 20 regression tests, 0 regressions.
+
+**Object tracking & time arithmetic first-bold/first-sentence strategies** (v2.10.6): For tasks where models state the answer in the first sentence (often bolded) then explain with distractors, new `bold_keyword` (first-bold) and `first_sentence_location` strategies extract from the answer position, not the explanation. Applied to `object_tracking` (9 FNs fixed) and `time_arithmetic` validity parsing (10 FNs fixed). Time arithmetic also gained `final_answer_label` priority, reordered `time_pattern` before generic labels, and `_extract_day_last()` helper. Inverted cup parser gained tilt/tip/mouth-facing-up patterns (3 FNs fixed). Encoding cipher evaluator gained Unicode whitespace normalization and punctuation-stripped comparison (2 FNs fixed). 28 total FNs fixed, 36 regression tests, 0 regressions.
 
 ---
 
@@ -701,7 +705,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-29*
-*Version: 2.10.5*
-*Key additions: Measure comparison parser overhaul (38 FNs fixed, smart quote normalization, tightened equal keywords, pipeline reorder, bold two-pass, expanded incomparable patterns, reverse comparative, bare value fallback) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed, 3 pattern groups, first-sentence strategy, contextual bold filtering) • Parser false-negative fixes (verification section stripping, conditional walk detection, ~91 FNs fixed across 6 parsers) • C14 custom cell markers (state, rule table, boundary descriptions) • Report: expected value N/A fix, collapsible thinking blocks, parsed answer formatting • Web UI: task types column in results page • GoL cell markers fix (emoji support), 1,061 real-world GoL patterns from sorted_patterns, exclude_empty option • Symbol Arithmetic plugin (18th plugin, custom operation tables, commutativity/associativity detection) • Encoding & Cipher Decoding plugin (17th plugin, Base64/Caesar/Morse, hallucination detection) • Measure Comparison decimal framing type (4 framings, framing-sensitivity metric) • Plugin-local prompt templates (PromptEngine user prompts deprecated) • Family Relations plugin (16th plugin) • False Premise plugin (15th plugin) • Misquote Attribution plugin (14th plugin) • Time Arithmetic plugin (13th plugin) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-03-30*
+*Version: 2.10.6*
+*Key additions: Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

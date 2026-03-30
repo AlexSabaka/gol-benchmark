@@ -420,6 +420,36 @@ class TestEvaluator:
         )
         assert result.correct
 
+    # ── False-negative regression tests ──
+
+    def test_fn_nnbsp_whitespace(self):
+        """Case 3: Model used NNBSP (\\u202f) instead of regular space."""
+        pa = self._make_parsed(
+            "the librarian catalogued every manuscript in the archive\u202f"
+            "a procession of lanterns wound through the narrow streets\u202f"
+            "the navigator relied",
+        )
+        expected = (
+            "The librarian catalogued every manuscript in the archive "
+            "A procession of lanterns wound through the narrow streets "
+            "The navigator relied"
+        )
+        result = self.evaluator.evaluate(pa, expected, {"task_mode": "decode_only"})
+        assert result.correct, f"NNBSP whitespace should match: {result.match_type}"
+
+    def test_fn_internal_period(self):
+        """Case 5: Model added period after 'vessel' that wasn't in original."""
+        pa = self._make_parsed(
+            "The glassblower shaped a delicate crystal vessel. "
+            "A procession of lanterns wound through the."
+        )
+        expected = (
+            "The glassblower shaped a delicate crystal vessel "
+            "A procession of lanterns wound through the."
+        )
+        result = self.evaluator.evaluate(pa, expected, {"task_mode": "decode_only"})
+        assert result.correct, f"Internal period difference should match: {result.match_type}"
+
     def test_aggregate_results(self):
         results = [
             EvaluationResult(correct=True, match_type="correct", accuracy=1.0,

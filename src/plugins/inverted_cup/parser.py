@@ -45,6 +45,11 @@ FLIP_PATTERNS = [
     r"\bturn\s+(?:it\s+)?back\s+(?:the\s+right\s+way|to\s+normal)\b",
     r"\breorient\b",
     r"\brotate\b.*\bup(?:ward|right)\b",
+    r"\btilt\s+(?:it|the\s+cup)\b",
+    r"\btip\s+(?:it|the\s+cup)\b",
+    r"\bmouth\b.*\bfacing\s+up\b",
+    r"\brim\b.*\b(?:facing\s+up|on\s+top)\b",
+    r"\bopen(?:ing)?\s+(?:end|side)\s+(?:facing\s+)?up\b",
 ]
 
 WRONG_PATTERNS = [

@@ -60,7 +60,7 @@ class ObjectTrackingResponseParser(ResponseParser):
             'the', 'a', 'an', 'is', 'on', 'in', 'at', 'to', 'it',
             'and', 'or', 'but', 'so', 'if', 'as', 'of', 'for',
             'be', 'was', 'were', 'been', 'being', 'have', 'has', 'had',
-            'do', 'does', 'did', 'will', 'would', 'could', 'should',
+            'do', 'does', 'did', 'will', 'would', 'could', 'should', 'must',
             'i', 'you', 'he', 'she', 'they', 'we', 'my', 'your',
             'answer', 'location', 'place', 'position', 'where',
             'now', 'currently', 'still', 'therefore', 'thus',
@@ -98,6 +98,8 @@ class ObjectTrackingResponseParser(ResponseParser):
         strategies = [
             ('single_word', lambda: self._strategy_single_word(response)),
             ('answer_prefix', lambda: self._strategy_answer_prefix(response)),
+            ('bold_keyword', lambda: self._strategy_bold_keyword(response, known_locations)),
+            ('first_sentence_location', lambda: self._strategy_first_sentence_location(cleaned, known_locations)),
             ('sentence_pattern', lambda: self._strategy_sentence_pattern(cleaned, obj)),
             ('location_keyword', lambda: self._strategy_location_keyword(cleaned, known_locations)),
             ('last_word', lambda: self._strategy_last_word(cleaned)),
@@ -176,6 +178,60 @@ class ObjectTrackingResponseParser(ResponseParser):
                 word = match.group(1)
                 if word not in self.stop_words:
                     return word
+
+        return None
+
+    def _strategy_bold_keyword(
+        self,
+        response: str,
+        known_locations: List[str],
+    ) -> Optional[str]:
+        """
+        Extract the FIRST bold text that matches a known location.
+
+        Models consistently bold the answer: "The keys are on the **counter**."
+        Later bolds in the explanation are distractors, so we use the FIRST
+        match (not last) — an intentional exception to the end-first convention.
+        """
+        for m in re.finditer(r"\*\*([^*]{1,40})\*\*", response):
+            bold_text = m.group(1).lower().strip()
+            # Check if the bold text is or contains a known location
+            for loc in known_locations:
+                if loc.lower() in bold_text:
+                    return loc
+            # Also check synonyms
+            normalized = self._normalize_location(bold_text)
+            if normalized != bold_text:
+                for loc in known_locations:
+                    if loc.lower() == normalized:
+                        return loc
+        return None
+
+    def _strategy_first_sentence_location(
+        self,
+        response: str,
+        known_locations: List[str],
+    ) -> Optional[str]:
+        """
+        Extract a known location from the first sentence.
+
+        Models typically state the answer upfront: "The marble is on the table."
+        We limit the search to the first sentence to avoid distractor locations
+        in explanations that follow.
+        """
+        # Get first sentence (up to first period or double newline)
+        first_sent_match = re.match(r"([^\n.]+[.]?)", response)
+        if not first_sent_match:
+            return None
+
+        first_sent = first_sent_match.group(1).lower()
+
+        # Check known locations — prefer longer matches first
+        sorted_locations = sorted(known_locations, key=len, reverse=True)
+        for loc in sorted_locations:
+            pattern = r'\b' + re.escape(loc.lower()) + r'\b'
+            if re.search(pattern, first_sent):
+                return loc
 
         return None
 
@@ -320,6 +376,8 @@ class ObjectTrackingResponseParser(ResponseParser):
         return [
             'single_word',
             'answer_prefix',
+            'bold_keyword',
+            'first_sentence_location',
             'sentence_pattern',
             'location_keyword',
             'last_word'

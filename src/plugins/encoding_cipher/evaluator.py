@@ -10,6 +10,7 @@ Implements a 5-type failure taxonomy:
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import EvaluationResult, ParsedAnswer, ResultEvaluator
@@ -17,8 +18,15 @@ from .parser import REFUSAL_SENTINEL
 
 
 def _normalize(text: Any) -> str:
-    """Lowercase, strip whitespace and surrounding punctuation."""
-    return str(text).lower().strip().strip(".,;:!?\"'`")
+    """Lowercase, strip whitespace and surrounding punctuation.
+
+    Also normalizes Unicode whitespace (NNBSP, NBSP, etc.) to regular spaces
+    and collapses multiple spaces.
+    """
+    s = str(text).lower().strip().strip(".,;:!?\"'`")
+    # Normalize all Unicode whitespace variants to regular spaces
+    s = re.sub(r'\s+', ' ', s)
+    return s.strip()
 
 
 def _plaintext_evidence(raw_response: str, plaintext: str, threshold: float = 0.4) -> bool:
@@ -85,6 +93,17 @@ class EncodingCipherEvaluator(ResultEvaluator):
         # 3. Compare predicted vs expected
         predicted_norm = _normalize(parsed_answer.value)
         expected_norm = _normalize(expected_answer)
+
+        # For decode_only, also try punctuation-stripped comparison since
+        # source texts have no punctuation but models may add periods/commas
+        if predicted_norm != expected_norm and task_mode == "decode_only":
+            predicted_stripped = re.sub(r'[.,;:!?]', '', predicted_norm).strip()
+            expected_stripped = re.sub(r'[.,;:!?]', '', expected_norm).strip()
+            # Collapse spaces after punctuation removal
+            predicted_stripped = re.sub(r'\s+', ' ', predicted_stripped)
+            expected_stripped = re.sub(r'\s+', ' ', expected_stripped)
+            if predicted_stripped == expected_stripped:
+                predicted_norm = expected_norm  # treat as match
 
         if predicted_norm == expected_norm:
             # Check for hallucinated execution (decode_and_act only)
