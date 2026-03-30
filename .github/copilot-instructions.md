@@ -346,6 +346,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 - **Time Arithmetic**: Expected 50-80% accuracy (noon/midnight traps and impossible dates are the hardest)
 - **Misquote Attribution**: Expected 40-70% accuracy (authority/constraint framings are the hardest sycophancy traps)
 - **Family Relations**: Expected 40-70% accuracy (self-counting traps are the classic failure mode)
+- **False Premise**: Expected 60-90% accuracy; v2.10.7 fixed 61 false negatives (smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, expanded refusal/impossibility patterns)
 - **Measure Comparison (decimal)**: Expected 40-80% accuracy; framing sensitivity rate reveals how often models change answers based on framing context. v2.10.5 fixed 38 false negatives (smart quote normalization, tightened equal keywords, pipeline reorder, expanded incomparable patterns)
 - **Encoding & Cipher Decoding**: Expected 50-80% accuracy (Base64 easiest, Morse hardest; hallucinated execution is the interesting failure mode)
 - **Symbol Arithmetic**: Expected 40-70% accuracy (commutativity/associativity assumptions are the classic failure modes; partial tables and emoji symbols are hardest)
@@ -403,7 +404,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.10.6 (March 30, 2026)
+**Version**: 2.10.7 (March 30, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - Plugin-based benchmark system with auto-discovery

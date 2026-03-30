@@ -107,5 +107,5 @@ docs/
 
 ---
 
-**Version:** 2.10.6
+**Version:** 2.10.7
 **Last Updated:** March 2026
