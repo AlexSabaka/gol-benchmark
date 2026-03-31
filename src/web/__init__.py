@@ -1,5 +1,5 @@
 """
-GoL Benchmark Web UI — FastAPI + HTMX replacement for the TUI.
+GoL Benchmark Web UI — FastAPI backend + React SPA frontend.
 
 Usage:
     python -m src.web                      # localhost:8000

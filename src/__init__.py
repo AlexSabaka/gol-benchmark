@@ -9,7 +9,6 @@ This package provides:
 - Model provider interfaces (src.models)
 - Evaluation and scoring (src.evaluation)
 - Benchmark scripts (src.benchmarks)
-- CLI tools and TUI (src.cli)
 - Visualization and analysis (src.visualization)
 - Utilities (src.utils)
 """
@@ -23,7 +22,6 @@ from . import engine
 from . import models
 from . import evaluation
 from . import benchmarks
-from . import cli
 from . import visualization
 from . import utils
 
@@ -35,7 +33,6 @@ __all__ = [
     "models",
     "evaluation",
     "benchmarks",
-    "cli",
     "visualization",
     "utils",
 ]

@@ -2,6 +2,16 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.12.0] - March 31, 2026
+
+### Removed: TUI and HTMX+Jinja2 interfaces
+
+- **Deleted `src/cli/`** — Terminal UI (questionary + rich) removed entirely (~3,000 lines)
+- **Deleted HTMX+Jinja2 web UI** — templates, static assets, and partials router removed
+- **React SPA promoted to root** — now served at `/` instead of `/app/`
+- **Removed dependencies** — `rich`, `questionary`, `prompt_toolkit` dropped from requirements.txt
+- **Archived outdated docs** — TUI-centric architecture docs moved to `docs/_archive/`
+
 ## [2.11.0] - March 31, 2026
 
 ### React SPA Frontend (replaces HTMX + Jinja2 web UI)
@@ -11,7 +21,7 @@ Replaced the server-rendered HTMX + Jinja2 web interface with a modern single-pa
 #### Stack
 
 - **Vite 6.4** — dev server with HMR, proxies `/api` to FastAPI at `:8000`
-- **React 19** — with React Router 7 (client-side routing under `/app/`)
+- **React 19** — with React Router 7 (client-side routing)
 - **TypeScript** — strict mode, full type coverage across API layer
 - **Tailwind CSS v4** — via `@tailwindcss/vite` plugin
 - **shadcn/ui** — 18 components (Button, Card, Dialog, DataTable, Command, etc.)

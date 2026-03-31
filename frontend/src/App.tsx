@@ -26,7 +26,7 @@ export default function App() {
     <ThemeProvider>
       <QueryClientProvider client={queryClient}>
         <TooltipProvider>
-          <BrowserRouter basename="/app">
+          <BrowserRouter>
             <Routes>
               <Route element={<AppShell />}>
                 <Route index element={<DashboardPage />} />

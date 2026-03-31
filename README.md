@@ -76,10 +76,10 @@ ollama serve
 ```bash
 # Start the backend + frontend
 python -m src.web
-# Open http://127.0.0.1:8000/app/ in your browser
+# Open http://127.0.0.1:8000/ in your browser
 
 # The web UI is a React SPA (Vite + React 19 + TypeScript + Tailwind CSS + shadcn/ui)
-# Frontend source in frontend/, served at /app/
+# Frontend source in frontend/, served at /
 # REST API at /api/
 ```
 
@@ -303,7 +303,7 @@ This is a **personal experiment**, but if you're curious and want to:
 
 - [x] Plugin-based benchmark architecture — 13 tasks with auto-discovery (v2.1.0+)
 - [x] 3-stage pipeline: generate → execute → analyze
-- [x] FastAPI + HTMX web UI with dynamic plugin config forms (v2.4.0)
+- [x] React SPA web UI (Vite + React 19 + TypeScript + shadcn/ui) (v2.11.0)
 - [x] Plugin config schema introspection (`ConfigField` system)
 - [x] PromptEngine with 6 languages, 5 user styles, 4 system styles
 - [x] Remote Ollama + OpenAI-compatible + HuggingFace providers

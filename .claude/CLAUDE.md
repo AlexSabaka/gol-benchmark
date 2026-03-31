@@ -40,11 +40,11 @@
 
 ```bash
 # ── Web UI (Recommended) ──
-python -m src.web                # http://127.0.0.1:8000/app/
+python -m src.web                # http://127.0.0.1:8000/
 python -m src.web --host 0.0.0.0 # LAN-accessible
 
 # Frontend development (hot-reload)
-cd frontend && npm run dev       # http://localhost:5173/app/ (proxies /api → :8000)
+cd frontend && npm run dev       # http://localhost:5173/ (proxies /api → :8000)
 
 # Run on a remote Ollama instance
 python src/stages/run_testset.py testsets/testset_xyz.json.gz \
@@ -96,13 +96,10 @@ gol_eval/
 │   ├── models/            # LLM interfaces (Ollama, HuggingFace)
 │   ├── evaluation/        # Result scoring and metrics
 │   ├── benchmarks/        # Legacy (only linda_eval.py remains — used by linda plugin)
-│   ├── cli/               # CLI tools, TUI (deprecated), config management
-│   ├── web/               # FastAPI REST API backend (serves React SPA at /app/)
-│   │   ├── app.py         # FastAPI app factory, page routes
+│   ├── web/               # FastAPI REST API backend (serves React SPA at /)
+│   │   ├── app.py         # FastAPI app factory, SPA routing
 │   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis)
-│   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor)
-│   │   ├── templates/     # Legacy Jinja2 templates (retained)
-│   │   └── static/        # Legacy static assets (retained)
+│   │   └── jobs.py        # Background job manager (ProcessPoolExecutor)
 │   ├── visualization/     # Charts, analysis, reporting
 │   └── utils/             # Logging, model discovery
 │
@@ -113,7 +110,7 @@ gol_eval/
 │   │   ├── types/         # TypeScript interfaces
 │   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Results, Reports
 │   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table
-│   ├── vite.config.ts     # base: "/app/", proxy /api → :8000
+│   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
 │
 ├── tests/                 # Test suite
@@ -682,7 +679,7 @@ ollama list
 
 # Run quick test via web UI
 python -m src.web
-# Open http://127.0.0.1:8000/app/
+# Open http://127.0.0.1:8000/
 ```
 
 ---
@@ -715,7 +712,7 @@ pytest tests/
 
 - **Project Overview**: [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) — Architecture, tasks, research findings, quick start
 - **Plugin Guide**: [docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md) — Plugin reference, end-first parsing, adding new plugins
-- **Architecture**: [docs/architecture/SYSTEM_OVERVIEW.md](docs/architecture/SYSTEM_OVERVIEW.md)
+- **Architecture**: [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)
 - **Research — Quantization**: [docs/research/quantization/EXECUTIVE_SUMMARY.md](docs/research/quantization/EXECUTIVE_SUMMARY.md)
 - **Research — Prompt Analysis**: [docs/research/prompt-analysis/RESULTS_REPORT.md](docs/research/prompt-analysis/RESULTS_REPORT.md)
 - **Changelog**: [CHANGELOG.md](CHANGELOG.md)
@@ -724,5 +721,5 @@ pytest tests/
 
 *Last updated: 2026-03-31*
 *Version: 2.11.0*
-*Key additions: React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui, replaces HTMX + Jinja2) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Key additions: Removed TUI and HTMX+Jinja2 interfaces — React SPA is now the sole UI, served at root (/) • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

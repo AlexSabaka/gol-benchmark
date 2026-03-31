@@ -97,8 +97,6 @@ src/
 │   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
 │   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
 │   └── analyze_results.py     # Stage 3: Analytics & Reports
-├── cli/                # Command Line Interfaces
-│   └── benchmark_tui.py       # Interactive Terminal UI
 ├── core/               # Core types, prompt engine, test generation
 │   ├── types.py        # Config dataclasses (BaseTestConfig, GameOfLifeTestConfig, etc.)
 │   ├── PromptEngine.py # System prompts + enums (user templates DEPRECATED → plugin-local prompts.py)
@@ -142,10 +140,10 @@ gol_eval/
 ```bash
 # Start the backend + frontend
 python -m src.web
-# Open http://127.0.0.1:8000/app/
+# Open http://127.0.0.1:8000/
 
 # Frontend development (hot-reload)
-cd frontend && npm run dev       # http://localhost:5173/app/ (proxies /api → :8000)
+cd frontend && npm run dev       # http://localhost:5173/ (proxies /api → :8000)
 
 # Supports:
 # - All 18 benchmark plugins with dynamic config forms
@@ -298,13 +296,11 @@ from src.models import OllamaInterface, HuggingFaceInterface, OpenAICompatibleIn
 ### **Test Suite Organization**
 ```bash
 # Comprehensive test suite in tests/ folder
-python tests/test_comprehensive_workflow.py     # Full 3-stage workflow
-python tests/test_tui_workflow.py              # TUI integration tests  
-python tests/test_enhanced_reports_demo.py     # Analytics validation
-python tests/test_provider_integration.py      # Model provider tests
+pytest tests/                                   # All tests
+python tests/test_enhanced_reports_demo.py      # Analytics validation
 ```
 
-Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enhancements, and component integration.
+Tests validate 3-stage pipeline, config serialization, parsing enhancements, and component integration.
 
 ## External Dependencies & Setup
 
@@ -327,14 +323,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 2. **Multi-Task Parsing**: Enhanced parsing with 6-strategy fallback for arithmetic, 4-strategy for GoL  
 3. **Task Type Detection**: Fixed multi-task execution routing issues
 4. **Report Generation**: Harmonized HTML/Markdown reports with embedded visualizations
-5. **Import Path Issues**: Fixed module loading from subdirectories in TUI system
-6. **C14 TUI Integration (2026-01-24)**: Fixed 4 critical bugs preventing 1D cellular automata test generation:
-   - ✅ Task type mapping: `'c14': 'c14'` → `'c14': 'cellular_automata_1d'` (critical dispatcher fix)
-   - ✅ Quick Start parameters: arithmetic-style → proper CA fields (rule_numbers, width, steps, boundary_condition)
-   - ✅ Task configuration UI: placeholder checkboxes → full CA configuration (rule selection, width, steps, boundaries, patterns, density)
-   - ✅ YAML generation: arithmetic fields (difficulty_levels) → proper CA fields (rule_numbers, cases_per_rule)
-   - See `docs/C14_TUI_BUGFIXES_SUMMARY.md` for detailed analysis
-7. **"Unknown" task type in reports (2026-02-21)**: Fixed `extract_task_breakdown()` in `analyze_results.py` — added `carwash` and `inverted_cup` recognition patterns
+5. **"Unknown" task type in reports (2026-02-21)**: Fixed `extract_task_breakdown()` in `analyze_results.py` — added `carwash` and `inverted_cup` recognition patterns
 8. **Remote Ollama support (2026-02-21)**: `OllamaProvider` now accepts a `host` parameter; non-default hosts use REST API for discovery and availability checks
 
 ### ⚠️ **Known Limitations**
@@ -365,7 +354,7 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 ```bash
 # Start the backend + frontend
 python -m src.web
-# Open http://127.0.0.1:8000/app/
+# Open http://127.0.0.1:8000/
 
 # The React SPA supports:
 # 1. All 18 benchmark plugins with dynamic config forms

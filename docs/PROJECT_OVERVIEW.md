@@ -98,7 +98,7 @@ See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for full details.
 
 ### Web UI
 
-A modern single-page application built with **React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui**, backed by a **FastAPI** REST API. Replaces the earlier HTMX + Jinja2 interface. Provides dashboard, configuration with dynamic plugin forms, test set management, job execution with real-time progress, and result analysis — all through the browser. Frontend source lives in `frontend/`, served at `/app/`.
+A modern single-page application built with **React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui**, backed by a **FastAPI** REST API. Provides dashboard, configuration with dynamic plugin forms, test set management, job execution with real-time progress, and result analysis — all through the browser. Frontend source lives in `frontend/`, served at `/`.
 
 ---
 
@@ -149,8 +149,7 @@ gol_eval/
 │   │   │   ├── testsets.py             #     Test set creation & listing
 │   │   │   ├── execution.py            #     Job submission & status
 │   │   │   └── analysis.py             #     Result analysis
-│   │   ├── templates/                  #   Legacy Jinja2 templates (retained)
-│   │   └── static/                     #   Legacy static assets (retained)
+│   │   └── config.py                   #   Web server configuration
 │   │
 │   ├── models/                         # LLM provider interfaces
 │   │   ├── BaseModelInterface.py       #   ModelInterface base class
@@ -170,11 +169,6 @@ gol_eval/
 │   │
 │   ├── visualization/                  # Charts & reports
 │   │   └── visualization_engine.py     #   matplotlib/seaborn visualizations
-│   │
-│   ├── cli/                            # CLI tools (TUI deprecated)
-│   │   ├── benchmark_tui.py            #   Terminal UI (deprecated, use web)
-│   │   ├── benchmark_config.py         #   Configuration management
-│   │   └── benchmark_runner.py         #   CLI runner
 │   │
 │   ├── utils/                          # Utilities
 │   │   ├── logger.py                   #   Structured logging
@@ -203,7 +197,7 @@ gol_eval/
 │   │   ├── pages/                      #   Dashboard, Configure, TestSets, Execute, Results, Reports
 │   │   ├── components/                 #   UI primitives (shadcn), layout, plugin-config, data-table
 │   │   └── App.tsx                     #   Router + providers
-│   ├── vite.config.ts                  #   base: "/app/", proxy /api → :8000
+│   ├── vite.config.ts                  #   base: "/", proxy /api → :8000
 │   └── dist/                           #   Production build output
 └── docs/                               # Documentation & research reports
 ```
@@ -333,23 +327,23 @@ The combinatorial matrix (up to 3 user styles x 3 system styles x 6 languages = 
 **Stack**: FastAPI (REST API) + React 19 + TypeScript + Vite 6 + Tailwind CSS v4 + shadcn/ui
 
 ```bash
-python -m src.web                    # http://127.0.0.1:8000/app/
+python -m src.web                    # http://127.0.0.1:8000/
 python -m src.web --host 0.0.0.0     # LAN-accessible
 
 # Development (hot-reload frontend)
-cd frontend && npm run dev           # http://localhost:5173/app/ (proxies /api → :8000)
+cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → :8000)
 ```
 
 ### Pages
 
 | Route | Page | Purpose |
 |-------|------|---------|
-| `/app/` | Dashboard | Summary of available plugins, models, recent runs |
-| `/app/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix |
-| `/app/testsets` | Test Sets | Create, list, and inspect test sets |
-| `/app/execute` | Execute | Submit jobs, monitor real-time progress |
-| `/app/results` | Results | Browse results with sortable DataTable, view analysis breakdowns |
-| `/app/reports` | Reports | View generated HTML reports in iframe |
+| `/` | Dashboard | Summary of available plugins, models, recent runs |
+| `/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix |
+| `/testsets` | Test Sets | Create, list, and inspect test sets |
+| `/execute` | Execute | Submit jobs, monitor real-time progress |
+| `/results` | Results | Browse results with sortable DataTable, view analysis breakdowns |
+| `/reports` | Reports | View generated HTML reports in iframe |
 
 ### Frontend Architecture
 
@@ -474,7 +468,7 @@ ollama serve  # Start Ollama daemon
 
 ```bash
 python -m src.web
-# Open http://127.0.0.1:8000/app/
+# Open http://127.0.0.1:8000/
 ```
 
 ### CLI — 3-Stage Pipeline
