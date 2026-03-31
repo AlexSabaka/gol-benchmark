@@ -27,7 +27,7 @@ from .PromptEngine import (
     create_math_context,
 )
 
-from .PROMPT_STYLES import get_prompt_style
+from .PROMPT_STYLES import get_system_prompt_style
 
 from .TestGenerator import (
     TestGenerator,
@@ -54,7 +54,7 @@ __all__ = [
     "PromptResult",
     "create_gol_context",
     "create_math_context",
-    "get_prompt_style",
+    "get_system_prompt_style",
     # Test Generation
     "TestGenerator",
     "EXAMPLE_PATTERNS",

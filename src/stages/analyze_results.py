@@ -720,7 +720,7 @@ def _extract_thinking(sample: dict):
     Checks output['reasoning'] first, then falls back to <think> tags.
     Returns (None, raw) when no thinking content is found.
     """
-    raw = sample.get('output', {}).get('raw_response', '')
+    raw = sample.get('output', {}).get('raw_response') or ''
     # Structured reasoning field (from API)
     reasoning = sample.get('output', {}).get('reasoning')
     if reasoning:
@@ -738,6 +738,8 @@ def _extract_thinking(sample: dict):
 
 def _make_slug(name: str) -> str:
     """Turn a display name into a safe HTML id slug."""
+    if not name:
+        return 'unknown'
     return _re.sub(r'[^a-z0-9]+', '-', name.lower()).strip('-')
 
 

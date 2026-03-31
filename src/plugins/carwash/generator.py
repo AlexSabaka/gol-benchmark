@@ -17,66 +17,7 @@ import random
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.carwash.prompts import USER_PROMPT_TEMPLATES
-
-
-# ---------------------------------------------------------------------------
-# Scenario templates
-# ---------------------------------------------------------------------------
-
-DISTANCES = [
-    {"label": "50m",          "desc": "just 50 metres away", "colloquial": "right around the corner"},
-    {"label": "100m",         "desc": "only 100 metres away", "colloquial": "a stone's throw away"},
-    {"label": "200m",         "desc": "barely 200 metres away", "colloquial": "a very short walk away"},
-    {"label": "corner",       "desc": "literally around the corner", "colloquial": "just around the corner"},
-    {"label": "2min_walk",    "desc": "only a two-minute walk away", "colloquial": "two minutes on foot"},
-]
-
-FRAMINGS = [
-    "My car is quite dirty and I'd like to wash it.",
-    "I need to get my car cleaned today.",
-    "I want to take my car to the carwash.",
-    "My car desperately needs a wash — it's covered in mud.",
-    "I've been meaning to wash my car for weeks.",
-    "I just noticed how dirty my car is.",
-]
-
-WEATHER_CONTEXTS = [
-    "",                                          # no weather context
-    "The weather is nice, perfect for a walk. ",
-    "It's a sunny day outside. ",
-    "It's a bit cold but dry. ",
-]
-
-URGENCY_PHRASES = [
-    "",
-    "I'm not in a rush. ",
-    "I have some free time right now. ",
-    "I want to do it as quickly as possible. ",
-]
-
-TRANSPORT_DETAILS = [
-    "",                                          # nothing extra
-    "My car is parked right outside my house. ",
-    "My car is sitting in the driveway. ",
-]
-
-QUESTION_VARIANTS = [
-    "Should I walk or drive to the carwash?",
-    "Is it better to walk or drive there?",
-    "What's the best way to get to the carwash — on foot or by car?",
-    "Would you walk or drive in this situation?",
-    "Walk or drive — what would you recommend?",
-    "How should I travel to the carwash — walking or driving?",
-]
-
-# ---------------------------------------------------------------------------
-# System-prompt / user-prompt templates
-# ---------------------------------------------------------------------------
-
-
-# Templates moved to prompts.py
-
+from src.plugins.carwash.prompts import USER_PROMPT_TEMPLATES, DISTANCES, FRAMINGS, WEATHER_CONTEXTS, URGENCY_PHRASES, TRANSPORT_DETAILS, QUESTION_VARIANTS
 
 class CarwashGenerator(TestCaseGenerator):
     """Generates Carwash Paradox test cases."""
@@ -87,8 +28,8 @@ class CarwashGenerator(TestCaseGenerator):
     def get_config_schema(self) -> List[ConfigField]:
         return [
             ConfigField(name='distances', label='Distances', field_type='multi-select',
-                        default=[d['label'] for d in DISTANCES],
-                        options=[d['label'] for d in DISTANCES], group='advanced',
+                        default=[d['label'] for d in DISTANCES['en']],
+                        options=[d['label'] for d in DISTANCES['en']], group='advanced',
                         help='Distance descriptions to include in scenarios'),
         ]
 
@@ -107,19 +48,19 @@ class CarwashGenerator(TestCaseGenerator):
         config_name = prompt_config.get("name", f"{user_style}_{system_style}")
 
         # Allowed distances (can be filtered via config)
-        allowed_distances = config.get("distances", [d["label"] for d in DISTANCES])
-        distances = [d for d in DISTANCES if d["label"] in allowed_distances]
+        allowed_distances = config.get("distances", [d["label"] for d in DISTANCES[language]])
+        distances = [d for d in DISTANCES[language] if d["label"] in allowed_distances]
         if not distances:
-            distances = DISTANCES
+            distances = DISTANCES[language]
 
         # Build the full combinatorial space and sample from it
         combinations = list(itertools.product(
             distances,
-            FRAMINGS,
-            WEATHER_CONTEXTS,
-            URGENCY_PHRASES,
-            TRANSPORT_DETAILS,
-            QUESTION_VARIANTS,
+            FRAMINGS[language],
+            WEATHER_CONTEXTS[language],
+            URGENCY_PHRASES[language],
+            TRANSPORT_DETAILS[language],
+            QUESTION_VARIANTS[language],
         ))
         rng.shuffle(combinations)
 
