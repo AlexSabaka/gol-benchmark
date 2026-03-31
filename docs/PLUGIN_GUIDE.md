@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.10.7** | Last updated: 2026-03-30
+> **Version 2.11.0** | Last updated: 2026-03-31
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -1346,13 +1346,15 @@ summary = evaluator.aggregate_results(all_results)
 # Returns: {"accuracy": 0.72, "correct": 36, "total": 50, "match_types": {...}}
 ```
 
-### Web UI
+### Web UI (React SPA)
 
 - `GET /api/plugins` — Lists all registered plugins with metadata
 - `GET /api/plugins/{task_type}/schema` — Returns config schema from `generator.get_config_schema()` (field types: number, select, multi-select, text, boolean, range, weight_map)
 - `POST /api/testsets/generate` — Calls `plugin.get_generator().generate_batch()`
 - `POST /api/jobs` — Submits execution jobs that use plugin parsers/evaluators
-- Dynamic configuration forms are rendered from `get_config_schema()` with basic/advanced field grouping
+- The React frontend (`frontend/src/components/plugin-config/field-renderer.tsx`) dynamically renders `ConfigField` schemas as typed form controls
+- Frontend uses React Query hooks for auto-refreshing plugin/model/job data
+- Note: Backend `ConfigField.to_dict()` serializes `field_type` as `"type"` in JSON; the frontend `ConfigField` interface uses `type` to match
 
 ---
 

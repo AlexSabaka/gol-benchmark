@@ -74,9 +74,13 @@ ollama serve
 **Web UI (Recommended)**
 
 ```bash
-# Start the web UI for configuration, execution, and analysis
+# Start the backend + frontend
 python -m src.web
-# Open http://127.0.0.1:8000 in your browser
+# Open http://127.0.0.1:8000/app/ in your browser
+
+# The web UI is a React SPA (Vite + React 19 + TypeScript + Tailwind CSS + shadcn/ui)
+# Frontend source in frontend/, served at /app/
+# REST API at /api/
 ```
 
 **CLI — 3-Stage Pipeline**

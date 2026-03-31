@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.10.7** | Last updated: 2026-03-30
+> **Version 2.11.0** | Last updated: 2026-03-31
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -98,7 +98,7 @@ See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for full details.
 
 ### Web UI
 
-A modern web interface built with **FastAPI + HTMX + Jinja2** (replaced the deprecated terminal TUI). Provides dashboard, configuration, test set management, job execution with real-time progress, and result analysis — all through the browser.
+A modern single-page application built with **React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui**, backed by a **FastAPI** REST API. Replaces the earlier HTMX + Jinja2 interface. Provides dashboard, configuration with dynamic plugin forms, test set management, job execution with real-time progress, and result analysis — all through the browser. Frontend source lives in `frontend/`, served at `/app/`.
 
 ---
 
@@ -140,18 +140,17 @@ gol_eval/
 │   │   ├── PromptEngine.py             #   System prompts + enums (user templates deprecated → plugins)
 │   │   └── TestGenerator.py            #   Test case generation helpers
 │   │
-│   ├── web/                            # FastAPI + HTMX web UI
+│   ├── web/                            # FastAPI REST API backend
 │   │   ├── app.py                      #   FastAPI application factory
 │   │   ├── jobs.py                     #   Background job manager (ProcessPoolExecutor)
-│   │   ├── partials.py                 #   HTMX partial template routes
 │   │   ├── api/                        #   REST API endpoints
 │   │   │   ├── plugins.py              #     Plugin discovery & schemas
 │   │   │   ├── models.py               #     Model provider discovery
 │   │   │   ├── testsets.py             #     Test set creation & listing
 │   │   │   ├── execution.py            #     Job submission & status
 │   │   │   └── analysis.py             #     Result analysis
-│   │   ├── templates/                  #   Jinja2 + HTMX templates
-│   │   └── static/                     #   CSS, JS
+│   │   ├── templates/                  #   Legacy Jinja2 templates (retained)
+│   │   └── static/                     #   Legacy static assets (retained)
 │   │
 │   ├── models/                         # LLM provider interfaces
 │   │   ├── BaseModelInterface.py       #   ModelInterface base class
@@ -196,6 +195,16 @@ gol_eval/
 ├── testsets/                           # Generated test sets (JSON.gz)
 ├── results/                            # Benchmark results (JSON.gz)
 ├── reports/                            # Generated reports & charts
+├── frontend/                           # React SPA (Vite + React 19 + TypeScript + Tailwind + shadcn/ui)
+│   ├── src/
+│   │   ├── api/                        #   Typed API client layer
+│   │   ├── hooks/                      #   React Query data-fetching hooks
+│   │   ├── types/                      #   TypeScript interfaces
+│   │   ├── pages/                      #   Dashboard, Configure, TestSets, Execute, Results, Reports
+│   │   ├── components/                 #   UI primitives (shadcn), layout, plugin-config, data-table
+│   │   └── App.tsx                     #   Router + providers
+│   ├── vite.config.ts                  #   base: "/app/", proxy /api → :8000
+│   └── dist/                           #   Production build output
 └── docs/                               # Documentation & research reports
 ```
 
@@ -321,22 +330,42 @@ The combinatorial matrix (up to 3 user styles x 3 system styles x 6 languages = 
 
 ## Web UI
 
-**Stack**: FastAPI 3.0.0 + HTMX 2.0 + Jinja2 + PicoCSS
+**Stack**: FastAPI (REST API) + React 19 + TypeScript + Vite 6 + Tailwind CSS v4 + shadcn/ui
 
 ```bash
-python -m src.web                    # http://127.0.0.1:8000
+python -m src.web                    # http://127.0.0.1:8000/app/
 python -m src.web --host 0.0.0.0     # LAN-accessible
+
+# Development (hot-reload frontend)
+cd frontend && npm run dev           # http://localhost:5173/app/ (proxies /api → :8000)
 ```
 
 ### Pages
 
 | Route | Page | Purpose |
 |-------|------|---------|
-| `/` | Dashboard | Summary of available plugins, models, recent runs |
-| `/configure` | Configure | Dynamic plugin selection + configuration forms |
-| `/testsets` | Test Sets | Create, list, and inspect test sets |
-| `/execute` | Execute | Submit jobs, monitor real-time progress |
-| `/results` | Results | Browse results, view analysis breakdowns |
+| `/app/` | Dashboard | Summary of available plugins, models, recent runs |
+| `/app/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix |
+| `/app/testsets` | Test Sets | Create, list, and inspect test sets |
+| `/app/execute` | Execute | Submit jobs, monitor real-time progress |
+| `/app/results` | Results | Browse results with sortable DataTable, view analysis breakdowns |
+| `/app/reports` | Reports | View generated HTML reports in iframe |
+
+### Frontend Architecture
+
+```
+frontend/src/
+├── api/          # Typed fetch client (client.ts, plugins.ts, models.ts, testsets.ts, jobs.ts, results.ts)
+├── hooks/        # React Query hooks with auto-refresh (use-plugins, use-models, use-testsets, use-jobs, use-results)
+├── types/        # TypeScript interfaces mirroring backend schemas
+├── pages/        # 6 route pages
+├── components/
+│   ├── ui/           # shadcn/ui primitives (18 components)
+│   ├── layout/       # AppLayout, Sidebar, Header
+│   ├── plugin-config/ # Dynamic ConfigField renderer (number, select, multi-select, boolean, range, weight_map)
+│   └── data-table/   # Generic sortable/filterable DataTable
+└── App.tsx       # BrowserRouter + QueryClientProvider + ThemeProvider
+```
 
 ### API Endpoints
 
@@ -445,7 +474,7 @@ ollama serve  # Start Ollama daemon
 
 ```bash
 python -m src.web
-# Open http://127.0.0.1:8000
+# Open http://127.0.0.1:8000/app/
 ```
 
 ### CLI — 3-Stage Pipeline

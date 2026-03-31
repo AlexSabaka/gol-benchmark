@@ -88,6 +88,41 @@ async def list_results():
     return [_summarize_result(f) for f in files]
 
 
+@router.get("/reports")
+async def list_reports():
+    """List all generated HTML reports."""
+    reports_dir = Path(web_config.reports_dir)
+    if not reports_dir.exists():
+        return []
+    items = []
+    for f in sorted(reports_dir.glob("*.html"), key=lambda p: p.stat().st_mtime, reverse=True):
+        stat = f.stat()
+        items.append({
+            "filename": f.name,
+            "size_bytes": stat.st_size,
+            "created": time.strftime("%Y-%m-%dT%H:%M:%S", time.localtime(stat.st_mtime)),
+        })
+    return items
+
+
+@router.get("/report/{filename}")
+async def serve_report(filename: str):
+    """Serve a generated HTML report."""
+    filepath = Path(web_config.reports_dir) / filename
+    if not filepath.exists():
+        raise HTTPException(404, f"Report not found: {filename}")
+    return FileResponse(str(filepath), media_type="text/html")
+
+
+@router.get("/charts/{filename}")
+async def serve_chart(filename: str):
+    """Serve a generated chart image."""
+    filepath = Path(web_config.charts_dir) / filename
+    if not filepath.exists():
+        raise HTTPException(404, f"Chart not found: {filename}")
+    return FileResponse(str(filepath))
+
+
 @router.get("/{filename}")
 async def get_result(filename: str):
     """Load a full result file."""
@@ -183,36 +218,33 @@ async def generate_report(req: AnalyzeRequest):
 
         ts = time.strftime("%Y%m%d_%H%M%S")
         report_path = str(reports_dir / f"report_{ts}.html")
-        charts_dir = str(Path(web_config.charts_dir))
+
+        # Use a per-report charts directory so each report only embeds its
+        # own charts — no stale PNGs from earlier runs can leak in.
+        charts_dir = str(reports_dir / "charts" / ts)
         os.makedirs(charts_dir, exist_ok=True)
 
         # Generate chart PNGs first so the HTML report can embed them.
         # Visualization may fail partially (e.g. some chart types need more data)
         # — that's fine, we still generate the HTML report with whatever charts exist.
+        viz_error = None
         try:
             generate_visualizations(loaded, charts_dir)
-        except Exception:
-            pass  # partial chart generation is OK
+        except Exception as viz_exc:
+            viz_error = str(viz_exc)  # non-fatal — report still generates without charts
 
         generate_html_report(loaded, report_path, charts_dir=charts_dir, grouped_by_model=req.comparison)
-        return {"status": "ok", "report_path": report_path, "filename": os.path.basename(report_path)}
+
+        # Charts are now embedded as base64 in the HTML — clean up the
+        # per-report directory since the PNGs are no longer needed.
+        try:
+            import shutil
+            shutil.rmtree(charts_dir, ignore_errors=True)
+        except Exception:
+            pass
+        resp = {"status": "ok", "report_path": report_path, "filename": os.path.basename(report_path)}
+        if viz_error:
+            resp["viz_warning"] = viz_error
+        return resp
     except Exception as exc:
         raise HTTPException(500, f"Report generation failed: {exc}")
-
-
-@router.get("/report/{filename}")
-async def serve_report(filename: str):
-    """Serve a generated HTML report."""
-    filepath = Path(web_config.reports_dir) / filename
-    if not filepath.exists():
-        raise HTTPException(404, f"Report not found: {filename}")
-    return FileResponse(str(filepath), media_type="text/html")
-
-
-@router.get("/charts/{filename}")
-async def serve_chart(filename: str):
-    """Serve a generated chart image."""
-    filepath = Path(web_config.charts_dir) / filename
-    if not filepath.exists():
-        raise HTTPException(404, f"Chart not found: {filename}")
-    return FileResponse(str(filepath))

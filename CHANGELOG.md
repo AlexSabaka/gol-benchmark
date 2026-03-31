@@ -2,6 +2,69 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.11.0] - March 31, 2026
+
+### React SPA Frontend (replaces HTMX + Jinja2 web UI)
+
+Replaced the server-rendered HTMX + Jinja2 web interface with a modern single-page application built on **Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui**.
+
+#### Stack
+
+- **Vite 6.4** — dev server with HMR, proxies `/api` to FastAPI at `:8000`
+- **React 19** — with React Router 7 (client-side routing under `/app/`)
+- **TypeScript** — strict mode, full type coverage across API layer
+- **Tailwind CSS v4** — via `@tailwindcss/vite` plugin
+- **shadcn/ui** — 18 components (Button, Card, Dialog, DataTable, Command, etc.)
+- **TanStack React Query** — data fetching with auto-refresh hooks
+- **TanStack React Table** — sortable/filterable data tables
+- **Lucide React** — icons throughout
+
+#### Frontend Structure (`frontend/`)
+
+```
+frontend/
+├── src/
+│   ├── api/            # Typed API client (client.ts, plugins.ts, models.ts, testsets.ts, jobs.ts, results.ts)
+│   ├── hooks/          # React Query hooks (use-plugins.ts, use-models.ts, use-testsets.ts, use-jobs.ts, use-results.ts)
+│   ├── types/          # TypeScript interfaces (plugin.ts, model.ts, testset.ts, job.ts, result.ts, index.ts)
+│   ├── pages/          # 6 pages: Dashboard, Configure, TestSets, Execute, Results, Reports
+│   ├── components/
+│   │   ├── ui/         # shadcn/ui primitives (18 components)
+│   │   ├── layout/     # AppLayout, Sidebar, Header
+│   │   ├── plugin-config/  # Dynamic config field renderer
+│   │   └── data-table/ # Generic sortable/filterable DataTable
+│   ├── App.tsx         # Router + QueryClientProvider
+│   └── main.tsx        # Entry point
+├── vite.config.ts      # base: "/app/", proxy /api → :8000
+└── package.json
+```
+
+#### Pages
+
+| Route | Page | Description |
+|-------|------|-------------|
+| `/app/` | Dashboard | Plugin count, model status, recent test sets & jobs |
+| `/app/configure` | Configure | Dynamic plugin selection, multi-language checkboxes with flags, prompt style matrix, plugin-specific config fields |
+| `/app/testsets` | Test Sets | List/inspect generated test sets |
+| `/app/execute` | Execute | Job submission with model & test set selection, real-time progress |
+| `/app/results` | Results | Browse results with DataTable, accuracy breakdowns |
+| `/app/reports` | Reports | View generated HTML reports in iframe |
+
+#### Key Features
+
+- **Dynamic plugin config forms** — `ConfigField` schemas from backend rendered as typed form controls (number, select, multi-select, boolean, range, weight_map)
+- **Multi-language selection** — checkboxes with flag emojis (🇬🇧🇪🇸🇫🇷🇩🇪🇨🇳🇺🇦), generates prompt configs per language × user style × system style
+- **Dark/light theme** — via next-themes + Tailwind CSS
+- **Auto-refreshing job status** — React Query polling with configurable intervals
+- **Responsive layout** — collapsible sidebar, mobile-friendly
+
+#### Backend Changes
+
+- **Route reordering in `analysis.py`**: Specific routes (`/reports`, `/report/{filename}`, `/charts/{filename}`) moved before catch-all `/{filename}` to fix 404 errors
+- FastAPI continues to serve the REST API at `/api/`; built frontend served from `/app/`
+
+---
+
 ## [2.10.7] - March 30, 2026
 
 ### False Premise Parser — False-Negative Fixes (70 cases analyzed, 61 fixes)

@@ -4,7 +4,7 @@
 
 This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 18 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.2.0)
+## Architecture (v2.11.0)
 
 ### 🔌 **Plugin-Based Benchmark System**
 All benchmarks are now self-contained plugins with auto-discovery:
@@ -65,7 +65,7 @@ Config →   Plugin generators →        ModelInterface →        Enhanced Ana
          + base class helpers)
 ```
 
-## Project Structure (v2.2.0)
+## Project Structure (v2.11.0)
 
 ### **Core Architecture (`src/` organization)**
 
@@ -125,6 +125,7 @@ src/
 ```
 gol_eval/
 ├── src/                # All source code
+├── frontend/           # React SPA (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
 ├── tests/              # Test suites and validation scripts
 ├── docs/               # Comprehensive documentation
 ├── testsets/           # Generated test sets (.json.gz)
@@ -137,17 +138,22 @@ gol_eval/
 
 ## Running Benchmarks (v2.0.0)
 
-### 🎮 **Interactive TUI (Recommended)**
+### 🎮 **Web UI (Recommended)**
 ```bash
-# Modern interactive workflow
-python src/cli/benchmark_tui.py
+# Start the backend + frontend
+python -m src.web
+# Open http://127.0.0.1:8000/app/
+
+# Frontend development (hot-reload)
+cd frontend && npm run dev       # http://localhost:5173/app/ (proxies /api → :8000)
 
 # Supports:
-# - Multi-task test sets (arithmetic + Game of Life combined)
+# - All 18 benchmark plugins with dynamic config forms
 # - Model selection with provider detection
-# - Prompt style matrix configuration (3x3 combinations)
-# - Automatic 3-stage execution
-# - Enhanced reporting and visualizations
+# - Multi-language selection with flag emojis
+# - Prompt style matrix configuration (3×3 combinations)
+# - Automatic 3-stage execution with real-time progress
+# - Result analysis and HTML report generation
 ```
 
 ### 🛠️ **Manual 3-Stage Execution**
@@ -355,17 +361,19 @@ Tests validate TUI workflow, 3-stage pipeline, config serialization, parsing enh
 
 ## Quick Start Guide
 
-### **Option 1: Interactive TUI (Easiest)**
+### **Option 1: Web UI (Easiest)**
 ```bash
-# Start interactive benchmark
-python src/cli/benchmark_tui.py
+# Start the backend + frontend
+python -m src.web
+# Open http://127.0.0.1:8000/app/
 
-# Follow prompts:
-# 1. Select task types (arithmetic, game_of_life, or multi-task)  
-# 2. Choose models (auto-detected from Ollama)
-# 3. Configure prompt styles and parameters
-# 4. Execute 3-stage pipeline automatically
-# 5. View comprehensive reports and visualizations
+# The React SPA supports:
+# 1. All 18 benchmark plugins with dynamic config forms
+# 2. Model selection with provider detection
+# 3. Multi-language selection with flag emojis
+# 4. Prompt style matrix (3×3 combinations)
+# 5. Real-time progress during execution
+# 6. HTML report generation and viewing
 ```
 
 ### **Option 2: Quick Manual Test**
@@ -404,9 +412,10 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.10.7 (March 30, 2026)
+**Version**: 2.11.0 (March 31, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
+- React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
 - Plugin-based benchmark system with auto-discovery
 - Plugin-local prompt templates (PromptEngine user prompts deprecated)
 - Modern 3-stage architecture with enhanced parsing and analytics
