@@ -108,7 +108,7 @@ gol_eval/
 │   │   ├── api/           # Typed API client layer
 │   │   ├── hooks/         # React Query hooks with auto-refresh
 │   │   ├── types/         # TypeScript interfaces
-│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Results, Reports
+│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Reports
 │   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table
 │   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
@@ -497,13 +497,10 @@ See [docs/PROMPT_BENCHMARK_NOVEMBER_2025_REPORT.md](docs/PROMPT_BENCHMARK_NOVEMB
 pytest tests/
 
 # Run specific test file
-pytest tests/test_comprehensive_workflow.py -v
+pytest tests/plugins/ -v
 
 # Run with coverage
 pytest tests/ --cov=src --cov-report=html
-
-# Run integration tests
-pytest tests/test_provider_integration.py
 ```
 
 ### Manual Testing
@@ -720,6 +717,6 @@ pytest tests/
 ---
 
 *Last updated: 2026-03-31*
-*Version: 2.11.0*
-*Key additions: Removed TUI and HTMX+Jinja2 interfaces — React SPA is now the sole UI, served at root (/) • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Version: 2.12.0*
+*Key additions: Web UI improvements (Jobs page, faceted filters on Results/TestSets, plugin descriptions from README, sampling params moved to Execute page) • Removed TUI and HTMX+Jinja2 interfaces — React SPA is now the sole UI, served at root (/) • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

@@ -38,9 +38,6 @@ export default function ConfigurePage() {
   const [name, setName] = useState("web_benchmark")
   const [description, setDescription] = useState("")
   const [seed, setSeed] = useState(42)
-  const [temperature, setTemperature] = useState(0.1)
-  const [maxTokens, setMaxTokens] = useState(2048)
-  const [noThinking, setNoThinking] = useState(true)
 
   // Task selection + per-task config
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set())
@@ -103,9 +100,6 @@ export default function ConfigurePage() {
         generation: { ...taskConfigs[type], seed },
         prompt_configs: promptConfigs,
       })),
-      temperature,
-      max_tokens: maxTokens,
-      no_thinking: noThinking,
       cell_markers: ["1", "0"],
       seed,
     }
@@ -172,18 +166,6 @@ export default function ConfigurePage() {
                   <Label className="text-xs">Seed</Label>
                   <Input type="number" value={seed} onChange={(e) => setSeed(Number(e.target.value))} className="h-8 w-28" />
                 </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Temperature</Label>
-                  <Input type="number" value={temperature} min={0} max={2} step={0.05} onChange={(e) => setTemperature(Number(e.target.value))} className="h-8 w-28" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Max Tokens</Label>
-                  <Input type="number" value={maxTokens} min={64} max={32768} step={64} onChange={(e) => setMaxTokens(Number(e.target.value))} className="h-8 w-28" />
-                </div>
-                <div className="flex items-center gap-2 pt-5 sm:col-span-2">
-                  <Checkbox id="no-think" checked={noThinking} onCheckedChange={(c) => setNoThinking(!!c)} />
-                  <Label htmlFor="no-think" className="text-xs cursor-pointer">Disable thinking (recommended for structured tasks)</Label>
-                </div>
                 <div className="space-y-1.5 sm:col-span-2">
                   <Label className="text-xs">Description</Label>
                   <Input value={description} onChange={(e) => setDescription(e.target.value)} className="h-8" placeholder="Optional" />
@@ -218,14 +200,19 @@ export default function ConfigurePage() {
           </Card>
 
           {/* Per-task config panels */}
-          {Array.from(selectedTasks).map((task) => (
-            <ConfigForm
-              key={task}
-              taskType={task}
-              values={taskConfigs[task] ?? {}}
-              onChange={handleFieldChange}
-            />
-          ))}
+          {Array.from(selectedTasks).map((task) => {
+            const plugin = plugins?.find((p) => p.task_type === task)
+            return (
+              <div key={task} className="space-y-2">
+                <ConfigForm
+                  taskType={task}
+                  description={plugin?.description}
+                  values={taskConfigs[task] ?? {}}
+                  onChange={handleFieldChange}
+                />
+              </div>
+            )
+          })}
 
           {/* Prompt matrix */}
           <Card>

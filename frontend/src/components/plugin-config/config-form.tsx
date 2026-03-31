@@ -8,11 +8,12 @@ import { useState } from "react"
 
 interface Props {
   taskType: string
+  description?: string
   values: Record<string, unknown>
   onChange: (taskType: string, name: string, value: unknown) => void
 }
 
-export function ConfigForm({ taskType, values, onChange }: Props) {
+export function ConfigForm({ taskType, description, values, onChange }: Props) {
   const { data: schema, isLoading } = useQuery({
     queryKey: ["plugin-schema", taskType],
     queryFn: () => fetchPluginSchema(taskType),
@@ -40,6 +41,7 @@ export function ConfigForm({ taskType, values, onChange }: Props) {
         <CardTitle className="text-sm capitalize">
           {taskType.replace(/_/g, " ")}
         </CardTitle>
+        {description && <p className="text-xs text-muted-foreground">{description}</p>}
       </CardHeader>
       <CardContent className="space-y-4">
         {/* Basic fields */}

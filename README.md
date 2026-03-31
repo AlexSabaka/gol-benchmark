@@ -301,7 +301,7 @@ This is a **personal experiment**, but if you're curious and want to:
 
 ### ✅ Completed
 
-- [x] Plugin-based benchmark architecture — 13 tasks with auto-discovery (v2.1.0+)
+- [x] Plugin-based benchmark architecture — 18 tasks with auto-discovery (v2.1.0+)
 - [x] 3-stage pipeline: generate → execute → analyze
 - [x] React SPA web UI (Vite + React 19 + TypeScript + shadcn/ui) (v2.11.0)
 - [x] Plugin config schema introspection (`ConfigField` system)
@@ -314,6 +314,7 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Measure comparison parser overhaul (v2.10.5, 38 false negatives fixed — smart quote normalization, pipeline reorder, expanded keyword patterns)
 - [x] Object tracking, time arithmetic, inverted cup, encoding cipher parser fixes (v2.10.6, 28 false negatives fixed — first-bold/first-sentence strategies, validity yes/no detection, tilt/tip patterns, Unicode whitespace normalization)
 - [x] False premise parser overhaul (v2.10.7, 61 false negatives fixed — smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, expanded refusal/impossibility patterns)
+- [x] Web UI improvements: Jobs page, faceted filters, plugin descriptions from README, Configure/Execute page split (v2.12.0)
 
 ### 🔄 In Progress
 

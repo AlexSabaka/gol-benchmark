@@ -8,7 +8,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 | Document | Description |
 |----------|-------------|
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 16 tasks, research findings, quick start |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 18 tasks, research findings, quick start |
 | [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) | Plugin system reference, per-plugin docs, adding new plugins |
 
 ---
@@ -17,8 +17,6 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 | Document | Description |
 |----------|-------------|
-| [architecture/SYSTEM_OVERVIEW.md](architecture/SYSTEM_OVERVIEW.md) | System design and component diagram |
-| [architecture/THREE_STAGE_PIPELINE.md](architecture/THREE_STAGE_PIPELINE.md) | 3-stage pipeline (generate → run → analyze) |
 | [architecture/MODEL_PROVIDERS.md](architecture/MODEL_PROVIDERS.md) | Ollama, HuggingFace, OpenAI-compatible providers |
 
 ## Prompt Engine
@@ -80,9 +78,7 @@ docs/
 ├── PROJECT_OVERVIEW.md         # Comprehensive project overview
 ├── PLUGIN_GUIDE.md             # Plugin system guide & reference
 ├── architecture/               # System design
-│   ├── SYSTEM_OVERVIEW.md
-│   ├── MODEL_PROVIDERS.md
-│   └── THREE_STAGE_PIPELINE.md
+│   └── MODEL_PROVIDERS.md
 ├── prompt-engine/              # Prompt template reference
 │   ├── SYSTEM_PROMPTS.md
 │   ├── USER_PROMPTS_GOL.md
@@ -107,5 +103,5 @@ docs/
 
 ---
 
-**Version:** 2.11.0
+**Version:** 2.12.0
 **Last Updated:** March 2026

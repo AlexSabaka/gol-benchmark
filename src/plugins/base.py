@@ -17,6 +17,7 @@ Example usage:
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 from datetime import datetime
 
@@ -468,11 +469,22 @@ class BenchmarkPlugin(ABC):
 
     @property
     def description(self) -> str:
-        """
-        Detailed description of the benchmark.
+        """Read description from plugin's README.md (first content paragraph)."""
+        if not hasattr(self, '_description_cache'):
+            self._description_cache = self._read_readme_description()
+        return self._description_cache
 
-        Override to provide more context about what the benchmark tests.
-        """
+    def _read_readme_description(self) -> str:
+        readme = Path(__file__).parent / self.task_type / "README.md"
+        if readme.exists():
+            try:
+                for line in readme.read_text().splitlines():
+                    stripped = line.strip()
+                    if not stripped or stripped.startswith("#") or stripped.startswith(">"):
+                        continue
+                    return stripped
+            except OSError:
+                pass
         return f"{self.display_name} benchmark"
 
     @property

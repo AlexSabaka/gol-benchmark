@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.11.0** | Last updated: 2026-03-31
+> **Version 2.12.0** | Last updated: 2026-03-31
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -58,7 +58,7 @@ PluginRegistry (auto-discovers at first access)
     │                       ├── CarwashParser
     │                       └── CarwashEvaluator
     │
-    └── ... (17 plugins total)
+    └── ... (18 plugins total)
 ```
 
 ### Base Classes
@@ -67,7 +67,7 @@ Defined in `src/plugins/base.py`:
 
 | Class | Type | Key Methods |
 |-------|------|-------------|
-| `BenchmarkPlugin` | ABC | `task_type` (property), `display_name` (property), `description` (property), `version` (property), `get_generator()`, `get_parser()`, `get_evaluator()`, `get_config_class()`, `validate_config()` |
+| `BenchmarkPlugin` | ABC | `task_type` (property), `display_name` (property), `description` (property — auto-reads first paragraph from plugin's `README.md`, cached), `version` (property), `get_generator()`, `get_parser()`, `get_evaluator()`, `get_config_class()`, `validate_config()` |
 | `TestCaseGenerator` | ABC | `generate_batch(config, prompt_config, count, seed)` → `List[TestCase]`, `get_default_config()`, `get_config_schema()` → `List[ConfigField]`. **Prompt helpers** (inherited): `_get_system_prompt(system_style, language)`, `_format_user_prompt(templates, language, style, **vars)`, `_build_prompts(templates, language, user_style, system_style, **vars)` → `(user, system, full)` |
 | `ConfigField` | dataclass | Field descriptor for web UI forms. Fields: `name`, `label`, `field_type`, `default`, `help`, `group`, `min_value`, `max_value`, `step`, `options`, `range_min_default`, `range_max_default`, `weight_keys`. Method: `to_dict()` |
 | `ResponseParser` | ABC | `parse(response, task_params)` → `ParsedAnswer`, `get_strategies()` |

@@ -5,6 +5,8 @@ import {
   type VisibilityState,
   flexRender,
   getCoreRowModel,
+  getFacetedRowModel,
+  getFacetedUniqueValues,
   getFilteredRowModel,
   getPaginationRowModel,
   getSortedRowModel,
@@ -42,7 +44,7 @@ interface DataTableProps<TData, TValue> {
   data: TData[]
   searchKey?: string
   searchPlaceholder?: string
-  toolbar?: React.ReactNode
+  toolbar?: React.ReactNode | ((table: ReturnType<typeof useReactTable<TData>>) => React.ReactNode)
   loading?: boolean
 }
 
@@ -66,6 +68,8 @@ export function DataTable<TData, TValue>({
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
     getFilteredRowModel: getFilteredRowModel(),
+    getFacetedRowModel: getFacetedRowModel(),
+    getFacetedUniqueValues: getFacetedUniqueValues(),
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
@@ -89,7 +93,7 @@ export function DataTable<TData, TValue>({
             />
           </div>
         )}
-        {toolbar}
+        {typeof toolbar === "function" ? toolbar(table) : toolbar}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <Button variant="outline" size="sm" className="ml-auto h-9">
@@ -226,4 +230,4 @@ export function DataTable<TData, TValue>({
   )
 }
 
-export { type ColumnDef } from "@tanstack/react-table"
+export { type ColumnDef, type Table } from "@tanstack/react-table"

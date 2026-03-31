@@ -4,6 +4,15 @@ All notable changes to the GoL Benchmark project.
 
 ## [2.12.0] - March 31, 2026
 
+### Web UI Improvements
+
+- **Jobs page** — new dedicated page (`/jobs`) with DataTable showing all jobs, state badges with spinner for running, progress bars, cancel/view actions, and faceted state filter
+- **Faceted filters** — new reusable `DataTableFacetedFilter` component (popover with checkbox list and counts); applied to Results (model + task) and TestSets (task) pages
+- **Plugin descriptions** — `BenchmarkPlugin.description` auto-reads from each plugin's `README.md`; shown on Configure page when a task is selected
+- **Configure page cleanup** — sampling parameters (temperature, max tokens, disable thinking) moved to Execute page only
+- **Execute page simplified** — single-column layout, navigates to `/jobs` after submission
+- **Navigation** — added "Jobs" nav item between Execute and Results
+
 ### Removed: TUI and HTMX+Jinja2 interfaces
 
 - **Deleted `src/cli/`** — Terminal UI (questionary + rich) removed entirely (~3,000 lines)

@@ -41,9 +41,9 @@ export interface GenerateRequest {
   name: string
   description: string
   tasks: TaskConfig[]
-  temperature: number
-  max_tokens: number
-  no_thinking: boolean
+  temperature?: number
+  max_tokens?: number
+  no_thinking?: boolean
   cell_markers: string[]
   seed: number
 }

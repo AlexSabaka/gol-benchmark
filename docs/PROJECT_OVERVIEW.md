@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.11.0** | Last updated: 2026-03-31
+> **Version 2.12.0** | Last updated: 2026-03-31
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -194,7 +194,7 @@ gol_eval/
 │   │   ├── api/                        #   Typed API client layer
 │   │   ├── hooks/                      #   React Query data-fetching hooks
 │   │   ├── types/                      #   TypeScript interfaces
-│   │   ├── pages/                      #   Dashboard, Configure, TestSets, Execute, Results, Reports
+│   │   ├── pages/                      #   Dashboard, Configure, TestSets, Execute, Jobs, Results, Reports
 │   │   ├── components/                 #   UI primitives (shadcn), layout, plugin-config, data-table
 │   │   └── App.tsx                     #   Router + providers
 │   ├── vite.config.ts                  #   base: "/", proxy /api → :8000
@@ -342,7 +342,8 @@ cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → 
 | `/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix |
 | `/testsets` | Test Sets | Create, list, and inspect test sets |
 | `/execute` | Execute | Submit jobs, monitor real-time progress |
-| `/results` | Results | Browse results with sortable DataTable, view analysis breakdowns |
+| `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions |
+| `/results` | Results | Browse results with sortable DataTable, model/task faceted filters, view analysis breakdowns |
 | `/reports` | Reports | View generated HTML reports in iframe |
 
 ### Frontend Architecture
@@ -352,7 +353,7 @@ frontend/src/
 ├── api/          # Typed fetch client (client.ts, plugins.ts, models.ts, testsets.ts, jobs.ts, results.ts)
 ├── hooks/        # React Query hooks with auto-refresh (use-plugins, use-models, use-testsets, use-jobs, use-results)
 ├── types/        # TypeScript interfaces mirroring backend schemas
-├── pages/        # 6 route pages
+├── pages/        # 7 route pages
 ├── components/
 │   ├── ui/           # shadcn/ui primitives (18 components)
 │   ├── layout/       # AppLayout, Sidebar, Header

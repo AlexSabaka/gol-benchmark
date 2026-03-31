@@ -9,6 +9,7 @@ import DashboardPage from "@/pages/dashboard"
 import ConfigurePage from "@/pages/configure"
 import TestSetsPage from "@/pages/testsets"
 import ExecutePage from "@/pages/execute"
+import JobsPage from "@/pages/jobs"
 import ResultsPage from "@/pages/results"
 import ReportsPage from "@/pages/reports"
 
@@ -33,6 +34,7 @@ export default function App() {
                 <Route path="configure" element={<ConfigurePage />} />
                 <Route path="testsets" element={<TestSetsPage />} />
                 <Route path="execute" element={<ExecutePage />} />
+                <Route path="jobs" element={<JobsPage />} />
                 <Route path="results" element={<ResultsPage />} />
                 <Route path="reports" element={<ReportsPage />} />
                 <Route path="*" element={<NotFound />} />

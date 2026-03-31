@@ -4,7 +4,7 @@
 
 This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 18 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.11.0)
+## Architecture (v2.12.0)
 
 ### 🔌 **Plugin-Based Benchmark System**
 All benchmarks are now self-contained plugins with auto-discovery:
@@ -65,7 +65,7 @@ Config →   Plugin generators →        ModelInterface →        Enhanced Ana
          + base class helpers)
 ```
 
-## Project Structure (v2.11.0)
+## Project Structure (v2.12.0)
 
 ### **Core Architecture (`src/` organization)**
 
@@ -401,7 +401,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.11.0 (March 31, 2026)
+**Version**: 2.12.0 (March 31, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)

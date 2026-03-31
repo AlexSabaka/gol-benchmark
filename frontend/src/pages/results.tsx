@@ -1,5 +1,5 @@
-import { useState } from "react"
-import type { ColumnDef } from "@tanstack/react-table"
+import { useMemo, useState } from "react"
+import type { ColumnDef, Table } from "@tanstack/react-table"
 import { toast } from "sonner"
 import { useNavigate } from "react-router"
 import { Eye, BarChart3, FileText, Loader2 } from "lucide-react"
@@ -14,6 +14,7 @@ import {
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable } from "@/components/data-table/data-table"
+import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
 import { PageHeader } from "@/components/layout/page-header"
 import { TaskBadge } from "@/components/task-badge"
 import { formatDuration, formatPercent } from "@/lib/utils"
@@ -60,6 +61,27 @@ export default function ResultsPage() {
     }
   }
 
+  const modelOptions = useMemo(() => {
+    const unique = [...new Set((results ?? []).map((r) => r.model_name))].sort()
+    return unique.map((m) => ({ label: m, value: m }))
+  }, [results])
+
+  const taskOptions = useMemo(() => {
+    const unique = [...new Set((results ?? []).flatMap((r) => r.task_types))].sort()
+    return unique.map((t) => ({ label: t, value: t }))
+  }, [results])
+
+  const toolbar = (table: Table<ResultSummary>) => (
+    <>
+      {table.getColumn("model_name") && modelOptions.length > 1 && (
+        <DataTableFacetedFilter column={table.getColumn("model_name")} title="Model" options={modelOptions} />
+      )}
+      {table.getColumn("task_types") && taskOptions.length > 1 && (
+        <DataTableFacetedFilter column={table.getColumn("task_types")} title="Task" options={taskOptions} />
+      )}
+    </>
+  )
+
   const columns: ColumnDef<ResultSummary>[] = [
     {
       id: "select",
@@ -78,6 +100,7 @@ export default function ResultsPage() {
       accessorKey: "model_name",
       header: "Model",
       cell: ({ row }) => <span className="font-medium text-xs">{row.original.model_name}</span>,
+      filterFn: (row, _id, value: string[]) => value.includes(row.original.model_name),
     },
     {
       accessorKey: "task_types",
@@ -89,6 +112,8 @@ export default function ResultsPage() {
           ))}
         </div>
       ),
+      filterFn: (row, _id, value: string[]) =>
+        value.some((v) => row.original.task_types.includes(v)),
     },
     {
       accessorKey: "accuracy",
@@ -159,7 +184,7 @@ export default function ResultsPage() {
         }
       />
 
-      <DataTable columns={columns} data={results ?? []} loading={isLoading} searchPlaceholder="Search results…" />
+      <DataTable columns={columns} data={results ?? []} loading={isLoading} searchKey="model_name" searchPlaceholder="Search results..." toolbar={toolbar} />
 
       {/* Analyze results dialog (inline) */}
       {analyzeMutation.isSuccess && analyzeMutation.data && (

@@ -1,6 +1,6 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router"
-import type { ColumnDef } from "@tanstack/react-table"
+import type { ColumnDef, Table } from "@tanstack/react-table"
 import { toast } from "sonner"
 import { Trash2, Play, Eye, MoreHorizontal } from "lucide-react"
 
@@ -27,6 +27,7 @@ import {
 } from "@/components/ui/sheet"
 import { Badge } from "@/components/ui/badge"
 import { DataTable } from "@/components/data-table/data-table"
+import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
 import { PageHeader } from "@/components/layout/page-header"
 import { TaskBadge } from "@/components/task-badge"
 import { formatBytes } from "@/lib/utils"
@@ -52,6 +53,19 @@ export default function TestSetsPage() {
     setDeleteTarget(null)
   }
 
+  const taskOptions = useMemo(() => {
+    const unique = [...new Set((testsets ?? []).flatMap((ts) => ts.task_types))].sort()
+    return unique.map((t) => ({ label: t, value: t }))
+  }, [testsets])
+
+  const toolbar = (table: Table<TestsetSummary>) => (
+    <>
+      {table.getColumn("task_types") && taskOptions.length > 1 && (
+        <DataTableFacetedFilter column={table.getColumn("task_types")} title="Task" options={taskOptions} />
+      )}
+    </>
+  )
+
   const columns: ColumnDef<TestsetSummary>[] = [
     {
       accessorKey: "filename",
@@ -72,8 +86,8 @@ export default function TestSetsPage() {
           ))}
         </div>
       ),
-      filterFn: (row, _col, value: string) =>
-        row.original.task_types.some((t) => t.includes(value)),
+      filterFn: (row, _col, value: string[]) =>
+        value.some((v) => row.original.task_types.includes(v)),
     },
     {
       accessorKey: "test_count",
@@ -127,7 +141,7 @@ export default function TestSetsPage() {
         actions={<Button onClick={() => nav("/configure")}>New Test Set</Button>}
       />
 
-      <DataTable columns={columns} data={testsets ?? []} loading={isLoading} searchPlaceholder="Search test sets…" />
+      <DataTable columns={columns} data={testsets ?? []} loading={isLoading} searchKey="filename" searchPlaceholder="Search test sets..." toolbar={toolbar} />
 
       {/* Delete confirm */}
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>

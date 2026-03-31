@@ -5,6 +5,7 @@ import {
   Settings2,
   Database,
   Play,
+  Activity,
   BarChart3,
   FileText,
   Dna,
@@ -15,6 +16,7 @@ const NAV_ITEMS = [
   { to: "/configure", icon: Settings2, label: "Configure" },
   { to: "/testsets", icon: Database, label: "Test Sets" },
   { to: "/execute", icon: Play, label: "Execute" },
+  { to: "/jobs", icon: Activity, label: "Jobs" },
   { to: "/results", icon: BarChart3, label: "Results" },
   { to: "/reports", icon: FileText, label: "Reports" },
 ]
