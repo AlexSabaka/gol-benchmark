@@ -1,5 +1,4 @@
-import { useQuery } from "@tanstack/react-query"
-import { fetchPluginSchema } from "@/api/plugins"
+import { usePluginSchema } from "@/hooks/use-plugins"
 import { FieldRenderer } from "./field-renderer"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Collapsible, CollapsibleContent, CollapsibleTrigger } from "@/components/ui/collapsible"
@@ -14,11 +13,7 @@ interface Props {
 }
 
 export function ConfigForm({ taskType, description, values, onChange }: Props) {
-  const { data: schema, isLoading } = useQuery({
-    queryKey: ["plugin-schema", taskType],
-    queryFn: () => fetchPluginSchema(taskType),
-    staleTime: Infinity,
-  })
+  const { data: schema, isLoading } = usePluginSchema(taskType)
   const [advOpen, setAdvOpen] = useState(false)
 
   if (isLoading) {

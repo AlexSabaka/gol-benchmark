@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react"
+import { useCallback, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
 import { Loader2, Play } from "lucide-react"
@@ -30,7 +30,7 @@ export default function ExecutePage() {
   const runMutation = useRunBenchmark()
 
   // Form state
-  const [testsetFilename, setTestsetFilename] = useState(params.get("testset") ?? "")
+  const [testsetFilename, setTestsetFilename] = useState(() => params.get("testset") ?? "")
   const [provider, setProvider] = useState<Provider>("ollama")
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434")
   const [apiBase, setApiBase] = useState("")
@@ -39,12 +39,6 @@ export default function ExecutePage() {
   const [temperature, setTemperature] = useState(0.1)
   const [maxTokens, setMaxTokens] = useState(2048)
   const [noThink, setNoThink] = useState(true)
-
-  // Auto-select testset from URL
-  useEffect(() => {
-    const ts = params.get("testset")
-    if (ts) setTestsetFilename(ts)
-  }, [params])
 
   // Model discovery
   const { data: ollamaData, isLoading: ollamaLoading } = useOllamaModels(ollamaHost, provider === "ollama")
@@ -59,8 +53,10 @@ export default function ExecutePage() {
 
   const isDiscovering = (provider === "ollama" && ollamaLoading) || (provider === "openai_compatible" && openaiLoading)
 
-  // Reset model selection when provider changes
-  useEffect(() => { setSelectedModels(new Set()) }, [provider])
+  const handleProviderChange = useCallback((p: Provider) => {
+    setProvider(p)
+    setSelectedModels(new Set())
+  }, [])
 
   const toggleModel = useCallback((id: string) => {
     setSelectedModels((prev) => {
@@ -123,7 +119,7 @@ export default function ExecutePage() {
         <Card>
           <CardHeader className="pb-3"><CardTitle className="text-sm">Provider & Models</CardTitle></CardHeader>
           <CardContent className="space-y-4">
-            <Tabs value={provider} onValueChange={(v) => setProvider(v as Provider)}>
+            <Tabs value={provider} onValueChange={(v) => handleProviderChange(v as Provider)}>
               <TabsList>
                 <TabsTrigger value="ollama">Ollama</TabsTrigger>
                 <TabsTrigger value="openai_compatible">OpenAI-Compatible</TabsTrigger>

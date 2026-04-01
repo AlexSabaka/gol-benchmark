@@ -72,3 +72,18 @@ export interface GenerateReportResponse {
   filename: string
   viz_warning?: string
 }
+
+// ── Chart types ──
+
+export interface HeatmapCell {
+  model: string
+  task: string
+  accuracy: number
+  total: number
+}
+
+export interface ScatterPoint {
+  model: string
+  paramCount: number | null
+  accuracy: number
+}

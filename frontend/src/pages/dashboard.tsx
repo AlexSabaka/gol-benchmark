@@ -91,7 +91,7 @@ export default function DashboardPage() {
                 {recentTestsets.map((ts) => (
                   <div key={ts.filename} className="flex items-center gap-3 text-sm">
                     <div className="flex-1 truncate">
-                      <span className="font-medium">{(ts.metadata as Record<string, unknown>)?.name as string || ts.filename}</span>
+                      <span className="font-medium">{String(ts.metadata?.name ?? "") || ts.filename}</span>
                     </div>
                     <div className="flex gap-1">
                       {ts.task_types?.slice(0, 2).map((t) => <TaskBadge key={t} task={t} />)}
@@ -144,23 +144,6 @@ export default function DashboardPage() {
         </Card>
       </div>
 
-      {/* Quick actions */}
-      <Card>
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base">Quick Actions</CardTitle>
-        </CardHeader>
-        <CardContent className="flex flex-wrap gap-3">
-          <Button variant="outline" asChild>
-            <Link to="/configure"><Plus className="mr-2 h-4 w-4" />New Test Set</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/execute"><Play className="mr-2 h-4 w-4" />Run Benchmark</Link>
-          </Button>
-          <Button variant="outline" asChild>
-            <Link to="/results"><BarChart3 className="mr-2 h-4 w-4" />Compare Results</Link>
-          </Button>
-        </CardContent>
-      </Card>
     </div>
   )
 }

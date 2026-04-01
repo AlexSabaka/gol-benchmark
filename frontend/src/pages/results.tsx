@@ -1,8 +1,8 @@
-import { useMemo, useState } from "react"
+import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef, Table } from "@tanstack/react-table"
 import { toast } from "sonner"
 import { useNavigate } from "react-router"
-import { Eye, BarChart3, FileText, Loader2 } from "lucide-react"
+import { Eye, BarChart3, LineChart, FileText, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -31,14 +31,14 @@ export default function ResultsPage() {
   const [detailTarget, setDetailTarget] = useState<string | null>(null)
   const { data: detail } = useResult(detailTarget)
 
-  const toggleSelect = (filename: string) => {
+  const toggleSelect = useCallback((filename: string) => {
     setSelected((prev) => {
       const next = new Set(prev)
       if (next.has(filename)) next.delete(filename)
       else next.add(filename)
       return next
     })
-  }
+  }, [])
 
   const handleAnalyze = async () => {
     if (selected.size === 0) { toast.error("Select result files to analyze"); return }
@@ -175,6 +175,14 @@ export default function ResultsPage() {
             <Button variant="outline" onClick={handleAnalyze} disabled={selected.size === 0 || analyzeMutation.isPending}>
               {analyzeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
               Analyze ({selected.size})
+            </Button>
+            <Button
+              variant="outline"
+              onClick={() => nav(`/charts?files=${Array.from(selected).join(",")}`)}
+              disabled={selected.size === 0}
+            >
+              <LineChart className="mr-2 h-4 w-4" />
+              Charts ({selected.size})
             </Button>
             <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
               {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}

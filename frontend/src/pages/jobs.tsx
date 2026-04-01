@@ -1,5 +1,6 @@
 import { useNavigate } from "react-router"
 import { type ColumnDef, type Table } from "@tanstack/react-table"
+import { toast } from "sonner"
 import { Ban, Eye, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -9,6 +10,7 @@ import { DataTable } from "@/components/data-table/data-table"
 import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
 import { PageHeader } from "@/components/layout/page-header"
 import { useJobs, useCancelJob } from "@/hooks/use-jobs"
+import { formatDuration, formatTimestamp, basename } from "@/lib/utils"
 import type { Job } from "@/types"
 
 const STATE_OPTIONS = [
@@ -25,22 +27,6 @@ const stateBadge: Record<string, { variant: "default" | "secondary" | "destructi
   completed: { variant: "secondary", label: "Completed" },
   failed: { variant: "destructive", label: "Failed" },
   cancelled: { variant: "outline", label: "Cancelled" },
-}
-
-function formatDuration(seconds?: number): string {
-  if (seconds == null) return "-"
-  if (seconds < 60) return `${seconds.toFixed(1)}s`
-  const m = Math.floor(seconds / 60)
-  const s = Math.round(seconds % 60)
-  return `${m}m ${s}s`
-}
-
-function formatTime(ts: number): string {
-  return new Date(ts * 1000).toLocaleString()
-}
-
-function basename(path: string): string {
-  return path.split("/").pop() || path
 }
 
 export default function JobsPage() {
@@ -94,7 +80,7 @@ export default function JobsPage() {
     {
       accessorKey: "created_at",
       header: "Created",
-      cell: ({ row }) => <span className="text-muted-foreground whitespace-nowrap">{formatTime(row.original.created_at)}</span>,
+      cell: ({ row }) => <span className="text-muted-foreground whitespace-nowrap">{formatTimestamp(row.original.created_at)}</span>,
     },
     {
       accessorKey: "elapsed_seconds",
@@ -114,7 +100,10 @@ export default function JobsPage() {
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2 text-destructive"
-                onClick={() => cancelMut.mutate(job.id)}
+                onClick={() => cancelMut.mutate(job.id, {
+                  onSuccess: () => toast.success(`Cancelled job for ${job.model_name}`),
+                  onError: (err) => toast.error(`Cancel failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                })}
                 disabled={cancelMut.isPending}
               >
                 <Ban className="h-3.5 w-3.5" />

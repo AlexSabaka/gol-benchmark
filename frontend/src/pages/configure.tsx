@@ -70,12 +70,14 @@ export default function ConfigurePage() {
     }))
   }, [])
 
-  const toggleCheckboxSet = (set: Set<string>, value: string, setter: (s: Set<string>) => void) => {
-    const next = new Set(set)
-    if (next.has(value)) next.delete(value)
-    else next.add(value)
-    setter(next)
-  }
+  const toggleCheckboxSet = useCallback((value: string, setter: React.Dispatch<React.SetStateAction<Set<string>>>) => {
+    setter((prev) => {
+      const next = new Set(prev)
+      if (next.has(value)) next.delete(value)
+      else next.add(value)
+      return next
+    })
+  }, [])
 
   const handleGenerate = async () => {
     if (selectedTasks.size === 0) {
@@ -231,7 +233,7 @@ export default function ConfigurePage() {
                   <div className="space-y-1">
                     {USER_STYLES.map((s) => (
                       <label key={s} className="flex items-center gap-2 text-xs cursor-pointer">
-                        <Checkbox checked={userStyles.has(s)} onCheckedChange={() => toggleCheckboxSet(userStyles, s, setUserStyles)} />
+                        <Checkbox checked={userStyles.has(s)} onCheckedChange={() => toggleCheckboxSet(s, setUserStyles)} />
                         {s}
                       </label>
                     ))}
@@ -242,7 +244,7 @@ export default function ConfigurePage() {
                   <div className="space-y-1">
                     {SYSTEM_STYLES.map((s) => (
                       <label key={s} className="flex items-center gap-2 text-xs cursor-pointer">
-                        <Checkbox checked={systemStyles.has(s)} onCheckedChange={() => toggleCheckboxSet(systemStyles, s, setSystemStyles)} />
+                        <Checkbox checked={systemStyles.has(s)} onCheckedChange={() => toggleCheckboxSet(s, setSystemStyles)} />
                         {s}
                       </label>
                     ))}
@@ -253,7 +255,7 @@ export default function ConfigurePage() {
                   <div className="space-y-1">
                     {LANGUAGES.map((l) => (
                       <label key={l.code} className="flex items-center gap-2 text-xs cursor-pointer">
-                        <Checkbox checked={languages.has(l.code)} onCheckedChange={() => toggleCheckboxSet(languages, l.code, setLanguages)} />
+                        <Checkbox checked={languages.has(l.code)} onCheckedChange={() => toggleCheckboxSet(l.code, setLanguages)} />
                         <span>{l.flag}</span>
                         <span>{l.label}</span>
                       </label>

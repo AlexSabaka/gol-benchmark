@@ -1,5 +1,6 @@
 import { NavLink, Outlet } from "react-router"
 import { ThemeToggle } from "@/components/theme-toggle"
+import { ErrorBoundary } from "@/components/error-boundary"
 import {
   LayoutDashboard,
   Settings2,
@@ -7,6 +8,7 @@ import {
   Play,
   Activity,
   BarChart3,
+  LineChart,
   FileText,
   Dna,
 } from "lucide-react"
@@ -18,6 +20,7 @@ const NAV_ITEMS = [
   { to: "/execute", icon: Play, label: "Execute" },
   { to: "/jobs", icon: Activity, label: "Jobs" },
   { to: "/results", icon: BarChart3, label: "Results" },
+  { to: "/charts", icon: LineChart, label: "Charts" },
   { to: "/reports", icon: FileText, label: "Reports" },
 ]
 
@@ -55,7 +58,7 @@ export function AppShell() {
 
         {/* Footer */}
         <div className="border-t p-3 flex items-center justify-between">
-          <span className="text-xs text-muted-foreground">v2.10.7</span>
+          <span className="text-xs text-muted-foreground">v{__APP_VERSION__}</span>
           <ThemeToggle />
         </div>
       </aside>
@@ -90,7 +93,9 @@ export function AppShell() {
 
         {/* Page content */}
         <main className="flex-1 overflow-auto p-4 md:p-6">
-          <Outlet />
+          <ErrorBoundary>
+            <Outlet />
+          </ErrorBoundary>
         </main>
       </div>
     </div>

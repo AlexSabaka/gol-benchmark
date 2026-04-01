@@ -19,5 +19,9 @@ export default defineConfig([
       ecmaVersion: 2020,
       globals: globals.browser,
     },
+    rules: {
+      // TanStack Table returns non-memoizable functions — known incompatibility
+      'react-hooks/incompatible-library': 'off',
+    },
   },
 ])
