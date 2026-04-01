@@ -1,0 +1,53 @@
+# Strawberry Benchmark — Anagram Pairs (German)
+# Format: word1,word2,is_anagram
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# True pairs: sorted(word1) == sorted(word2)
+# False pairs: near-misses that share many letters but differ
+
+# --- TRUE ANAGRAM PAIRS (short, 3-4 letters) ---
+lampe,ampel,true
+regal,lager,true
+nebel,leben,true
+reif,frei,true
+reh,her,true
+eis,sie,true
+rat,art,true
+tor,rot,true
+not,ton,true
+alm,mal,true
+seil,leis,true
+wein,wien,true
+knie,kein,true
+dame,made,true
+name,amen,true
+rede,erde,true
+
+# --- TRUE ANAGRAM PAIRS (medium, 5-7 letters) ---
+nagel,angel,true
+mehl,helm,true
+atlas,salat,true
+reist,stier,true
+ernst,stern,true
+sagen,genas,true
+spore,prose,true
+nabel,laben,true
+
+# --- FALSE (NEAR-MISS) PAIRS ---
+# Share many letters but are NOT anagrams
+haus,hals,false
+brot,bart,false
+wald,wand,false
+hund,bund,false
+stuhl,still,false
+blatt,bratt,false
+nacht,macht,false
+kraft,kranz,false
+brief,breit,false
+kleid,klein,false
+strand,stand,false
+traum,baum,false
+krone,grobe,false
+wolke,volke,false
+garten,warten,false
+winter,wunder,false

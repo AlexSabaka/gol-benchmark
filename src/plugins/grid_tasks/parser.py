@@ -10,7 +10,11 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import (
+    build_answer_label_re,
+    get_language,
+    re_search_last,
+)
 
 
 class GridTasksResponseParser(ResponseParser):
@@ -40,6 +44,13 @@ class GridTasksResponseParser(ResponseParser):
         Returns:
             ParsedAnswer with extracted value, strategy, and confidence
         """
+        lang = get_language(task_params)
+        # Sort labels longest-first so "final answer" is tried before "answer"
+        raw_labels = build_answer_label_re(lang)
+        self._label_re = "|".join(
+            sorted(raw_labels.split("|"), key=len, reverse=True)
+        )
+
         if not response or not response.strip():
             return ParsedAnswer(
                 value=None,
@@ -123,11 +134,9 @@ class GridTasksResponseParser(ResponseParser):
     
     def _try_answer_pattern(self, response: str) -> Optional[Dict[str, Any]]:
         """Try to extract answer from common patterns (last match — end-first)."""
+        label_re = self._label_re
         patterns = [
-            r'(?:^|\n)Answer:\s*([^\n]+)',
-            r'(?:^|\n)The answer is:?\s*([^\n]+)',
-            r'(?:^|\n)Final answer:\s*([^\n]+)',
-            r'(?:^|\n)Result:\s*([^\n]+)',
+            rf'(?:^|\n)\s*(?:\w+\s+)?(?:{label_re})\s*(?:is\s*)?:?\s*([^\n]+)',
         ]
 
         for pattern in patterns:
@@ -190,10 +199,15 @@ class GridTasksResponseParser(ResponseParser):
         lines = [line.strip() for line in response.split('\n') if line.strip()]
         if lines:
             value = lines[-1]
-            # Remove common prefixes
-            for prefix in ['Answer:', 'The answer is:', 'Final answer:', 'Result:']:
-                if value.lower().startswith(prefix.lower()):
-                    value = value[len(prefix):].strip()
+            # Remove multilingual answer-label prefixes
+            label_re = self._label_re
+            prefix_match = re.match(
+                rf'(?:\w+\s+)?(?:{label_re})\s*(?:is\s*)?:?\s*',
+                value,
+                re.IGNORECASE,
+            )
+            if prefix_match:
+                value = value[prefix_match.end():].strip()
             # Remove trailing punctuation
             value = value.rstrip('.,;!')
             return {'value': self._normalize_value(value), 'confidence': 0.7}

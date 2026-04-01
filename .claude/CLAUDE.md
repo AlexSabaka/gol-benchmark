@@ -117,7 +117,7 @@ gol_eval/
 │   └── plugins/           # Plugin system unit tests
 ├── scripts/               # Shell scripts for batch processing
 ├── configs/               # Benchmark configuration YAML files
-├── data/                  # External data (Conway's Life patterns)
+├── data/                  # (Removed — data co-located in src/plugins/*/data/)
 ├── docs/                  # Documentation and research reports
 └── results/               # Benchmark results (kept at root for easy access)
 ```
@@ -210,6 +210,12 @@ All response parsers follow the principle of searching from the **end** of the m
 - `strip_verification_tail(text)` — removes trailing verification/confirmation sections before end-first matching (v2.10.3)
 - `last_sentences(text, n)` — returns the last N sentences
 - `last_keyword_position(text, keywords)` — position of last keyword occurrence
+- `merge_keywords(keyword_dict, language)` — merge English + target language keyword lists (English always included as fallback)
+- `merge_patterns(pattern_dict, language)` — merge compiled regex pattern lists
+- `get_language(task_params)` — extract language from task_params (default `"en"`)
+- `build_word_to_int(language)` — multilingual number word→int map (EN + target language merged)
+- `build_answer_label_re(language)` — multilingual answer label regex alternation (`"answer|result|respuesta|resultado|..."`)
+- Shared multilingual dicts: `WORD_TO_INT`, `ANSWER_LABELS`, `YES_WORDS`, `NO_WORDS` — all 6 languages
 
 **Key exceptions where end-first does NOT apply:**
 
@@ -429,7 +435,7 @@ from src.plugins.base import (
     BenchmarkPlugin, TestCaseGenerator, ResponseParser, ResultEvaluator,
     TestCase, ParsedAnswer, EvaluationResult, ConfigField
 )
-from src.plugins.parse_utils import safe_enum, re_search_last, strip_verification_tail
+from src.plugins.parse_utils import safe_enum, re_search_last, strip_verification_tail, merge_keywords, get_language, build_word_to_int
 
 # Plugin-local prompt templates (inside each plugin's generator.py)
 from .prompts import TEMPLATES  # Each plugin defines its own
@@ -716,7 +722,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-03-31*
-*Version: 2.12.0*
-*Key additions: Web UI improvements (Jobs page, faceted filters on Results/TestSets, plugin descriptions from README, sampling params moved to Execute page) • Removed TUI and HTMX+Jinja2 interfaces — React SPA is now the sole UI, served at root (/) • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-04-01*
+*Version: 2.13.0*
+*Key additions: Full multilingual support — all 18 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), multilingual response parsing (13 parsers refactored with shared parse_utils utilities), confidence scoring standardized across all parsers, data relocated from data/ to src/plugins/*/data/ • Web UI improvements (Jobs page, faceted filters on Results/TestSets, plugin descriptions from README, sampling params moved to Execute page) • Removed TUI and HTMX+Jinja2 interfaces — React SPA is now the sole UI, served at root (/) • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
 *For questions or issues: Check [README.md](README.md) or create an issue*

@@ -1,0 +1,46 @@
+# Strawberry Benchmark — Lipogram Sentences (Spanish)
+# Format: sentence|avoided_letter|is_lipogram
+# Pipe-delimited. Lines starting with # are comments. Blank lines are ignored.
+#
+# is_lipogram=true: the sentence does NOT contain the avoided_letter
+# is_lipogram=false: the sentence DOES contain the avoided_letter (trap case)
+
+# --- TRUE LIPOGRAMS (letter genuinely absent) ---
+# Avoiding 'e'
+Un sol brilló con fulgor y calor bajo un ciprés diminuto.|e|true
+La luna lluminó todo con luz propia.|e|true
+Su hijo compró un libro y un cubo musical.|e|true
+# Avoiding 'a'
+El río oscuro fluye entre los viejos puentes del bosque.|a|true
+Tres perros se movieron lento por el frío del invierno.|a|true
+No quiero comer, prefiero dormir un poco.|a|true
+# Avoiding 'o'
+La niña fue feliz, sentía una gran libertad cada mañana.|o|true
+Venga usted después si puede, le esperan aquí.|o|true
+Las verduras bien frescas permiten una dieta integral.|o|true
+# Avoiding 's'
+El dibujo del pintor era muy rico y original.|s|true
+Poco a poco todo mejoró con el tiempo y la calma.|s|true
+# Avoiding 'i'
+Las letras del cartel eran rojas y muy claras.|i|true
+El buen mozo saltó el muro con un paso astuto.|i|true
+# Avoiding 'r'
+La silla del comité estaba vacía desde julio pasado.|r|true
+
+# --- FALSE LIPOGRAMS (letter IS present — trap cases) ---
+# Claim to avoid 'e' but contain it
+La luz brilló con fulgor mientras el sol reinaba.|e|false
+Un hilo de plata cruzó lentamente por el cielo.|e|false
+Su carro nuevo brilló bajo un resplandor dorado.|e|false
+# Claim to avoid 'a' but contain it
+El color oscuro del cielo brilló con una luz pálida.|a|false
+Tres perros muy viejos dormían junto al fuego más cálido.|a|false
+# Claim to avoid 'o' but contain it
+Las niñas fueron felices al ver la lluvia caer.|o|false
+Venga usted después si puede, le esperan afuera con todo listo.|o|false
+# Claim to avoid 's' but contain it
+El dibujo del pintor nos resultó muy rico.|s|false
+Todo mejoró despacio con el tiempo.|s|false
+# Claim to avoid 'i' but contain it
+Las letras del cartel brillaron con claridad.|i|false
+El mozo saltó el muro rápidamente sin dudar.|i|false

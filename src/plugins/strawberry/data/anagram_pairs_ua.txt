@@ -1,0 +1,57 @@
+# Strawberry Benchmark — Anagram Pairs (Ukrainian)
+# Format: word1,word2,is_anagram
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# True pairs: sorted(word1) == sorted(word2)
+# False pairs: near-misses that share many letters but differ
+
+# --- TRUE ANAGRAM PAIRS (short, 3 letters) ---
+кіт,тік,true
+сон,нос,true
+дар,рад,true
+сир,рис,true
+бар,раб,true
+мир,рим,true
+том,мот,true
+лак,кал,true
+тон,нот,true
+кат,так,true
+рів,вір,true
+дім,мід,true
+ніч,чін,true
+пил,лип,true
+сор,рос,true
+
+# --- TRUE ANAGRAM PAIRS (short, 4 letters) ---
+село,осел,true
+лоза,зола,true
+нора,рано,true
+липа,пила,true
+сила,лиса,true
+гора,рога,true
+мука,кума,true
+нота,тона,true
+
+# --- TRUE ANAGRAM PAIRS (medium, 5-6 letters) ---
+навар,варан,true
+весна,навес,true
+скала,ласка,true
+
+# --- FALSE (NEAR-MISS) PAIRS ---
+# Share many letters but are NOT anagrams
+день,тень,false
+вода,вона,false
+море,горе,false
+мова,нова,false
+двір,звір,false
+вітер,вечір,false
+зірка,гірка,false
+книга,нитка,false
+річка,нічка,false
+земля,зерна,false
+кінь,тінь,false
+хліб,біль,false
+поле,доле,false
+душа,каша,false
+роза,коза,false
+сніг,вниз,false

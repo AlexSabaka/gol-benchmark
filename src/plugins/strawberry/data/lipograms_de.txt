@@ -1,0 +1,49 @@
+# Strawberry Benchmark — Lipogram Sentences (German)
+# Format: sentence|avoided_letter|is_lipogram
+# Pipe-delimited. Lines starting with # are comments. Blank lines are ignored.
+#
+# is_lipogram=true: the sentence does NOT contain the avoided_letter
+# is_lipogram=false: the sentence DOES contain the avoided_letter (trap case)
+
+# --- TRUE LIPOGRAMS (letter genuinely absent) ---
+# Avoiding 'e'
+Das Boot tribt still im Wort und Bild auf uns zu.|e|true
+Hund und Katz sind wohl im Haus auf und davon.|e|true
+Sturm hat divy Wucht und blickt zur Flur.|e|true
+# Avoiding 'a'
+Die jungen Hunde spielten im Hof mit dem roten Stock.|a|true
+Viele kleine Steine liegen hier und dort verteilt.|a|true
+Peter muss gut werfen, um den Posten zu kriegen.|a|true
+# Avoiding 's'
+Die Frau im roten Kleid lief durch den Park.|s|true
+Am Himmel blitzte ein heller Donner.|s|true
+Der Regen hört nicht auf, leider.|s|true
+# Avoiding 'i'
+Der Baum war alt und groß, er stand fest.|i|true
+Er wollte nur essen, mehr hat er dazu noch zu tun.|i|true
+Am Morgen lag der Tau auf Gras und Busch.|i|true
+# Avoiding 'r'
+Das kleine Kind mag die alte Katze ganz besitzt.|r|true
+Ein blaues Heim bot Schutz und angenehme Behaglichkeit.|r|true
+# Avoiding 'n'
+Die alte Blume hat ihre Farbe total verfehlt.|n|true
+
+# --- FALSE LIPOGRAMS (letter IS present — trap cases) ---
+# Claim to avoid 'e' but contain it
+Das Boot trieb still im Wasser und Nebel auf uns zu.|e|false
+Hund und Katz sind wohl im Haus angekommen.|e|false
+Sturm hat große Wucht und braust durch die Flur.|e|false
+# Claim to avoid 'a' but contain it
+Die jungen Hunde spielten mit dem roten Ball am Hang.|a|false
+Viele kleine Steine lagen hier und dort verteilt.|a|false
+Peter muss tatsächlich gut werfen, um den Posten zu kriegen.|a|false
+# Claim to avoid 's' but contain it
+Die Frau im roten Kleid lief durch das Treppenhaus.|s|false
+Am Himmel blitzte es donnernd auf.|s|false
+# Claim to avoid 'i' but contain it
+Der Baum war alt und groß, er stand seit langem hier.|i|false
+Er wollte nur essen, doch eigentlich hatte er zu tun.|i|false
+Am Morgen lag der Tau auf Gras und Wiese.|i|false
+# Claim to avoid 'r' but contain it
+Das kleine Kind mag die große, treue Katze.|r|false
+Ein blaues Heim bot Schutz und beträchtlichen Komfort.|r|false

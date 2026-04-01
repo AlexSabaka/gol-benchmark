@@ -9,7 +9,51 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last, strip_verification_tail
+from src.plugins.parse_utils import (
+    re_search_last, strip_verification_tail,
+    merge_keywords, build_answer_label_re, get_language,
+)
+
+
+# ---------------------------------------------------------------------------
+# Multilingual stop words  (always merged with English at runtime)
+# ---------------------------------------------------------------------------
+
+_STOP_WORDS: Dict[str, set] = {
+    "en": {'the', 'a', 'an', 'on', 'in', 'at', 'to', 'of', 'for', 'is', 'be', 'was', 'were',
+           'been', 'being', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could',
+           'should', 'must', 'i', 'you', 'he', 'she', 'they', 'we', 'my', 'your',
+           'answer', 'location', 'place', 'position', 'where',
+           'now', 'currently', 'still', 'therefore', 'thus',
+           'yes', 'no', 'not', 'likely', 'probably', 'maybe'},
+    "es": {'el', 'la', 'los', 'las', 'un', 'una', 'en', 'de', 'por', 'es', 'está', 'fue',
+           'ser', 'haber', 'respuesta', 'ubicación', 'lugar', 'posición', 'dónde',
+           'ahora', 'actualmente', 'todavía', 'sí', 'no'},
+    "fr": {'le', 'la', 'les', 'un', 'une', 'dans', 'sur', 'de', 'pour', 'est', 'était',
+           'être', 'avoir', 'réponse', 'emplacement', 'lieu', 'position', 'où',
+           'maintenant', 'actuellement', 'encore', 'oui', 'non'},
+    "de": {'der', 'die', 'das', 'ein', 'eine', 'auf', 'in', 'an', 'zu', 'von', 'für',
+           'ist', 'war', 'sein', 'haben', 'antwort', 'ort', 'stelle', 'position', 'wo',
+           'jetzt', 'derzeit', 'noch', 'ja', 'nein'},
+    "zh": {'的', '在', '了', '是', '有', '这', '那', '个', '和', '与',
+           '答案', '位置', '地方', '现在', '目前', '是的', '不'},
+    "ua": {'в', 'у', 'на', 'до', 'з', 'за', 'є', 'був', 'була', 'бути', 'мати',
+           'відповідь', 'місце', 'розташування', 'позиція', 'де',
+           'зараз', 'наразі', 'все ще', 'так', 'ні'},
+}
+
+# ---------------------------------------------------------------------------
+# Multilingual location verbs  (merged with English when building patterns)
+# ---------------------------------------------------------------------------
+
+_LOCATION_VERBS: Dict[str, str] = {
+    "en": r"is|remains|stayed|fell|dropped|ended up|landed|rests|sitting|located|found|resting",
+    "es": r"está|permanece|quedó|cayó|se encuentra|ubicado|encontrado",
+    "fr": r"est|reste|resté|tombé|se trouve|situé|trouvé",
+    "de": r"ist|bleibt|blieb|fiel|befindet sich|liegt|gefunden",
+    "zh": r"在|留在|掉在|位于|放在|落在",
+    "ua": r"є|залишається|залишився|впав|знаходиться|розташований",
+}
 
 
 class ObjectTrackingResponseParser(ResponseParser):
@@ -25,7 +69,8 @@ class ObjectTrackingResponseParser(ResponseParser):
     """
 
     def __init__(self):
-        # Location synonyms for normalization
+        # Location synonyms for normalization (English — scenario locations
+        # are always English words like "counter", "table", "shelf")
         self.location_synonyms = {
             # Counter variations
             'countertop': 'counter',
@@ -55,18 +100,6 @@ class ObjectTrackingResponseParser(ResponseParser):
             'work desk': 'desk',
         }
 
-        # Words to ignore when extracting locations
-        self.stop_words = {
-            'the', 'a', 'an', 'is', 'on', 'in', 'at', 'to', 'it',
-            'and', 'or', 'but', 'so', 'if', 'as', 'of', 'for',
-            'be', 'was', 'were', 'been', 'being', 'have', 'has', 'had',
-            'do', 'does', 'did', 'will', 'would', 'could', 'should', 'must',
-            'i', 'you', 'he', 'she', 'they', 'we', 'my', 'your',
-            'answer', 'location', 'place', 'position', 'where',
-            'now', 'currently', 'still', 'therefore', 'thus',
-            'yes', 'no', 'not', 'likely', 'probably', 'maybe',
-        }
-
     def parse(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         """
         Parse model response to extract location answer.
@@ -86,6 +119,9 @@ class ObjectTrackingResponseParser(ResponseParser):
                 error='Empty response'
             )
 
+        lang = get_language(task_params)
+        stop_words = _STOP_WORDS["en"] | _STOP_WORDS.get(lang, set())
+
         response = response.strip()
         known_locations = self._get_known_locations(task_params)
         obj = task_params.get('object', 'object')
@@ -96,13 +132,13 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         # Try each strategy in order
         strategies = [
-            ('single_word', lambda: self._strategy_single_word(response)),
-            ('answer_prefix', lambda: self._strategy_answer_prefix(response)),
+            ('single_word', lambda: self._strategy_single_word(response, stop_words)),
+            ('answer_prefix', lambda: self._strategy_answer_prefix(response, lang, stop_words)),
             ('bold_keyword', lambda: self._strategy_bold_keyword(response, known_locations)),
             ('first_sentence_location', lambda: self._strategy_first_sentence_location(cleaned, known_locations)),
-            ('sentence_pattern', lambda: self._strategy_sentence_pattern(cleaned, obj)),
+            ('sentence_pattern', lambda: self._strategy_sentence_pattern(cleaned, obj, lang, stop_words)),
             ('location_keyword', lambda: self._strategy_location_keyword(cleaned, known_locations)),
-            ('last_word', lambda: self._strategy_last_word(cleaned)),
+            ('last_word', lambda: self._strategy_last_word(cleaned, stop_words)),
         ]
 
         for name, strategy_func in strategies:
@@ -128,7 +164,7 @@ class ObjectTrackingResponseParser(ResponseParser):
             error='All parsing strategies failed'
         )
 
-    def _strategy_single_word(self, response: str) -> Optional[str]:
+    def _strategy_single_word(self, response: str, stop_words: set) -> Optional[str]:
         """
         Extract answer if response is a single word.
 
@@ -142,7 +178,7 @@ class ObjectTrackingResponseParser(ResponseParser):
         words = clean.lower().split()
 
         # Filter out stop words
-        meaningful_words = [w for w in words if w not in self.stop_words and len(w) > 1]
+        meaningful_words = [w for w in words if w not in stop_words and len(w) > 1]
 
         if len(meaningful_words) == 1:
             return meaningful_words[0]
@@ -153,7 +189,7 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         return None
 
-    def _strategy_answer_prefix(self, response: str) -> Optional[str]:
+    def _strategy_answer_prefix(self, response: str, lang: str, stop_words: set) -> Optional[str]:
         """
         Look for "Answer: X" or similar patterns (last match — end-first).
 
@@ -162,10 +198,13 @@ class ObjectTrackingResponseParser(ResponseParser):
         - "The answer is counter"
         - "Location: table"
         - "It's on the counter"
+
+        Uses ``build_answer_label_re`` for multilingual label matching.
         """
+        answer_labels = build_answer_label_re(lang)
         patterns = [
-            r'(?:answer|location|place)[:\s]+(\w+)',
-            r'the answer is[:\s]+(\w+)',
+            rf'(?:{answer_labels}|location|place)[:\s]+(\w+)',
+            rf'the (?:{answer_labels}) is[:\s]+(\w+)',
             r'(?:it\'s|it is|that\'s|that is) (?:on|in|at) (?:the )?(\w+)',
             r'(?:still|now|currently) (?:on|in|at) (?:the )?(\w+)',
             r'^(?:on|in|at) (?:the )?(\w+)',  # Starts with preposition
@@ -176,7 +215,7 @@ class ObjectTrackingResponseParser(ResponseParser):
             match = re_search_last(pattern, response_lower)
             if match:
                 word = match.group(1)
-                if word not in self.stop_words:
+                if word not in stop_words:
                     return word
 
         return None
@@ -235,7 +274,7 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         return None
 
-    def _strategy_sentence_pattern(self, response: str, obj: str) -> Optional[str]:
+    def _strategy_sentence_pattern(self, response: str, obj: str, lang: str, stop_words: set) -> Optional[str]:
         """
         Extract location from sentence patterns about the object (last match — end-first).
 
@@ -243,15 +282,20 @@ class ObjectTrackingResponseParser(ResponseParser):
         - "The grape is on the counter"
         - "The grape remains on the counter"
         - "The grape fell onto the counter"
+
+        Verb alternation is merged with target-language verbs for multilingual support.
         """
         obj_pattern = re.escape(obj.lower())
 
+        # Merge English verbs with target-language verbs
+        verbs_en = _LOCATION_VERBS["en"]
+        verbs_local = _LOCATION_VERBS.get(lang, "")
+        verbs = verbs_en if not verbs_local or lang == "en" else f"{verbs_en}|{verbs_local}"
+
         patterns = [
-            rf'{obj_pattern} is (?:on|in|at|sitting on) (?:the )?(\w+)',
-            rf'{obj_pattern} (?:remains|stayed|fell|dropped) (?:on|onto|to|at) (?:the )?(\w+)',
+            rf'{obj_pattern} (?:{verbs}) (?:on|in|at|sitting on|onto|to) (?:the )?(\w+)',
             rf'{obj_pattern} (?:would be|will be|should be|must be) (?:on|in|at) (?:the )?(\w+)',
-            rf'{obj_pattern} (?:ended up|landed|rests) (?:on|in|at) (?:the )?(\w+)',
-            r'(?:located|found|resting|sitting) (?:on|in|at) (?:the )?(\w+)',
+            rf'(?:{verbs}) (?:on|in|at) (?:the )?(\w+)',
             r'is (?:on|in|at) (?:the )?(\w+)(?:\.|$)',
         ]
 
@@ -260,7 +304,7 @@ class ObjectTrackingResponseParser(ResponseParser):
             match = re_search_last(pattern, response_lower)
             if match:
                 word = match.group(1)
-                if word not in self.stop_words:
+                if word not in stop_words:
                     return word
 
         return None
@@ -304,7 +348,7 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         return best_location
 
-    def _strategy_last_word(self, response: str) -> Optional[str]:
+    def _strategy_last_word(self, response: str, stop_words: set) -> Optional[str]:
         """
         Extract last meaningful word as fallback.
 
@@ -317,7 +361,7 @@ class ObjectTrackingResponseParser(ResponseParser):
         words = clean.lower().split()
 
         # Filter and get last meaningful word
-        meaningful_words = [w for w in words if w not in self.stop_words and len(w) > 2]
+        meaningful_words = [w for w in words if w not in stop_words and len(w) > 2]
 
         if meaningful_words:
             return meaningful_words[-1]

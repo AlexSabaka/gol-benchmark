@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.12.0** | Last updated: 2026-03-31
+> **Version 2.13.0** | Last updated: 2026-04-01
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -237,11 +237,9 @@ The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt
 
 | Coverage Level | Plugins |
 |---------------|---------|
-| **6 languages** (EN/ES/FR/DE/ZH/UA) | game_of_life, cellular_automata_1d, ascii_shapes, strawberry, measure_comparison, time_arithmetic |
-| **3 languages** (EN/ES/FR) | linda_fallacy |
-| **EN only** | arithmetic, grid_tasks, carwash, inverted_cup, misquote, false_premise, family_relations, object_tracking, sally_anne, encoding_cipher, symbol_arithmetic |
+| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + parsing | game_of_life, cellular_automata_1d, ascii_shapes, strawberry, measure_comparison, time_arithmetic, carwash, inverted_cup, object_tracking, sally_anne, misquote, false_premise, family_relations, encoding_cipher, symbol_arithmetic, arithmetic, linda_fallacy, grid_tasks |
 
-Adding further translations is a matter of adding entries to each plugin's `prompts.py` — no pipeline changes needed.
+All 18 plugins now have full 6-language support for prompts. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
 
 ---
 
@@ -285,7 +283,23 @@ sentences = last_sentences(response, n=3)
 
 # Position of last keyword occurrence
 pos = last_keyword_position(response, ["answer", "result", "therefore"])
+
+# Multilingual utilities
+from src.plugins.parse_utils import (
+    merge_keywords, merge_patterns, get_language,
+    build_word_to_int, build_answer_label_re,
+    WORD_TO_INT, ANSWER_LABELS, YES_WORDS, NO_WORDS,
+)
 ```
+
+Multilingual helpers in `parse_utils`:
+
+- `merge_keywords(keyword_dict, language)` — merge English + target language keyword lists (English always included as fallback)
+- `merge_patterns(pattern_dict, language)` — like `merge_keywords` but for compiled regex patterns
+- `get_language(task_params)` — extract language code from task_params, defaulting to `"en"`
+- `build_word_to_int(language)` — merge English + target language number word→int maps
+- `build_answer_label_re(language)` — build regex alternation of multilingual answer labels ("answer|result|respuesta|resultado|...")
+- Shared dicts: `WORD_TO_INT`, `ANSWER_LABELS`, `YES_WORDS`, `NO_WORDS` — all keyed by language code with entries for EN/ES/FR/DE/ZH/UA
 
 ### Where It Applies
 

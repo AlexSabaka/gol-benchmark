@@ -1,0 +1,89 @@
+# Strawberry Benchmark — Anagram Pairs (English)
+# Format: word1,word2,is_anagram
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# True pairs: sorted(word1) == sorted(word2)
+# False pairs: near-misses that share many letters but differ
+
+# --- TRUE ANAGRAM PAIRS (short) ---
+listen,silent,true
+earth,heart,true
+state,taste,true
+night,thing,true
+angle,glean,true
+below,elbow,true
+study,dusty,true
+relay,early,true
+fired,fried,true
+share,shear,true
+peach,cheap,true
+meats,steam,true
+parse,spare,true
+notes,stone,true
+tales,steal,true
+alert,later,true
+races,cares,true
+rated,trade,true
+lives,veils,true
+stare,tears,true
+panel,plane,true
+diary,dairy,true
+snore,senor,true
+lemon,melon,true
+pears,reaps,true
+salon,loans,true
+cater,trace,true
+pines,spine,true
+ocean,canoe,true
+shore,horse,true
+arise,raise,true
+cause,sauce,true
+plate,pleat,true
+flair,frail,true
+siren,resin,true
+leapt,petal,true
+charm,march,true
+
+# --- TRUE ANAGRAM PAIRS (medium/long) ---
+danger,garden,true
+master,stream,true
+detail,tailed,true
+observe,obverse,true
+kitchen,thicken,true
+replays,players,true
+section,notices,true
+triangle,integral,true
+disease,seaside,true
+
+# --- FALSE (NEAR-MISS) PAIRS ---
+# Share many letters but are NOT anagrams
+trail,train,false
+angel,anger,false
+blown,brown,false
+flame,frame,false
+mount,mourn,false
+bloom,broom,false
+reign,tiger,false
+loved,delve,false
+dream,dread,false
+grasp,grabs,false
+demon,lemon,false
+light,sight,false
+place,space,false
+pitch,witch,false
+blank,black,false
+drink,brink,false
+sweet,tweet,false
+smart,start,false
+hound,round,false
+bring,wring,false
+float,bloat,false
+gleam,medal,false
+crisp,prism,false
+plumb,slump,false
+shore,store,false
+trace,grace,false
+clasp,clash,false
+peach,beach,false
+moist,hoist,false
+stain,saint,true

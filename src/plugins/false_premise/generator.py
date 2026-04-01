@@ -30,7 +30,7 @@ from src.plugins.false_premise.prompts import USER_PROMPT_TEMPLATES
 # Data directory
 # ---------------------------------------------------------------------------
 
-_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "false_premise"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
 
 # Module-level caches (loaded once)
 _CHEM_INTERACTIONS: Optional[List[Dict]] = None

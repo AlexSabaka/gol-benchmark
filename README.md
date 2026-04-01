@@ -270,7 +270,7 @@ All analysis reports and visualizations have been organized in the `docs/` direc
 # Languages
 --prompt-language en|es|fr|de|zh|ua
 
-# Cell markers (GoL only — NEVER use emoji!)
+# Cell markers (GoL only — numeric recommended for best accuracy)
 --live-dead-cell-markers "1,0"
 
 # Disable chain-of-thought (recommended for structured tasks)
@@ -315,14 +315,15 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Object tracking, time arithmetic, inverted cup, encoding cipher parser fixes (v2.10.6, 28 false negatives fixed — first-bold/first-sentence strategies, validity yes/no detection, tilt/tip patterns, Unicode whitespace normalization)
 - [x] False premise parser overhaul (v2.10.7, 61 false negatives fixed — smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, expanded refusal/impossibility patterns)
 - [x] Web UI improvements: Jobs page, faceted filters, plugin descriptions from README, Configure/Execute page split (v2.12.0)
+- [x] Full multilingual support: all 18 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
 
 ### 🔄 In Progress
 
-- [ ] Cross-lingual/cross-cultural generation problems
+- [x] Cross-lingual/cross-cultural generation problems
 
 ### 📋 Planned
 
-- [ ] Multi-language validation (French, Spanish, German, Chinese, Ukrainian)
+- [x] Multi-language validation (French, Spanish, German, Chinese, Ukrainian)
 - [ ] More languages (Japanese, Arabic, Hindi)
 - [ ] Cross-lingual transfer tests
 - [ ] Fine-grained system prompt optimization

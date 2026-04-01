@@ -1,0 +1,55 @@
+# Strawberry Benchmark — Anagram Pairs (Spanish)
+# Format: word1,word2,is_anagram
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# True pairs: sorted(word1) == sorted(word2)
+# False pairs: near-misses that share many letters but differ
+
+# --- TRUE ANAGRAM PAIRS (short, 3-4 letters) ---
+roma,amor,true
+sala,alas,true
+cosa,ocas,true
+ramo,mora,true
+arco,orca,true
+losa,olas,true
+caro,roca,true
+risa,iras,true
+mesa,ames,true
+ropa,paro,true
+musa,suma,true
+lata,alta,true
+nace,cena,true
+raso,osar,true
+aro,ora,true
+res,ser,true
+sol,los,true
+son,nos,true
+
+# --- TRUE ANAGRAM PAIRS (medium, 5-7 letters) ---
+carne,nacer,true
+acres,ceras,true
+cesta,secta,true
+presa,peras,true
+mantel,mental,true
+fresco,cofres,true
+parto,trapo,true
+moral,molar,true
+
+# --- FALSE (NEAR-MISS) PAIRS ---
+# Share many letters but are NOT anagrams
+gato,dato,false
+luna,lana,false
+perro,perra,false
+monte,monje,false
+viento,venta,false
+fuente,frente,false
+pluma,palma,false
+calle,clave,false
+noche,niche,false
+cielo,hielo,false
+brisa,prisa,false
+tigre,trigo,false
+silla,villa,false
+llama,lama,false
+sierra,sirena,false
+bello,bueno,false

@@ -10,6 +10,7 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from ..base import TestCaseGenerator, TestCase, ConfigField
 from .scenario_builder import SallyAnneScenarioBuilder
+from .prompts import USER_PROMPT_TEMPLATES
 
 
 class SallyAnneTestCaseGenerator(TestCaseGenerator):
@@ -129,9 +130,20 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
         # Build narrative and question
         narrative = self.scenario_builder.build_narrative(scenario)
         question = self.scenario_builder.build_question(scenario)
-        
-        # Combine into prompt
-        prompt = f"{narrative}\n\n{question}"
+
+        # Build prompts using multilingual templates
+        user_style_str = prompt_config.get('user_style', 'casual')
+        system_style_str = prompt_config.get('system_style', 'analytical')
+        language_str = prompt_config.get('language', 'en')
+
+        user_prompt, system_prompt, full_prompt = self._build_prompts(
+            USER_PROMPT_TEMPLATES,
+            language=language_str,
+            user_style=user_style_str,
+            system_style=system_style_str,
+            narrative=narrative,
+            question=question,
+        )
         
         # Expected answer is the belief location (container_a)
         expected_answer = scenario['correct_answer']
@@ -161,23 +173,20 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
             task_params['observer'] = scenario['observer']['name']
             task_params['observer_gender'] = scenario['observer']['gender']
         
-        system_style_str = prompt_config.get('system_style', '')
-        language_str = prompt_config.get('language', 'en')
-        system_prompt = self._get_system_prompt(system_style_str, language_str)
-
         return TestCase(
             test_id=test_id,
             task_type='sally_anne',
             config_name=config_name,
             prompts={
                 'system': system_prompt,
-                'user': prompt,
-                'full': f"{system_prompt}\n\n{prompt}" if system_prompt else prompt,
+                'user': user_prompt,
+                'full': full_prompt,
             },
             task_params=task_params,
             prompt_metadata={
-                'user_style': prompt_config.get('user_style', ''),
-                'system_style': prompt_config.get('system_style', ''),
+                'user_style': user_style_str,
+                'system_style': system_style_str,
+                'language': language_str,
             },
             generation_metadata={
                 'generator_version': '1.0.0',

@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import get_language
 
 
 class LindaResponseParser(ResponseParser):
@@ -33,23 +34,26 @@ class LindaResponseParser(ResponseParser):
         Returns:
             ParsedAnswer with extracted rankings dict or error
         """
+        lang = get_language(task_params)
+
         if not response:
             return ParsedAnswer(
                 value={'rankings': [], 'parse_error': 'Empty response'},
                 raw_response=response or "",
                 parse_strategy='failed',
+                confidence=0.1,
                 error='Empty response from model'
             )
 
-        # Try each parsing strategy in order
+        # Try each parsing strategy in order (with confidence scores)
         strategies = [
-            ('explicit_ranking_section', self._strategy_explicit_ranking),
-            ('numbered_list_fallback', self._strategy_numbered_list),
-            ('probability_keyword', self._strategy_probability_keywords),
-            ('sentence_extraction', self._strategy_sentence_extraction),
+            ('explicit_ranking_section', self._strategy_explicit_ranking, 0.90),
+            ('numbered_list_fallback', self._strategy_numbered_list, 0.80),
+            ('probability_keyword', self._strategy_probability_keywords, 0.70),
+            ('sentence_extraction', self._strategy_sentence_extraction, 0.55),
         ]
 
-        for name, strategy_func in strategies:
+        for name, strategy_func, confidence in strategies:
             try:
                 rankings = strategy_func(response)
                 if rankings and len(rankings) >= 6:
@@ -63,7 +67,8 @@ class LindaResponseParser(ResponseParser):
                                 'parse_error': None
                             },
                             raw_response=response,
-                            parse_strategy=name
+                            parse_strategy=name,
+                            confidence=confidence
                         )
             except Exception:
                 continue
@@ -73,6 +78,7 @@ class LindaResponseParser(ResponseParser):
             value={'rankings': [], 'parse_error': 'No rankings found'},
             raw_response=response,
             parse_strategy='failed',
+            confidence=0.1,
             error='All parsing strategies failed'
         )
 
@@ -124,8 +130,17 @@ class LindaResponseParser(ResponseParser):
 
     def _strategy_explicit_ranking(self, response: str) -> List[str]:
         """Strategy 1: Look for explicit ranking sections with headers."""
-        ranking_keywords = ['RANKING', 'CLASIFICACIÓN', 'CLASSEMENT', 'RANKING:', 'CLASIFICACIÓN:', 'CLASSEMENT:']
-        reasoning_keywords = ['REASONING', 'RAZONAMIENTO', 'RAISONNEMENT']
+        ranking_keywords = [
+            'RANKING', 'CLASIFICACIÓN', 'CLASSEMENT',
+            'RANKING:', 'CLASIFICACIÓN:', 'CLASSEMENT:',
+            'RANGFOLGE', 'RANGFOLGE:',
+            '排名', '排名:',
+            'РЕЙТИНГ', 'РЕЙТИНГ:',
+        ]
+        reasoning_keywords = [
+            'REASONING', 'RAZONAMIENTO', 'RAISONNEMENT',
+            'BEGRÜNDUNG', '推理', 'ОБҐРУНТУВАННЯ',
+        ]
 
         ranking_pattern = f"(?:{'|'.join(ranking_keywords)})\\s*(.*?)(?=(?:{'|'.join(reasoning_keywords)}):|$)"
         ranking_match = re.search(ranking_pattern, response, re.DOTALL | re.IGNORECASE)
@@ -170,7 +185,10 @@ class LindaResponseParser(ResponseParser):
         prob_keywords = [
             'most probable', 'least probable',
             'más probable', 'menos probable',
-            'plus probable', 'moins probable'
+            'plus probable', 'moins probable',
+            'wahrscheinlichste', 'unwahrscheinlichste', 'am wahrscheinlichsten',
+            '最可能', '最不可能',
+            'найбільш ймовірно', 'найменш ймовірно',
         ]
 
         for line in lines:
@@ -186,7 +204,12 @@ class LindaResponseParser(ResponseParser):
         rankings = []
         seen_items = set()
 
-        statement_keywords = ['is a', 'works', 'trabaja', 'es ', 'est ', 'travaille']
+        statement_keywords = [
+            'is a', 'works', 'trabaja', 'es ', 'est ', 'travaille',
+            'ist ein', 'arbeitet',
+            '是', '工作',
+            'є', 'працює',
+        ]
 
         for sentence in sentences:
             sentence = sentence.strip()

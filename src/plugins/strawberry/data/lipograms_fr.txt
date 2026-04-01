@@ -1,0 +1,47 @@
+# Strawberry Benchmark — Lipogram Sentences (French)
+# Format: sentence|avoided_letter|is_lipogram
+# Pipe-delimited. Lines starting with # are comments. Blank lines are ignored.
+#
+# is_lipogram=true: the sentence does NOT contain the avoided_letter
+# is_lipogram=false: the sentence DOES contain the avoided_letter (trap case)
+# Note: Inspired by "La Disparition" by Georges Perec (novel written without 'e').
+
+# --- TRUE LIPOGRAMS (letter genuinely absent) ---
+# Avoiding 'e'
+Un long mur gris bordait la cour du voisin.|e|true
+Il prit son bain puis mit un col blanchissant.|e|true
+Bruno alla au marché, il voulut du poisson cru.|e|true
+La nuit tombait sur un grand bourg tranquil.|e|true
+Un gros chat dormait au coin du long mur gris.|e|true
+# Avoiding 'a'
+Un gros lion dort sous le murier.|a|true
+Mon fils joue du violon tous les soirs.|a|true
+Le vieux pont fut reconstruit pour les voitures.|a|true
+# Avoiding 's'
+Le roi ne peut en aucun moment fuir.|s|true
+Par la fenêtre ouverte on voyait le jardin.|s|true
+# Avoiding 'i'
+Le bras fort du garçon a coupé le bûcheron.|i|true
+Une fleur poussa le long du vaste champ doré.|i|true
+# Avoiding 'r'
+Elle possède un chapeau jaune magnifique.|r|true
+La vie est belle quand on le sait.|r|true
+
+# --- FALSE LIPOGRAMS (letter IS present — trap cases) ---
+# Claim to avoid 'e' but contain it
+Un long mur bordait la cour de son voisin.|e|false
+Il prit son bain et mit un col propre.|e|false
+Bruno alla au marché pour acheter du poisson.|e|false
+# Claim to avoid 'a' but contain it
+Mon fils joue du violon chaque soir.|a|false
+Le vieux pont fut construit avec de la pierre.|a|false
+Un gros lion dort tranquillement dans la savane.|a|false
+# Claim to avoid 's' but contain it
+Le roi ne pouvait pas fuir son destin.|s|false
+Par les fenêtres ouvertes on voyait le jardin.|s|false
+# Claim to avoid 'i' but contain it
+Le bras fort du garçon coupa la ficelle.|i|false
+Une fleur poussait le long du vaste champ doré.|i|false
+# Claim to avoid 'r' but contain it
+Elle avait un chapeau jaune remarquable.|r|false
+La nature est belle quand on la contemple.|r|false

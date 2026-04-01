@@ -1,0 +1,54 @@
+# Strawberry Benchmark — Lipogram Sentences (Ukrainian)
+# Format: sentence|avoided_letter|is_lipogram
+# Pipe-delimited. Lines starting with # are comments. Blank lines are ignored.
+#
+# is_lipogram=true: the sentence does NOT contain the avoided_letter
+# is_lipogram=false: the sentence DOES contain the avoided_letter (trap case)
+
+# --- TRUE LIPOGRAMS (letter genuinely absent) ---
+# Avoiding 'о'
+Кішка спить на підвіканні між квітів.|о|true
+Шість куриць їли зерна при світлі.|о|true
+Цей рік був дуже теплий.|о|true
+# Avoiding 'а'
+Людей об'єднує спільне прогнення до світлого життя.|а|true
+Цей мить був повний тиші.|а|true
+Все буде добре у цьому світі.|а|true
+# Avoiding 'и'
+Ласка та добро є скрізь на цьому шляху.|и|true
+Сон солодко вкутає тебе.|и|true
+На столі лежав хліб та молоко.|и|true
+# Avoiding 'е'
+Наш кіт спав під стільцям на килимку.|е|true
+Той хлопчик сів за парту і мовчав.|е|true
+Мій друг пішов на роботу рано.|е|true
+# Avoiding 'і'
+Старе дерево стояло на краю поля.|і|true
+Сонце засяяло на небо золотом.|і|true
+# Avoiding 'н'
+Добре було тут завжди.|н|true
+Кіт спав під столом тихо і мовчки.|н|true
+# Avoiding 'т'
+Вже було пізно і всі пішли.|т|true
+Він пішов і вже не повернувся.|т|true
+
+# --- FALSE LIPOGRAMS (letter IS present — trap cases) ---
+# Claim to avoid 'о' but contain it
+Кішка спить на підвіконні між квітів.|о|false
+Шість курок їли зерна при світлі.|о|false
+Цей рік вийшов дуже теплий.|о|false
+# Claim to avoid 'а' but contain it
+Людей об'єднує спільне прагнення до світла.|а|false
+Все має бути добре.|а|false
+Цей мить був повний спокою та тиші.|а|false
+# Claim to avoid 'и' but contain it
+Ласка та добро є скрізь на цьому шляху щасливому.|и|false
+Сон солодко вкутає тебе цієї зимової ночі.|и|false
+На столі лежали хліб та молоко.|и|false
+# Claim to avoid 'е' but contain it
+Наш кіт спав під стільцем на килимку.|е|false
+Той хлопчик сів за парту і мовчав тихесенько.|е|false
+Мій друг пішов рано, не сказав нічого.|е|false
+# Claim to avoid 'і' but contain it
+Голос матері звучав тепло та ніжно.|і|false
+Після довгого дощу сонце засяяло.|і|false

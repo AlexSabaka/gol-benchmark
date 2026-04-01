@@ -2,6 +2,42 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.13.0] - April 1, 2026
+
+### Full Multilingual Support (all 18 plugins)
+
+All benchmark plugins now support 6 languages (EN, ES, FR, DE, ZH, UA) across prompts, data, and response parsing.
+
+#### Phase 1: Multilingual Prompt Templates
+- **11 plugins upgraded** from English-only to 6-language prompt support: symbol_arithmetic, arithmetic, family_relations, grid_tasks, inverted_cup, object_tracking, misquote, false_premise, encoding_cipher, sally_anne (new prompts.py + generator refactored to `_build_prompts()`), linda_fallacy (added DE/ZH/UA to existing EN/ES/FR)
+- Encoding cipher: ROT/Morse subtasks restricted to EN+UA only (other languages forced to Base64)
+
+#### Phase 2: Data Relocation + Multilingual Data
+- **Moved data to plugins** — relocated `data/` subdirectories into respective plugin source dirs (`src/plugins/*/data/`); updated all `_DATA_DIR` path references in 4 plugins (encoding_cipher, strawberry, false_premise, game_of_life) + `generate_testset.py` + `TestGenerator.py`
+- **Encoding cipher** — language-aware word loading (`words_en.txt` + `words_ua.txt`); generator updated with `_load_words(language)` fallback
+- **Strawberry** — 20 new multilingual data files: `words_{lang}.txt` (ES/FR/DE/UA), `anagram_pairs_{lang}.txt`, `pangrams_{lang}.txt`, `lipograms_{lang}.txt`; all 4 loaders accept language parameter with English fallback
+- false_premise and game_of_life data is language-agnostic (scientific/mathematical) — no multilingual variants needed
+
+#### Phase 3: Multilingual Parser Refactoring + Confidence Scoring
+- **Shared utilities** (`parse_utils.py`) — added `merge_keywords()`, `merge_patterns()`, `get_language()`, `build_word_to_int()`, `build_answer_label_re()`, plus shared `WORD_TO_INT`, `ANSWER_LABELS`, `YES_WORDS`, `NO_WORDS` dicts for all 6 languages
+- **13 parsers refactored** for multilingual response parsing:
+  - family_relations — multilingual number words via shared `build_word_to_int()`
+  - grid_tasks — multilingual answer labels
+  - ascii_shapes — **added confidence scores** (was returning 0.0) + multilingual boolean/dimension words
+  - linda_fallacy — **added confidence scores** + DE/ZH/UA ranking headers and probability keywords
+  - encoding_cipher — multilingual refusal patterns + answer labels
+  - strawberry — shared multilingual number words + yes/no words from parse_utils
+  - misquote — multilingual Q1/Q2 attribution + agreement/disagreement keywords (6 languages)
+  - inverted_cup — multilingual flip/wrong patterns (6 languages)
+  - sally_anne — multilingual look/search patterns + context keywords
+  - object_tracking — multilingual stop words + location verb patterns
+  - carwash — multilingual drive/walk keywords + conditional/negation/dismissive patterns (6 languages)
+  - false_premise — multilingual refusal/compliance/impossibility/danger/negation patterns (530→967 lines, 6 languages)
+  - measure_comparison — completed multilingual unit names, comparative adjectives, equal/incomparable keywords
+- **All parsers** now extract language from `task_params` via `get_language()` and use `merge_keywords()` to combine English (always included as fallback) with target language keywords
+- **Confidence scoring standardized** — all parsers follow consistent scale: boxed=0.95, bold=0.90, label=0.85, pattern=0.80, keyword=0.70, fallback=0.50, error=0.1
+- **Zero regressions** — 299 tests passed throughout all 3 phases (14 pre-existing failures unchanged)
+
 ## [2.12.0] - March 31, 2026
 
 ### Web UI Improvements

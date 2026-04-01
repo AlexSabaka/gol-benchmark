@@ -313,7 +313,7 @@ Tests validate 3-stage pipeline, config serialization, parsing enhancements, and
 - **Visualization**: `matplotlib`, `seaborn` for enhanced charts (auto-installed)
 
 ### **Data Files**
-- Pattern files in `conways_life/known_patterns/` (.cells, .rle formats) for Game of Life
+- Plugin data files co-located in `src/plugins/<task>/data/` (e.g., Conway's Life patterns in `src/plugins/game_of_life/data/known_patterns/`, strawberry word lists in `src/plugins/strawberry/data/`)
 - Results and visualizations output to `results*/` and `docs/images/`
 
 ## Critical Fixes & Known Issues (v2.2.0)
@@ -401,7 +401,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.12.0 (March 31, 2026)
+**Version**: 2.13.0 (April 1, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
@@ -413,3 +413,5 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 - Remote Ollama support (`--ollama-host`)
 - Token counting throughout pipeline
 - HTML reports with collapsible thinking blocks and consistent value formatting
+- Full multilingual support: all 18 plugins have 6-language prompts, multilingual data, and multilingual response parsing
+- Shared parse_utils multilingual utilities (merge_keywords, build_word_to_int, YES_WORDS/NO_WORDS dicts)

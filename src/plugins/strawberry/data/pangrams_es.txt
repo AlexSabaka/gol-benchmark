@@ -1,0 +1,28 @@
+# Strawberry Benchmark — Pangram Sentences (Spanish)
+# Format: sentence|is_pangram|missing_letters
+# Pipe-delimited (sentences may contain commas).
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# is_pangram: true if every letter a-z appears at least once
+# missing_letters: comma-separated letters absent from near-pangrams (empty for true pangrams)
+# Note: Spanish has ñ but for pangram purposes we check the 26 standard a-z letters.
+# Accented vowels (á,é,í,ó,ú,ü) count as their base letter.
+
+# --- TRUE PANGRAMS ---
+El veloz murciélago hindú comía feliz cardillo y kiwi. La cigüeña tocaba el saxofón detrás del palenque de paja.|true|
+Jovencillo emponzoñado de whisky: qué figurota exhibe.|true|
+Whisky bueno: excitad mi frágil pequeña vejez.|true|
+Fabio me exige, sin tapujos, que añada cerveza al whisky.|true|
+La cigüeña tocaba cada vez mejor el saxofón y el búho pedía kiwi y queso.|true|
+El pingüino Wenceslao hizo kilómetros bajo exhaustiva lluvia y frío, ¿quién diría?|true|
+Benjamín pidió una bebida de kiwi y fresa. Noé, sin vergüenza, la más exquisita champaña del menú.|true|
+Aquel juglar explicaba muy bien que zafiros hechos valen poco y deben kitar del whisky.|true|
+
+# --- NEAR-PANGRAMS (missing 1-3 letters) ---
+El veloz murciélago comía feliz cardillo y piña. La cigüeña tocaba el saxofón detrás del palenque de paja.|false|h,k,w
+La cigüeña tocaba cada vez mejor el saxofón y el búho pedía queso fresco.|false|k,w
+El pingüino hizo kilómetros bajo lluvia y frío, cansado de esperar algo bueno.|false|q,w,x
+Ese juglar contaba muy bien que zafiros de verdad valen poco.|false|h,k,w,x
+Jovencillo emponzoñado: qué figurota tiene al exhibir su gran talento.|false|k,w,y
+Ese zagal joven exhibía hermoso cutis, fino porte y un buen licor de marca.|false|k,q,w
+El jefe buscó el whisky muy frío de aquel pequeño bar extraviado.|false|g,z

@@ -1,0 +1,22 @@
+# Strawberry Benchmark — Pangram Sentences (Ukrainian)
+# Format: sentence|is_pangram|missing_letters
+# Pipe-delimited (sentences may contain commas).
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# is_pangram: true if every letter of the Ukrainian alphabet appears at least once
+# Ukrainian alphabet (33 letters): а,б,в,г,ґ,д,е,є,ж,з,и,і,ї,й,к,л,м,н,о,п,р,с,т,у,ф,х,ц,ч,ш,щ,ь,ю,я
+# missing_letters: comma-separated letters absent from near-pangrams (empty for true pangrams)
+
+# --- TRUE PANGRAMS ---
+Чуєш їх, бачиш, щурячий бог ґедзь, п'є джус юхти цілющої хвощієвки з ємністю, а ті фініки.|true|
+Щурячий бог ґедзь їсть фініки, п'є джус юхти цілющої хвощієвки з ємністю, а шафран.|true|
+Гей, хлопче, підкажи-но, де тут цілющий ґедзь знайшов жменю фініків, п'є юхту хвощієвки з ємністю, а щурячий бог їсть.|true|
+Щурячий бог ґедзь п'є джус юхти цілющої хвощієвки з ємністю, їсть фініки та шафран.|true|
+Їжачок ґвалтує: п'є бджолиний хміль, цілющий фосфор з'ївши ще юшку, а щурячий бог шафран.|true|
+
+# --- NEAR-PANGRAMS (missing 1-3 letters) ---
+Щурячий бог їсть фініки, п'є джус юхти цілющої хвощієвки з ємністю.|false|а,е,ш,ґ
+Підчіпляй ґедзь, бо він їсть фініки та ще п'є джус юхти цілющої хвощієвки з ємністю.|false|г,р,ш
+Їжак ґвалтує цілющий фосфор, п'є бджолиний хміль з'ївши ще юшку.|false|г,ч,я
+Чуєш їх, бачиш, щурячий бог п'є джус юхти цілющої хвощівки з ємністю, а ті фініки.|false|е,ь,ґ
+Жебракують філософи: щось гґринджоли, ієрогліф, цілющій хвощ, юність, єдність.|false|з,м,п,ч,ш,я,ї

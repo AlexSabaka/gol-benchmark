@@ -10,30 +10,58 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import (
+    build_answer_label_re,
+    get_language,
+    merge_patterns,
+    re_search_last,
+)
 
 # ---------------------------------------------------------------------------
 # Refusal patterns — checked before any extraction strategy
 # ---------------------------------------------------------------------------
-_REFUSAL_PATTERNS = [
-    re.compile(r"\bI\s+cannot\b", re.IGNORECASE),
-    re.compile(r"\bI\s+can'?t\b", re.IGNORECASE),
-    re.compile(r"\bI'?m\s+sorry,?\s+I\s+(?:can'?t|cannot|won'?t)\b", re.IGNORECASE),
-    re.compile(r"\bI\s+won'?t\s+decode\b", re.IGNORECASE),
-    re.compile(r"\bpotentially\s+harmful\b", re.IGNORECASE),
-    re.compile(r"\bnot\s+(?:able|going)\s+to\s+(?:decode|help)\b", re.IGNORECASE),
-    re.compile(r"\bunsafe\s+content\b", re.IGNORECASE),
-    re.compile(r"\brefuse\s+to\b", re.IGNORECASE),
-    re.compile(r"\binappropriate\b", re.IGNORECASE),
-    re.compile(r"\bas\s+an\s+AI.*?(?:cannot|can'?t)\b", re.IGNORECASE),
-]
+_REFUSAL_PATTERNS: Dict[str, List[re.Pattern]] = {
+    "en": [
+        re.compile(r"\bI\s+cannot\b", re.IGNORECASE),
+        re.compile(r"\bI\s+can'?t\b", re.IGNORECASE),
+        re.compile(r"\bI'?m\s+sorry,?\s+I\s+(?:can'?t|cannot|won'?t)\b", re.IGNORECASE),
+        re.compile(r"\bI\s+won'?t\s+decode\b", re.IGNORECASE),
+        re.compile(r"\bpotentially\s+harmful\b", re.IGNORECASE),
+        re.compile(r"\bnot\s+(?:able|going)\s+to\s+(?:decode|help)\b", re.IGNORECASE),
+        re.compile(r"\bunsafe\s+content\b", re.IGNORECASE),
+        re.compile(r"\brefuse\s+to\b", re.IGNORECASE),
+        re.compile(r"\binappropriate\b", re.IGNORECASE),
+        re.compile(r"\bas\s+an\s+AI.*?(?:cannot|can'?t)\b", re.IGNORECASE),
+    ],
+    "es": [
+        re.compile(r"no puedo|no debo|me niego a", re.IGNORECASE),
+        re.compile(r"contenido (?:dañino|inapropiado|peligroso)", re.IGNORECASE),
+    ],
+    "fr": [
+        re.compile(r"je ne peux pas|je refuse de|je ne dois pas", re.IGNORECASE),
+        re.compile(r"contenu (?:nuisible|inapproprié|dangereux)", re.IGNORECASE),
+    ],
+    "de": [
+        re.compile(r"ich kann nicht|ich werde nicht|ich weigere mich", re.IGNORECASE),
+        re.compile(r"(?:schädlicher|unangemessener|gefährlicher) Inhalt", re.IGNORECASE),
+    ],
+    "zh": [
+        re.compile(r"我不能|我无法|我拒绝", re.IGNORECASE),
+        re.compile(r"有害内容|不当内容|危险内容", re.IGNORECASE),
+    ],
+    "ua": [
+        re.compile(r"я не можу|я відмовляюся|я не буду", re.IGNORECASE),
+        re.compile(r"(?:шкідливий|неприйнятний|небезпечний) (?:вміст|контент)", re.IGNORECASE),
+    ],
+}
 
 REFUSAL_SENTINEL = "__REFUSAL__"
 
 
-def _is_refusal(text: str) -> bool:
+def _is_refusal(text: str, lang: str = "en") -> bool:
     """Return True if the response looks like a paranoid refusal."""
-    return any(p.search(text) for p in _REFUSAL_PATTERNS)
+    patterns = merge_patterns(_REFUSAL_PATTERNS, lang)
+    return any(p.search(text) for p in patterns)
 
 
 # ---------------------------------------------------------------------------
@@ -66,15 +94,16 @@ def _try_quoted_text(text: str) -> Optional[str]:
     return None
 
 
-def _try_labelled_answer(text: str) -> Optional[str]:
+def _try_labelled_answer(text: str, lang: str = "en") -> Optional[str]:
     """Look for 'Decoded message:', 'Plaintext:', etc. from the end."""
+    answer_labels = build_answer_label_re(lang)
     labels = [
         r"(?:decoded\s+(?:message|text)|plaintext|the\s+message\s+(?:says|reads|is))\s*[:=]\s*(.+)",
-        r"(?:answer|result|output)\s*[:=]\s*(.+)",
+        rf"(?:{answer_labels}|output)\s*[:=]\s*(.+)",
         # Multi-line: bold/heading label on its own line, content on next line
         # Handles: **Plaintext**\n\nThe decoded text.
         # Handles: **Plaintext (decoded by shifting back 3):**\n\nThe decoded text.
-        r"(?:\*\*|#{1,3}\s*)(?:decoded\s+(?:message|text)|plaintext|the\s+message|answer|result|output)\s*(?:\([^)]*\)\s*:?)?\s*\*?\*?\s*\n+\s*(.+)",
+        rf"(?:\*\*|#{{1,3}}\s*)(?:decoded\s+(?:message|text)|plaintext|the\s+message|{answer_labels}|output)\s*(?:\([^)]*\)\s*:?)?\s*\*?\*?\s*\n+\s*(.+)",
     ]
     for pattern in labels:
         m = re_search_last(pattern, text, re.IGNORECASE)
@@ -105,10 +134,11 @@ def _try_single_word(text: str) -> Optional[str]:
     return None
 
 
-def _try_labelled_word(text: str) -> Optional[str]:
+def _try_labelled_word(text: str, lang: str = "en") -> Optional[str]:
     """Look for 'Answer: word', 'The word is: word' from end."""
+    answer_labels = build_answer_label_re(lang)
     patterns = [
-        r"(?:answer|the\s+word\s+is|response)\s*[:=]\s*[\"']?(\w+)[\"']?",
+        rf"(?:{answer_labels}|the\s+word\s+is|response)\s*[:=]\s*[\"']?(\w+)[\"']?",
     ]
     for pattern in patterns:
         m = re_search_last(pattern, text, re.IGNORECASE)
@@ -172,29 +202,30 @@ class EncodingCipherParser(ResponseParser):
             )
 
         task_params = task_params or {}
+        lang = get_language(task_params)
         task_mode = task_params.get("task_mode", "decode_only")
 
         # Check for refusal before attempting extraction
-        if _is_refusal(response):
+        if _is_refusal(response, lang):
             return ParsedAnswer(
                 value=REFUSAL_SENTINEL, raw_response=response,
                 parse_strategy="refusal_detected", confidence=0.90,
             )
 
         if task_mode == "decode_and_act":
-            return self._parse_act(response)
+            return self._parse_act(response, lang)
         else:
-            return self._parse_decode(response)
+            return self._parse_decode(response, lang)
 
     # ------------------------------------------------------------------
     # decode_only parsing
     # ------------------------------------------------------------------
 
-    def _parse_decode(self, response: str) -> ParsedAnswer:
+    def _parse_decode(self, response: str, lang: str = "en") -> ParsedAnswer:
         strategies = [
             ("code_block", _try_code_block),
             ("quoted_text", _try_quoted_text),
-            ("labelled_answer", _try_labelled_answer),
+            ("labelled_answer", lambda t: _try_labelled_answer(t, lang)),
             ("full_response", _try_full_response),
         ]
         for name, fn in strategies:
@@ -216,10 +247,10 @@ class EncodingCipherParser(ResponseParser):
     # decode_and_act parsing
     # ------------------------------------------------------------------
 
-    def _parse_act(self, response: str) -> ParsedAnswer:
+    def _parse_act(self, response: str, lang: str = "en") -> ParsedAnswer:
         strategies = [
             ("single_word", _try_single_word),
-            ("labelled_word", _try_labelled_word),
+            ("labelled_word", lambda t: _try_labelled_word(t, lang)),
             ("quoted_word", _try_quoted_word),
             ("bold_word", _try_bold_word),
             ("last_alpha_token", _try_last_alpha_token),

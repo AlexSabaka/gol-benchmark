@@ -1,0 +1,51 @@
+# Strawberry Benchmark — Pangram Sentences (English)
+# Format: sentence|is_pangram|missing_letters
+# Pipe-delimited (sentences may contain commas).
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# is_pangram: true if every letter a-z appears at least once
+# missing_letters: comma-separated letters absent from near-pangrams (empty for true pangrams)
+
+# --- TRUE PANGRAMS ---
+The quick brown fox jumps over the lazy dog.|true|
+Pack my box with five dozen liquor jugs.|true|
+How vexingly quick daft zebras jump.|true|
+The five boxing wizards jump quickly.|true|
+Jinxed wizards pluck ivy from the big quilt.|true|
+Crazy Frederick bought many very exquisite opal jewels.|true|
+We promptly judged antique ivory buckles for the next prize.|true|
+A quick movement of the enemy will jeopardize six gunboats.|true|
+Jackdaws love my big sphinx of quartz.|true|
+Sympathizing would fix Quaker objectives.|true|
+Two driven jocks help fax my big quiz.|true|
+The jay pig fox zebra and my wolves quack.|true|
+Sphinx of black quartz judge my vow.|true|
+Just keep examining every low bid quoted for zinc etchings.|true|
+Grumpy wizards make a toxic brew for the evil queen and jaunty help.|true|
+Brawny gods just flocked up to quiz and vex him.|true|
+Waxy and quivering jocks fumble the pizza.|true|
+My girl wove six dozen plaid jackets before she quit.|true|
+Few quips galvanized the mock jury box.|true|
+Playing jazz vibe chords quickly excites my wife.|true|
+
+# --- NEAR-PANGRAMS (missing 1-3 letters) ---
+The quick brown fox jumped over the lazy dog.|false|s
+Pack my box with five dozen lior jugs.|false|q
+A quick brown fox leaps over the lazy dog.|false|j,m
+Crazy Frederick bought many exquisite opal jewels.|false|v
+We judged antique ivory buckles for the next prize.|false|m
+Jackdaws love my big sphinx of quart.|false|z
+Two driven jocks help fax my big qui.|false|z
+The five boxing wizards jump quick.|false|l,y
+Pack my box with five dozen liquor jars.|false|g
+How quickly daft zebras jump.|false|g,n,v,x
+A quick movement of the enemy will jeopardize gunboats.|false|x
+My girl wove six dozen plaid jackets before she qit.|false|u
+Brawny gods just flocked up to quiz and vex.|false|h,m
+Playing jazz vibe chords quickly excites my cat.|false|f,w
+Few quips galvanized the mock jury.|false|b,x
+Sympathizing did fix Quaker objectives.|false|l,w
+Jinxed wizards pick ivy from the big quit.|false|l
+Waxy and quivering jocks fumble the pie.|false|z
+The jay pig fox and my wolves quack noisily.|false|b,r,z
+Just keep examining every low bid for zinc etchings.|false|q

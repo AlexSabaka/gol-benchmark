@@ -28,41 +28,158 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import re_search_last, build_answer_label_re, get_language
 
 # ---------------------------------------------------------------------------
 # Unit symbol aliases (normalised form → set of of display variants)
 # ---------------------------------------------------------------------------
 
 _SYMBOL_ALIASES: Dict[str, List[str]] = {
-    "mm": ["mm", "millimeter", "millimeters", "millimetre", "millimetres"],
-    "cm": ["cm", "centimeter", "centimeters", "centimetre", "centimetres"],
-    "m":  ["m", "meter", "meters", "metre", "metres"],
-    "km": ["km", "kilometer", "kilometers", "kilometre", "kilometres"],
-    "in": ["in", "inch", "inches", '"'],
-    "ft": ["ft", "foot", "feet", "'"],
-    "yd": ["yd", "yard", "yards"],
-    "mi": ["mi", "mile", "miles"],
-    "mg": ["mg", "milligram", "milligrams"],
-    "g":  ["g", "gram", "grams"],
-    "kg": ["kg", "kilogram", "kilograms"],
-    "oz": ["oz", "ounce", "ounces"],
-    "lb": ["lb", "lbs", "pound", "pounds"],
-    "°C": ["°c", "°C", "celsius", "c", "degrees celsius", "deg c"],
-    "°F": ["°f", "°F", "fahrenheit", "f", "degrees fahrenheit", "deg f"],
-    "K":  ["k", "kelvin"],
-    "mL": ["ml", "mL", "milliliter", "milliliters", "millilitre", "millilitres"],
-    "L":  ["l", "L", "liter", "liters", "litre", "litres"],
-    "cup": ["cup", "cups"],
+    # --- Length ---
+    "mm": ["mm", "millimeter", "millimeters", "millimetre", "millimetres",
+            "milímetro", "milímetros",                        # ES
+            "millimètre", "millimètres",                      # FR
+            "Millimeter",                                     # DE
+            "міліметр", "міліметри",                          # UA
+            "毫米"],                                           # ZH
+    "cm": ["cm", "centimeter", "centimeters", "centimetre", "centimetres",
+            "centímetro", "centímetros",                      # ES
+            "centimètre", "centimètres",                      # FR
+            "Zentimeter",                                     # DE
+            "сантиметр", "сантиметри",                        # UA
+            "厘米"],                                           # ZH
+    "m":  ["m", "meter", "meters", "metre", "metres",
+            "metro", "metros",                                # ES
+            "mètre", "mètres",                                # FR
+            "Meter",                                          # DE
+            "метр", "метри",                                  # UA
+            "米"],                                             # ZH
+    "km": ["km", "kilometer", "kilometers", "kilometre", "kilometres",
+            "kilómetro", "kilómetros",                        # ES
+            "kilomètre", "kilomètres",                        # FR
+            "Kilometer",                                      # DE
+            "кілометр", "кілометри",                          # UA
+            "公里"],                                           # ZH
+    "in": ["in", "inch", "inches", '"',
+            "pulgada", "pulgadas",                            # ES
+            "pouce", "pouces",                                # FR
+            "Zoll",                                           # DE
+            "дюйм", "дюйми",                                 # UA
+            "英寸"],                                           # ZH
+    "ft": ["ft", "foot", "feet", "'",
+            "pie", "pies",                                    # ES
+            "pied", "pieds",                                  # FR
+            "Fuß",                                            # DE
+            "фут", "фути",                                    # UA
+            "英尺"],                                           # ZH
+    "yd": ["yd", "yard", "yards",
+            "yarda", "yardas",                                # ES
+            "ярд", "ярди"],                                   # UA
+    "mi": ["mi", "mile", "miles",
+            "milla", "millas",                                # ES
+            "миля", "милі"],                                  # UA
+    # --- Weight / Mass ---
+    "mg": ["mg", "milligram", "milligrams",
+            "miligramo", "miligramos",                        # ES
+            "milligramme", "milligrammes",                    # FR
+            "Milligramm",                                     # DE
+            "міліграм", "міліграми",                          # UA
+            "毫克"],                                           # ZH
+    "g":  ["g", "gram", "grams",
+            "gramo", "gramos",                                # ES
+            "gramme", "grammes",                              # FR
+            "Gramm",                                          # DE
+            "грам", "грами",                                  # UA
+            "克"],                                             # ZH
+    "kg": ["kg", "kilogram", "kilograms",
+            "kilogramo", "kilogramos",                         # ES
+            "kilogramme", "kilogrammes",                       # FR
+            "Kilogramm",                                       # DE
+            "кілограм", "кілограми",                           # UA
+            "千克", "公斤"],                                    # ZH
+    "oz": ["oz", "ounce", "ounces",
+            "onza", "onzas",                                  # ES
+            "унція", "унції"],                                # UA
+    "lb": ["lb", "lbs", "pound", "pounds",
+            "libra", "libras",                                # ES
+            "livre", "livres",                                # FR
+            "Pfund",                                          # DE
+            "фунт", "фунти",                                  # UA
+            "磅"],                                             # ZH
+    # --- Temperature ---
+    "°C": ["°c", "°C", "celsius", "c", "degrees celsius", "deg c",
+            "grado celsius", "grados celsius",                # ES
+            "degré celsius", "degrés celsius",                # FR
+            "Grad Celsius",                                   # DE
+            "градус Цельсія", "градуси Цельсія",              # UA
+            "摄氏度"],                                         # ZH
+    "°F": ["°f", "°F", "fahrenheit", "f", "degrees fahrenheit", "deg f",
+            "grado fahrenheit", "grados fahrenheit",          # ES
+            "degré fahrenheit", "degrés fahrenheit",          # FR
+            "Grad Fahrenheit",                                # DE
+            "градус Фаренгейта", "градуси Фаренгейта",       # UA
+            "华氏度"],                                         # ZH
+    "K":  ["k", "kelvin",
+            "кельвін"],                                       # UA
+    # --- Volume ---
+    "mL": ["ml", "mL", "milliliter", "milliliters", "millilitre", "millilitres",
+            "mililitro", "mililitros",                        # ES
+            "millilitre", "millilitres",                      # FR (same as EN-GB)
+            "Milliliter",                                     # DE
+            "мілілітр", "мілілітри",                          # UA
+            "毫升"],                                           # ZH
+    "L":  ["l", "L", "liter", "liters", "litre", "litres",
+            "litro", "litros",                                # ES
+            "Liter",                                          # DE
+            "літр", "літри",                                  # UA
+            "升"],                                             # ZH
+    "cup": ["cup", "cups",
+            "taza", "tazas",                                  # ES
+            "tasse", "tasses",                                # FR
+            "Tasse", "Tassen",                                # DE
+            "чашка", "чашки"],                                # UA
     "fl oz": ["fl oz", "fluid ounce", "fluid ounces", "fl. oz", "fl.oz"],
-    "pt": ["pt", "pint", "pints"],
-    "gal": ["gal", "gallon", "gallons"],
-    "m/s": ["m/s", "meters per second", "metres per second"],
-    "km/h": ["km/h", "kmh", "kph", "kilometers per hour", "kilometres per hour"],
-    "mph": ["mph", "miles per hour"],
-    "s":  ["s", "sec", "second", "seconds"],
-    "min": ["min", "minute", "minutes"],
-    "h":  ["h", "hr", "hour", "hours"],
+    "pt": ["pt", "pint", "pints",
+            "pinta", "pintas"],                               # ES
+    "gal": ["gal", "gallon", "gallons",
+            "galón", "galones",                               # ES
+            "галон", "галони"],                               # UA
+    # --- Speed ---
+    "m/s": ["m/s", "meters per second", "metres per second",
+            "metros por segundo",                             # ES
+            "mètres par seconde",                             # FR
+            "Meter pro Sekunde",                              # DE
+            "метрів на секунду",                              # UA
+            "米每秒"],                                         # ZH
+    "km/h": ["km/h", "kmh", "kph", "kilometers per hour", "kilometres per hour",
+            "kilómetros por hora",                            # ES
+            "kilomètres par heure",                           # FR
+            "Kilometer pro Stunde",                           # DE
+            "кілометрів на годину",                           # UA
+            "公里每小时"],                                     # ZH
+    "mph": ["mph", "miles per hour",
+            "millas por hora",                                # ES
+            "miles par heure",                                # FR
+            "Meilen pro Stunde",                              # DE
+            "миль на годину"],                                # UA
+    # --- Time ---
+    "s":  ["s", "sec", "second", "seconds",
+            "segundo", "segundos",                            # ES
+            "seconde", "secondes",                            # FR
+            "Sekunde", "Sekunden",                            # DE
+            "секунда", "секунди",                             # UA
+            "秒"],                                             # ZH
+    "min": ["min", "minute", "minutes",
+            "minuto", "minutos",                              # ES
+            "Minute", "Minuten",                              # DE
+            "хвилина", "хвилини",                             # UA
+            "分钟"],                                           # ZH
+    "h":  ["h", "hr", "hour", "hours",
+            "hora", "horas",                                  # ES
+            "heure", "heures",                                # FR
+            "Stunde", "Stunden",                              # DE
+            "година", "години",                               # UA
+            "小时"],                                           # ZH
 }
 
 # Build reverse lookup: any alias → canonical symbol
@@ -92,9 +209,11 @@ _EQUAL_KEYWORDS = re.compile(
     r"|\bboth.{0,15}(?:equal|same)\b"
     r"|\b(?:are|is|they'?re|that'?s)\s+(?:exactly\s+)?(?:the\s+)?same\b"
     r"|\bsame\s+(?:value|amount|quantity|measurement|weight|length|distance|volume|speed|temperature|size)\b"
-    r"|\bneither\s+is\s+(?:shorter|longer|heavier|lighter|hotter|colder|faster|slower|bigger|smaller|more|less)\b"
-    r"|\bigual\b|\biguales\b|\bmême\b|\bmêmes\b|\bgleich\b|\bрівні\b|\bоднакові\b|\bégal\b|\bégales\b|\bégaux\b"
-    r"|相等|相同)",
+    r"|\bneither\s+is\s+(?:shorter|longer|heavier|lighter|hotter|colder|warmer|cooler|faster|slower|bigger|smaller|greater|more|less)\b"
+    r"|\bigual\b|\biguales\b|\bmême\b|\bmêmes\b|\bégal\b|\bégales\b|\bégaux\b"
+    r"|\bgleich\b|\bidentisch\b|\bkein\s+Unterschied\b"
+    r"|\bрівні\b|\bоднакові\b|\bідентичні\b|\bнемає\s+різниці\b"
+    r"|相等|相同|一样|没有区别)",
     re.IGNORECASE,
 )
 
@@ -108,22 +227,40 @@ _INCOMPARABLE_KEYWORDS = re.compile(
     r"|things)|"
     r"measure\s+different\s+things|"
     r"impossible\s+to\s+compare|apples?\s+and\s+oranges?|"
-    r"no\s+(?:se\s+)?puede[n]?\s+comparar|"
-    r"ne\s+(?:peut|peuvent)\s+pas\s+être\s+comparé|"
-    r"nicht\s+vergleichbar|"
-    r"无法比较|不能比较|不可比较|"
-    r"непорівнянні|неможливо\s+порівняти|"
-    r"incomparables?)",
+    r"no\s+(?:se\s+)?puede[n]?\s+comparar|incomparables?|"
+    r"ne\s+(?:peut|peuvent)\s+pas\s+(?:être\s+)?comparée?s?|"
+    r"pas\s+comparables?|"
+    r"nicht\s+vergleichbar|lassen\s+sich\s+nicht\s+vergleichen|"
+    r"nicht\s+miteinander\s+vergleichbar|"
+    r"无法比较|不能比较|不可比较|无法对比|"
+    r"непорівнянні|неможливо\s+порівняти|не\s+можна\s+порівняти|"
+    r"не\s+піддаються\s+порівнянню)",
     re.IGNORECASE,
 )
 
 # Position keywords
 _POSITION_RE = re.compile(
     r"\b(first|second|1st|2nd|option\s*[12ab]|choice\s*[12ab]|"
-    r"primer[ao]|segund[ao]|premier|deuxième|erst[eé]|zweit[eé]|"
-    r"第一|第二|перш[аеий]|друг[аеий])\b",
+    r"primer[ao]|segund[ao]|premier|première|deuxième|erst[eér]|zweit[eér]|"
+    r"第一|第二|перш[аеийіь]|друг[аеийі])\b",
     re.IGNORECASE,
 )
+
+# Comparative adjectives per language
+_COMPARATIVE_ADJECTIVES: Dict[str, str] = {
+    "en": (r"shorter|longer|heavier|lighter|hotter|colder|warmer|cooler|"
+           r"faster|slower|bigger|smaller|greater|less|more|fewer|"
+           r"larger|higher|lower|taller|wider"),
+    "es": (r"más corto|más largo|más pesado|más ligero|más caliente|más frío|"
+           r"más rápido|más lento|más grande|más pequeño|mayor|menor"),
+    "fr": (r"plus court|plus long|plus lourd|plus léger|plus chaud|plus froid|"
+           r"plus rapide|plus lent|plus grand|plus petit"),
+    "de": (r"kürzer|länger|schwerer|leichter|heißer|kälter|"
+           r"schneller|langsamer|größer|kleiner|höher|niedriger"),
+    "zh": r"更短|更长|更重|更轻|更热|更冷|更快|更慢|更大|更小",
+    "ua": (r"коротший|довший|важчий|легший|гарячіший|холодніший|"
+           r"швидший|повільніший|більший|менший"),
+}
 
 
 # ---------------------------------------------------------------------------
@@ -260,10 +397,11 @@ class MeasureComparisonParser(ResponseParser):
         text = text.replace('\u2018', "'").replace('\u2019', "'")
         text = text.replace('\u201C', '"').replace('\u201D', '"')
         tp = task_params or {}
+        lang = get_language(tp)
 
         # Route decimal comparison type to a specialised parser (bare numbers)
         if tp.get("comparison_type") == "decimal":
-            return self._parse_decimal(text, tp)
+            return self._parse_decimal(text, tp, lang)
 
         # --- Strategy 1: LaTeX boxed (last match) ---
         boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
@@ -302,8 +440,9 @@ class MeasureComparisonParser(ResponseParser):
                 )
 
         # --- Strategy 3: Label line (last match) ---
+        answer_labels = build_answer_label_re(lang)
         label = re_search_last(
-            r"(?:answer|result|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
+            r"(?:" + answer_labels + r"|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
             text,
             re.IGNORECASE | re.MULTILINE,
         )
@@ -319,13 +458,14 @@ class MeasureComparisonParser(ResponseParser):
         # --- Strategy 4: "{value} {unit} is {comparative}" pattern ---
         # Handles responses like "18.68 h is shorter." where the answer is
         # stated plainly without labels, bold, or boxed formatting.
-        _COMPARATIVES = (
-            r"shorter|longer|heavier|lighter|hotter|colder|warmer|cooler|"
-            r"faster|slower|bigger|smaller|greater|less|more|fewer|"
-            r"larger|higher|lower|taller|wider"
-        )
+        # Build language-aware comparatives: always include EN + target language
+        _comp_en = _COMPARATIVE_ADJECTIVES["en"]
+        _comp_local = _COMPARATIVE_ADJECTIVES.get(lang, "")
+        _COMPARATIVES = _comp_en + ("|" + _comp_local if _comp_local and lang != "en" else "")
+
+        # EN-style: "{value} {unit} is {comparative}"
         comp_m = re_search_last(
-            r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)\s+is\s+"
+            r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)\s+(?:is|es|est|ist|є)\s+"
             r"(?:" + _COMPARATIVES + r")",
             text,
             re.IGNORECASE,
@@ -333,7 +473,7 @@ class MeasureComparisonParser(ResponseParser):
         # Also try reverse pattern: "the {comparative} one is {value} {unit}"
         if not comp_m:
             comp_m = re_search_last(
-                r"(?:" + _COMPARATIVES + r")\s+(?:one\s+)?is\s+"
+                r"(?:" + _COMPARATIVES + r")\s+(?:one\s+)?(?:is|es|est|ist|є)\s+"
                 r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)",
                 text,
                 re.IGNORECASE,
@@ -482,13 +622,19 @@ class MeasureComparisonParser(ResponseParser):
         """Map a position keyword to 'first' or 'second'."""
         first_words = {
             "first", "1st", "option 1", "option a", "choice 1", "choice a",
-            "primero", "primera", "premier", "première", "erste", "erster",
-            "第一", "перший", "перша", "першій", "першая",
+            "primero", "primera",                              # ES
+            "premier", "première",                             # FR
+            "erste", "erster", "erstes",                       # DE
+            "第一",                                             # ZH
+            "перший", "перша", "перше",                        # UA
         }
         second_words = {
             "second", "2nd", "option 2", "option b", "choice 2", "choice b",
-            "segundo", "segunda", "deuxième", "zweite", "zweiter",
-            "第二", "другий", "друга", "другій",
+            "segundo", "segunda",                              # ES
+            "deuxième", "second", "seconde",                   # FR
+            "zweite", "zweiter", "zweites",                    # DE
+            "第二",                                             # ZH
+            "другий", "друга", "друге",                        # UA
         }
         low = word.strip().lower()
         if low in first_words:
@@ -501,7 +647,7 @@ class MeasureComparisonParser(ResponseParser):
     # Decimal-framing parser (bare numbers, no units)
     # ------------------------------------------------------------------
 
-    def _parse_decimal(self, text: str, tp: Dict[str, Any]) -> ParsedAnswer:
+    def _parse_decimal(self, text: str, tp: Dict[str, Any], lang: str = "en") -> ParsedAnswer:
         """Parse a decimal-framing response.  Expected answer is a bare number."""
         v1 = tp.get("value1", "")
         v2 = tp.get("value2", "")
@@ -529,8 +675,9 @@ class MeasureComparisonParser(ResponseParser):
                 )
 
         # Strategy 3: Label line (last match)
+        dec_answer_labels = build_answer_label_re(lang)
         label = re_search_last(
-            r"(?:answer|result|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
+            r"(?:" + dec_answer_labels + r"|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
             text, re.IGNORECASE | re.MULTILINE,
         )
         if label:

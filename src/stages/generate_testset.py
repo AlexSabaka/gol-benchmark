@@ -64,7 +64,7 @@ class MinimalTestConfig(BaseTestConfig):
     """Minimal config for test generation"""
     models: List[str] = None  # Not needed for generation
     seed: int = 42
-    known_patterns_dir: str = "data/conways_life/known_patterns"
+    known_patterns_dir: str = str(Path(__file__).resolve().parents[2] / "plugins" / "game_of_life" / "data" / "known_patterns")
     
     def __post_init__(self):
         # Set a dummy model list to satisfy BaseTestConfig

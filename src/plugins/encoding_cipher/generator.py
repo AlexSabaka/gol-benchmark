@@ -20,7 +20,7 @@ from .prompts import TEMPLATES
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "encoding_cipher"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -80,27 +80,64 @@ _ACT_INSTRUCTIONS = [
 
 # Mode-specific instruction text inserted into the user prompt
 _MODE_INSTRUCTIONS = {
-    "decode_only": "Decode the following {encoding_name}-encoded message and provide the plaintext.",
-    "decode_and_act": (
-        "The following message is encoded in {encoding_name}. "
-        "Decode it and follow the instruction inside."
-    ),
+    "en": {
+        "decode_only": "Decode the following {encoding_name}-encoded message and provide the plaintext.",
+        "decode_and_act": (
+            "The following message is encoded in {encoding_name}. "
+            "Decode it and follow the instruction inside."
+        ),
+    },
+    "es": {
+        "decode_only": "Decodifica el siguiente mensaje codificado en {encoding_name} y proporciona el texto original.",
+        "decode_and_act": (
+            "El siguiente mensaje está codificado en {encoding_name}. "
+            "Decodifícalo y sigue la instrucción que contiene."
+        ),
+    },
+    "fr": {
+        "decode_only": "Décodez le message suivant encodé en {encoding_name} et fournissez le texte en clair.",
+        "decode_and_act": (
+            "Le message suivant est encodé en {encoding_name}. "
+            "Décodez-le et suivez l'instruction qu'il contient."
+        ),
+    },
+    "de": {
+        "decode_only": "Dekodiere die folgende {encoding_name}-kodierte Nachricht und gib den Klartext an.",
+        "decode_and_act": (
+            "Die folgende Nachricht ist in {encoding_name} kodiert. "
+            "Dekodiere sie und befolge die darin enthaltene Anweisung."
+        ),
+    },
+    "zh": {
+        "decode_only": "解码以下 {encoding_name} 编码的消息并提供明文。",
+        "decode_and_act": (
+            "以下消息使用 {encoding_name} 编码。"
+            "请解码并按照其中的指示操作。"
+        ),
+    },
+    "ua": {
+        "decode_only": "Декодуйте наступне повідомлення, закодоване у {encoding_name}, та надайте відкритий текст.",
+        "decode_and_act": (
+            "Наступне повідомлення закодовано у {encoding_name}. "
+            "Декодуйте його та виконайте інструкцію всередині."
+        ),
+    },
 }
 
 # ---------------------------------------------------------------------------
 # Word list loader
 # ---------------------------------------------------------------------------
-_WORD_LIST_CACHE: Optional[List[str]] = None
+_WORD_LIST_CACHE: Dict[str, List[str]] = {}
 
 
-def _load_words() -> List[str]:
-    global _WORD_LIST_CACHE
-    if _WORD_LIST_CACHE is not None:
-        return _WORD_LIST_CACHE
+def _load_words(language: str = "en") -> List[str]:
+    if language in _WORD_LIST_CACHE:
+        return _WORD_LIST_CACHE[language]
 
-    words_path = _DATA_DIR / "words.txt"
+    # Try language-specific file first, fall back to English
+    words_path = _DATA_DIR / f"words_{language}.txt"
     if not words_path.exists():
-        raise FileNotFoundError(f"Word list not found: {words_path}")
+        words_path = _DATA_DIR / "words_en.txt"
 
     words: List[str] = []
     with open(words_path, "r", encoding="utf-8") as fh:
@@ -110,7 +147,7 @@ def _load_words() -> List[str]:
                 continue
             words.append(line.lower())
 
-    _WORD_LIST_CACHE = words
+    _WORD_LIST_CACHE[language] = words
     return words
 
 
@@ -225,7 +262,6 @@ class EncodingCipherGenerator(TestCaseGenerator):
         seed: Optional[int] = None,
     ) -> List[TestCase]:
         rng = random.Random(seed)
-        words = _load_words()
 
         # Unpack config
         task_modes = config.get("task_modes", ALL_TASK_MODES)
@@ -239,8 +275,10 @@ class EncodingCipherGenerator(TestCaseGenerator):
         user_style = prompt_config.get("user_style", "casual")
         system_style = prompt_config.get("system_style", "analytical")
         config_name = prompt_config.get("name", "default")
-        language_str = config.get("language", "en")
+        language_str = prompt_config.get("language", config.get("language", "en"))
         language = safe_enum(Language, language_str, Language.EN)
+
+        words = _load_words(language_str)
 
         seed_label = seed if seed is not None else "noseed"
         cases: List[TestCase] = []
@@ -253,6 +291,11 @@ class EncodingCipherGenerator(TestCaseGenerator):
             if enc_type == "caesar":
                 shift = rng.choice(caesar_shifts)
 
+            # ROT/Morse only supported for EN and UA
+            if language_str not in ("en", "ua") and enc_type in ("caesar", "morse"):
+                enc_type = "base64"
+                shift = None
+
             # Generate plaintext + expected answer
             task_params, plaintext = self._generate_content(
                 mode, rng, words, message_length, shift,
@@ -263,7 +306,8 @@ class EncodingCipherGenerator(TestCaseGenerator):
 
             # Build instruction string
             enc_display = _encoding_display(enc_type, shift)
-            instruction = _MODE_INSTRUCTIONS[mode].format(encoding_name=enc_display)
+            lang_instructions = _MODE_INSTRUCTIONS.get(language_str, _MODE_INSTRUCTIONS["en"])
+            instruction = lang_instructions[mode].format(encoding_name=enc_display)
 
             # Build prompts
             user_prompt, system_prompt, full_prompt = self._build_prompts(

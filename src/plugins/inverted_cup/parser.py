@@ -22,50 +22,98 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last, last_sentences
+from src.plugins.parse_utils import (
+    re_search_last, last_sentences,
+    merge_keywords, build_answer_label_re, get_language,
+)
 
 # ---------------------------------------------------------------------------
 # Keyword sets
 # ---------------------------------------------------------------------------
 
-FLIP_PATTERNS = [
-    r"\bflip\b",
-    r"\bflip\s+(?:it|the\s+cup)\b",
-    r"\bturn\s+(?:it|the\s+cup)\s+(?:over|upside.?down|around|right.?side.?up)\b",
-    r"\binvert\s+(?:it|the\s+cup)?\b",
-    r"\brotate\s+(?:it|the\s+cup)\s+180\b",
-    r"\bupend\b",
-    r"\bupright\b.*\bplace\b",
-    r"\bplace\s+it\s+(?:the\s+)?right\s+(?:side\s+)?up\b",
-    r"\bright.?side.?up\b",
-    r"\bthe\s+(?:correct|right|proper)\s+way\s+(?:is|to)\s+(?:to\s+)?(?:flip|turn|invert)\b",
-    r"\bjust\s+(?:flip|turn|invert)\b",
-    r"\bsimply\s+(?:flip|turn|invert)\b",
-    r"\bthe\s+opening\s+(?:should|needs? to)\s+(?:face|be\s+on)\s+(?:up|the\s+top)\b",
-    r"\bturn\s+(?:it\s+)?back\s+(?:the\s+right\s+way|to\s+normal)\b",
-    r"\breorient\b",
-    r"\brotate\b.*\bup(?:ward|right)\b",
-    r"\btilt\s+(?:it|the\s+cup)\b",
-    r"\btip\s+(?:it|the\s+cup)\b",
-    r"\bmouth\b.*\bfacing\s+up\b",
-    r"\brim\b.*\b(?:facing\s+up|on\s+top)\b",
-    r"\bopen(?:ing)?\s+(?:end|side)\s+(?:facing\s+)?up\b",
-]
+FLIP_PATTERNS: Dict[str, list[str]] = {
+    "en": [
+        r"\bflip\b",
+        r"\bflip\s+(?:it|the\s+cup)\b",
+        r"\bturn\s+(?:it|the\s+cup)\s+(?:over|upside.?down|around|right.?side.?up)\b",
+        r"\binvert\s+(?:it|the\s+cup)?\b",
+        r"\brotate\s+(?:it|the\s+cup)\s+180\b",
+        r"\bupend\b",
+        r"\bupright\b.*\bplace\b",
+        r"\bplace\s+it\s+(?:the\s+)?right\s+(?:side\s+)?up\b",
+        r"\bright.?side.?up\b",
+        r"\bthe\s+(?:correct|right|proper)\s+way\s+(?:is|to)\s+(?:to\s+)?(?:flip|turn|invert)\b",
+        r"\bjust\s+(?:flip|turn|invert)\b",
+        r"\bsimply\s+(?:flip|turn|invert)\b",
+        r"\bthe\s+opening\s+(?:should|needs? to)\s+(?:face|be\s+on)\s+(?:up|the\s+top)\b",
+        r"\bturn\s+(?:it\s+)?back\s+(?:the\s+right\s+way|to\s+normal)\b",
+        r"\breorient\b",
+        r"\brotate\b.*\bup(?:ward|right)\b",
+        r"\btilt\s+(?:it|the\s+cup)\b",
+        r"\btip\s+(?:it|the\s+cup)\b",
+        r"\bmouth\b.*\bfacing\s+up\b",
+        r"\brim\b.*\b(?:facing\s+up|on\s+top)\b",
+        r"\bopen(?:ing)?\s+(?:end|side)\s+(?:facing\s+)?up\b",
+    ],
+    "es": [
+        r"\bvoltear\b", r"\bdar la vuelta\b", r"\binvertir\b", r"\bgirar\b",
+        r"\bponer(?:lo)? boca arriba\b", r"\bcolocar(?:lo)? correctamente\b",
+        r"\breorientar\b",
+    ],
+    "fr": [
+        r"\bretourner\b", r"\brenverser\b", r"\binverser\b",
+        r"\bremettre (?:à l'endroit|dans le bon sens)\b",
+        r"\bréorienter\b",
+    ],
+    "de": [
+        r"\bumdrehen\b", r"\bumstülpen\b", r"\bumkehren\b",
+        r"\brichtig herum (?:stellen|drehen)\b", r"\bneu ausrichten\b",
+    ],
+    "zh": [
+        "翻转", "倒过来", "翻过来", "正过来", "翻回来",
+        "重新摆放", "转过来",
+    ],
+    "ua": [
+        r"\bперевернути\b", r"\bперекинути\b", r"\bрозвернути\b",
+        r"\bпоставити правильно\b", r"\bпереорієнтувати\b",
+    ],
+}
 
-WRONG_PATTERNS = [
-    r"\bdrill\b",
-    r"\bcut\b.*\bhole\b",
-    r"\bhole\b.*\bcut\b",
-    r"\bpower\s+tool\b",
-    r"\bsaw\b",
-    r"\bpoke\b.*\bhole\b",
-    r"\breturn\b.*\bshop\b|\bshop\b.*\breturn\b",
-    r"\bthrow\s+(?:it\s+)?away\b",
-    r"\bdiscard\b",
-    r"\buseless\b.*\bcannot\b",
-    r"\bcannot\s+be\s+used\b",
-    r"\bimpossible\s+to\s+use\b",
-]
+WRONG_PATTERNS: Dict[str, list[str]] = {
+    "en": [
+        r"\bdrill\b",
+        r"\bcut\b.*\bhole\b",
+        r"\bhole\b.*\bcut\b",
+        r"\bpower\s+tool\b",
+        r"\bsaw\b",
+        r"\bpoke\b.*\bhole\b",
+        r"\breturn\b.*\bshop\b|\bshop\b.*\breturn\b",
+        r"\bthrow\s+(?:it\s+)?away\b",
+        r"\bdiscard\b",
+        r"\buseless\b.*\bcannot\b",
+        r"\bcannot\s+be\s+used\b",
+        r"\bimpossible\s+to\s+use\b",
+    ],
+    "es": [
+        r"\btaladrar\b", r"\bcortar (?:un )?agujero\b", r"\bherramienta\b",
+        r"\bdevolver\b", r"\btirar\b", r"\bdesechar\b", r"\bno se puede usar\b",
+    ],
+    "fr": [
+        r"\bpercer\b", r"\bcouper un trou\b", r"\boutil\b",
+        r"\bretourner au magasin\b", r"\bjeter\b", r"\binutilisable\b",
+    ],
+    "de": [
+        r"\bbohren\b", r"\bLoch (?:schneiden|bohren)\b", r"\bWerkzeug\b",
+        r"\bzurückbringen\b", r"\bwegwerfen\b", r"\bunbrauchbar\b",
+    ],
+    "zh": [
+        "钻孔", "切洞", "工具", "退回", "扔掉", "丢弃", "无法使用",
+    ],
+    "ua": [
+        r"\bпросвердлити\b", r"\bвирізати отвір\b", r"\bінструмент\b",
+        r"\bповернути в магазин\b", r"\bвикинути\b", r"\bнеможливо використати\b",
+    ],
+}
 
 
 def _last_pos(patterns: list[str], text: str) -> int:
@@ -78,17 +126,19 @@ def _last_pos(patterns: list[str], text: str) -> int:
     return best
 
 
-def _has_flip(text: str) -> bool:
+def _has_flip(text: str, lang: str = "en") -> bool:
     t = text.lower()
-    return any(re.search(p, t) for p in FLIP_PATTERNS)
+    flip_patterns = merge_keywords(FLIP_PATTERNS, lang)
+    return any(re.search(p, t) for p in flip_patterns)
 
 
-def _has_wrong(text: str) -> bool:
+def _has_wrong(text: str, lang: str = "en") -> bool:
     t = text.lower()
-    return any(re.search(p, t) for p in WRONG_PATTERNS)
+    wrong_patterns = merge_keywords(WRONG_PATTERNS, lang)
+    return any(re.search(p, t) for p in wrong_patterns)
 
 
-def _classify(text: str) -> Optional[str]:
+def _classify(text: str, lang: str = "en") -> Optional[str]:
     """Classify text as 'flip', 'wrong', or None.
 
     If flip is mentioned at all, the model demonstrates the key insight
@@ -96,8 +146,8 @@ def _classify(text: str) -> Optional[str]:
     may appear alongside flip as creative alternatives but don't negate
     the correct understanding. So flip takes priority when both are present.
     """
-    has_f = _has_flip(text)
-    has_w = _has_wrong(text)
+    has_f = _has_flip(text, lang)
+    has_w = _has_wrong(text, lang)
 
     if has_f:
         return "flip"
@@ -125,29 +175,31 @@ class InvertedCupParser(ResponseParser):
             )
 
         text = response.strip()
+        lang = get_language(task_params or {})
 
         # --- Strategy 1: LaTeX boxed (last match) ---
         boxed = re_search_last(r"\\boxed\{([^}]+)\}", text, re.IGNORECASE)
         if boxed:
-            result = _classify(boxed.group(1))
+            result = _classify(boxed.group(1), lang)
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="boxed", confidence=0.95)
 
         # --- Strategy 2: Bold (last match) ---
         bold = re_search_last(r"\*\*([^*]{1,80})\*\*", text)
         if bold:
-            result = _classify(bold.group(1))
+            result = _classify(bold.group(1), lang)
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="bold", confidence=0.9)
 
         # --- Strategy 3: Labelled answer line (last match) ---
+        answer_labels = build_answer_label_re(lang)
         label_match = re_search_last(
-            r"(?:answer|action|solution|recommendation|suggestion|step\s+1|first(?:ly)?)\s*[:：]\s*([^\n.]{1,150})",
+            rf"(?:{answer_labels}|action|recommendation|suggestion|step\s+1|first(?:ly)?)\s*[:：]\s*([^\n.]{{1,150}})",
             text,
             re.IGNORECASE,
         )
         if label_match:
-            result = _classify(label_match.group(1))
+            result = _classify(label_match.group(1), lang)
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_line", confidence=0.88)
 
@@ -158,18 +210,18 @@ class InvertedCupParser(ResponseParser):
             re.IGNORECASE,
         )
         if strong:
-            result = _classify(strong.group(0))
+            result = _classify(strong.group(0), lang)
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="strong_recommendation", confidence=0.85)
 
         # --- Strategy 5: Full text ---
-        result = _classify(text)
+        result = _classify(text, lang)
         if result:
             return ParsedAnswer(value=result, raw_response=text, parse_strategy="full_text", confidence=0.7)
 
         # --- Strategy 6: Last sentences (end-first) ---
         for sent in reversed(last_sentences(text, n=5)):
-            result = _classify(sent)
+            result = _classify(sent, lang)
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="last_sentences", confidence=0.6)
 

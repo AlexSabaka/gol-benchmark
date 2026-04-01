@@ -12,7 +12,7 @@ from typing import Dict, List, Optional, Tuple
 
 
 # Directory containing {W}x{H}.txt pattern files (O=live, .=dead)
-_SORTED_PATTERNS_DIR = Path(__file__).resolve().parent.parent.parent / 'data' / 'conways_life' / 'sorted_patterns'
+_SORTED_PATTERNS_DIR = Path(__file__).resolve().parent.parent / 'plugins' / 'game_of_life' / 'data' / 'sorted_patterns'
 
 # Module-level cache: (max_width, max_height) → list of pattern grids
 _sorted_patterns_cache: Dict[Tuple[int, int], List[List[List[int]]]] = {}

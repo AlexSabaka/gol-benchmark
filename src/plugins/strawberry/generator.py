@@ -30,7 +30,7 @@ from __future__ import annotations
 import random
 import string
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Tuple
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
 from src.plugins.strawberry.prompts import (
@@ -40,7 +40,7 @@ from src.plugins.strawberry.prompts import (
 # ---------------------------------------------------------------------------
 # Data directory
 # ---------------------------------------------------------------------------
-_DATA_DIR = Path(__file__).resolve().parents[3] / "data" / "strawberry"
+_DATA_DIR = Path(__file__).resolve().parent / "data"
 
 # ---------------------------------------------------------------------------
 # All six sub-types
@@ -51,7 +51,7 @@ ALL_SUB_TYPES = ["count", "reverse", "nth_letter", "anagram", "pangram", "lipogr
 # Word list loader  (count / reverse / nth_letter)
 # ---------------------------------------------------------------------------
 
-_WORD_LIST_CACHE: Optional[Dict[str, List[str]]] = None
+_WORD_LIST_CACHE: Dict[str, Dict[str, List[str]]] = {}
 
 _TIERS = {
     "short": (3, 5),
@@ -61,15 +61,19 @@ _TIERS = {
 }
 
 
-def _load_word_list() -> Dict[str, List[str]]:
+def _load_word_list(language: str = "en") -> Dict[str, List[str]]:
     """Load and cache the word list, bucketed by length tier."""
-    global _WORD_LIST_CACHE
-    if _WORD_LIST_CACHE is not None:
-        return _WORD_LIST_CACHE
+    if language in _WORD_LIST_CACHE:
+        return _WORD_LIST_CACHE[language]
 
-    words_path = _DATA_DIR / "strawberry_words.txt"
+    # Try language-specific file first, fall back to English
+    words_path = _DATA_DIR / f"words_{language}.txt"
     if not words_path.exists():
-        raise FileNotFoundError(f"Word list not found: {words_path}")
+        words_path = _DATA_DIR / "strawberry_words.txt"
+    if not words_path.exists():
+        words_path = _DATA_DIR / "words_en.txt"
+    if not words_path.exists():
+        raise FileNotFoundError(f"Word list not found for language '{language}'")
 
     all_words: List[str] = []
     with open(words_path, "r", encoding="utf-8") as fh:
@@ -93,26 +97,30 @@ def _load_word_list() -> Dict[str, List[str]]:
                 buckets[tier].append(w)
                 break
 
-    _WORD_LIST_CACHE = buckets
-    return _WORD_LIST_CACHE
+    _WORD_LIST_CACHE[language] = buckets
+    return buckets
 
 
 # ---------------------------------------------------------------------------
 # Anagram pairs loader
 # ---------------------------------------------------------------------------
 
-_ANAGRAM_CACHE: Optional[List[Tuple[str, str, bool]]] = None
+_ANAGRAM_CACHE: Dict[str, List[Tuple[str, str, bool]]] = {}
 
 
-def _load_anagram_pairs() -> List[Tuple[str, str, bool]]:
+def _load_anagram_pairs(language: str = "en") -> List[Tuple[str, str, bool]]:
     """Load curated anagram/non-anagram pairs."""
-    global _ANAGRAM_CACHE
-    if _ANAGRAM_CACHE is not None:
-        return _ANAGRAM_CACHE
+    if language in _ANAGRAM_CACHE:
+        return _ANAGRAM_CACHE[language]
 
-    path = _DATA_DIR / "strawberry_anagram_pairs.txt"
+    # Try language-specific file first, fall back to English
+    path = _DATA_DIR / f"anagram_pairs_{language}.txt"
     if not path.exists():
-        raise FileNotFoundError(f"Anagram pairs not found: {path}")
+        path = _DATA_DIR / "strawberry_anagram_pairs.txt"
+    if not path.exists():
+        path = _DATA_DIR / "anagram_pairs_en.txt"
+    if not path.exists():
+        raise FileNotFoundError(f"Anagram pairs not found for language '{language}'")
 
     pairs: List[Tuple[str, str, bool]] = []
     with open(path, "r", encoding="utf-8") as fh:
@@ -126,29 +134,33 @@ def _load_anagram_pairs() -> List[Tuple[str, str, bool]]:
             w1, w2, label = parts[0].strip().lower(), parts[1].strip().lower(), parts[2].strip().lower()
             pairs.append((w1, w2, label == "true"))
 
-    _ANAGRAM_CACHE = pairs
-    return _ANAGRAM_CACHE
+    _ANAGRAM_CACHE[language] = pairs
+    return pairs
 
 
 # ---------------------------------------------------------------------------
 # Pangram loader
 # ---------------------------------------------------------------------------
 
-_PANGRAM_CACHE: Optional[List[Tuple[str, bool, str]]] = None
+_PANGRAM_CACHE: Dict[str, List[Tuple[str, bool, str]]] = {}
 
 
-def _load_pangrams() -> List[Tuple[str, bool, str]]:
+def _load_pangrams(language: str = "en") -> List[Tuple[str, bool, str]]:
     """Load pangram / near-pangram sentences.
 
     Returns list of (sentence, is_pangram, missing_letters_csv).
     """
-    global _PANGRAM_CACHE
-    if _PANGRAM_CACHE is not None:
-        return _PANGRAM_CACHE
+    if language in _PANGRAM_CACHE:
+        return _PANGRAM_CACHE[language]
 
-    path = _DATA_DIR / "strawberry_pangrams.txt"
+    # Try language-specific file first, fall back to English
+    path = _DATA_DIR / f"pangrams_{language}.txt"
     if not path.exists():
-        raise FileNotFoundError(f"Pangrams file not found: {path}")
+        path = _DATA_DIR / "strawberry_pangrams.txt"
+    if not path.exists():
+        path = _DATA_DIR / "pangrams_en.txt"
+    if not path.exists():
+        raise FileNotFoundError(f"Pangrams file not found for language '{language}'")
 
     items: List[Tuple[str, bool, str]] = []
     with open(path, "r", encoding="utf-8") as fh:
@@ -164,29 +176,33 @@ def _load_pangrams() -> List[Tuple[str, bool, str]]:
             missing = parts[2].strip()
             items.append((sentence, is_pangram, missing))
 
-    _PANGRAM_CACHE = items
-    return _PANGRAM_CACHE
+    _PANGRAM_CACHE[language] = items
+    return items
 
 
 # ---------------------------------------------------------------------------
 # Lipogram loader
 # ---------------------------------------------------------------------------
 
-_LIPOGRAM_CACHE: Optional[List[Tuple[str, str, bool]]] = None
+_LIPOGRAM_CACHE: Dict[str, List[Tuple[str, str, bool]]] = {}
 
 
-def _load_lipograms() -> List[Tuple[str, str, bool]]:
+def _load_lipograms(language: str = "en") -> List[Tuple[str, str, bool]]:
     """Load lipogram sentences.
 
     Returns list of (sentence, avoided_letter, is_lipogram).
     """
-    global _LIPOGRAM_CACHE
-    if _LIPOGRAM_CACHE is not None:
-        return _LIPOGRAM_CACHE
+    if language in _LIPOGRAM_CACHE:
+        return _LIPOGRAM_CACHE[language]
 
-    path = _DATA_DIR / "strawberry_lipograms.txt"
+    # Try language-specific file first, fall back to English
+    path = _DATA_DIR / f"lipograms_{language}.txt"
     if not path.exists():
-        raise FileNotFoundError(f"Lipograms file not found: {path}")
+        path = _DATA_DIR / "strawberry_lipograms.txt"
+    if not path.exists():
+        path = _DATA_DIR / "lipograms_en.txt"
+    if not path.exists():
+        raise FileNotFoundError(f"Lipograms file not found for language '{language}'")
 
     items: List[Tuple[str, str, bool]] = []
     with open(path, "r", encoding="utf-8") as fh:
@@ -202,8 +218,8 @@ def _load_lipograms() -> List[Tuple[str, str, bool]]:
             is_lipogram = parts[2].strip().lower() == "true"
             items.append((sentence, avoided, is_lipogram))
 
-    _LIPOGRAM_CACHE = items
-    return _LIPOGRAM_CACHE
+    _LIPOGRAM_CACHE[language] = items
+    return items
 
 
 # ===================================================================
@@ -551,7 +567,7 @@ class StrawberryGenerator(TestCaseGenerator):
         config_name = prompt_config.get("name", f"strawberry_{user_style}_{system_style}")
 
         # Load word pool
-        buckets = _load_word_list()
+        buckets = _load_word_list(language)
         pool = []
         for tier in allowed_tiers:
             pool.extend(buckets.get(tier, []))
@@ -716,7 +732,7 @@ class StrawberryGenerator(TestCaseGenerator):
     # ------------------------------------------------------------------
 
     def _gen_anagram(self, rng, language) -> Tuple[Dict[str, Any], str]:
-        pairs = _load_anagram_pairs()
+        pairs = _load_anagram_pairs(language)
         w1, w2, is_anagram = rng.choice(pairs)
         templates = QUESTION_TEMPLATES_ANAGRAM.get(language, QUESTION_TEMPLATES_ANAGRAM["en"])
         template = rng.choice(templates)
@@ -734,7 +750,7 @@ class StrawberryGenerator(TestCaseGenerator):
     # ------------------------------------------------------------------
 
     def _gen_pangram(self, rng, language) -> Tuple[Dict[str, Any], str]:
-        items = _load_pangrams()
+        items = _load_pangrams(language)
         sentence, is_pangram, missing = rng.choice(items)
         templates = QUESTION_TEMPLATES_PANGRAM.get(language, QUESTION_TEMPLATES_PANGRAM["en"])
         template = rng.choice(templates)
@@ -752,7 +768,7 @@ class StrawberryGenerator(TestCaseGenerator):
     # ------------------------------------------------------------------
 
     def _gen_lipogram(self, rng, language) -> Tuple[Dict[str, Any], str]:
-        items = _load_lipograms()
+        items = _load_lipograms(language)
         sentence, avoided_letter, is_lipogram = rng.choice(items)
         templates = QUESTION_TEMPLATES_LIPOGRAM.get(language, QUESTION_TEMPLATES_LIPOGRAM["en"])
         template = rng.choice(templates)

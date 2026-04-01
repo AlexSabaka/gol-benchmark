@@ -1,0 +1,27 @@
+# Strawberry Benchmark — Pangram Sentences (German)
+# Format: sentence|is_pangram|missing_letters
+# Pipe-delimited (sentences may contain commas).
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# is_pangram: true if every letter a-z appears at least once
+# missing_letters: comma-separated letters absent from near-pangrams (empty for true pangrams)
+# Note: ä/ö/ü count as a/o/u; ß counts as s.
+
+# --- TRUE PANGRAMS ---
+Victor jagt zwölf Boxkämpfer quer über den großen Sylter Deich.|true|
+Falsches Üben von Xylophonmusik quält jeden größeren Zwerg.|true|
+Zwölf Boxkämpfer jagen Victor quer über den großen Sylter Deich.|true|
+Fix, Schwyz! quäkt Jürgen blöd vom Paß.|true|
+Sylvia wagt quick den Jux bei Pforzheim.|true|
+Typisch: Felix bejagt zwölf Vampire und quält sich mit des Rätsels kniffliger Lösung.|true|
+Jeder wackere Bayer vertilgt zwölf Paar Soxhlet-Mixbecher quälend pfiffig.|true|
+Quod erat demonstrandum: vom Jux lebhaft setzt Wikipedia große Zwerchfelle kaputt, ja typisch.|true|
+
+# --- NEAR-PANGRAMS (missing 1-3 letters) ---
+Victor jagt zwölf Kämpfer quer über den großen Deich.|false|s,x,y
+Falsches Üben von Musik quält jeden größeren Zwerg.|false|p,x,y
+Zwölf Kämpfer jagen Victor quer über den Deich.|false|s,x,y
+Typisch: Felix jagt Vampire und quält sich mit des Rätsels Lösung.|false|b,k,w,z
+Fix, Schwyz! ruft Jürgen blöd vom Paß.|false|k,q
+Der schnelle braune Fuchs springt über den faulen Hund.|false|j,k,m,o,q,v,w,x,y,z
+Sylvia wagt den Sprung bei kaltem Dezember.|false|c,f,h,j,o,q,x

@@ -8,7 +8,52 @@ import re
 import json
 from typing import Dict, Any, Optional
 from ..base import ResponseParser, ParsedAnswer
-from ..parse_utils import re_search_last, strip_verification_tail
+from ..parse_utils import (
+    re_search_last, strip_verification_tail,
+    merge_keywords, build_answer_label_re, get_language,
+)
+
+
+_LOOK_PATTERNS = {
+    "en": [
+        r"will (?:look|search|check) (?:in|inside|at) (?:the )?",
+        r"(?:he|she) (?:will |would )?(?:look|search|check) (?:in|for|at) (?:the )?",
+        r"(?:goes|go) (?:to|check) (?:the )?",
+        r"(?:expects?|thinks?|believes?) .{0,30}(?:in|at) (?:the )?",
+    ],
+    "es": [
+        r"(?:buscará|mirará|revisará) (?:en )?(?:el |la )?",
+        r"(?:irá|va) a (?:buscar|mirar|revisar) (?:en )?(?:el |la )?",
+        r"(?:cree|piensa|espera) .{0,30}(?:en )?(?:el |la )?",
+    ],
+    "fr": [
+        r"(?:cherchera|regardera|vérifiera) (?:dans )?(?:le |la )?",
+        r"(?:ira|va) (?:chercher|regarder|vérifier) (?:dans )?(?:le |la )?",
+        r"(?:pense|croit|s'attend) .{0,30}(?:dans )?(?:le |la )?",
+    ],
+    "de": [
+        r"wird (?:in|im|nach) (?:dem |der )?.*(?:suchen|schauen|nachsehen)",
+        r"(?:glaubt|denkt|erwartet) .{0,30}(?:in|im) (?:dem |der )?",
+    ],
+    "zh": [
+        "会(?:去|在|到).*(?:找|看|寻找)",
+        "(?:认为|以为|觉得).{0,20}(?:在|里)",
+    ],
+    "ua": [
+        r"(?:шукатиме|дивитиметься|перевірить) (?:в |у )?",
+        r"(?:піде|буде) (?:шукати|дивитися) (?:в |у )?",
+        r"(?:думає|вважає|очікує) .{0,30}(?:в |у )?",
+    ],
+}
+
+_CONTEXT_KEYWORDS = {
+    "en": ["look in the", "look for", "search", "answer", "in the", "the"],
+    "es": ["buscar en", "mirar en", "respuesta", "en el", "en la"],
+    "fr": ["chercher dans", "regarder dans", "réponse", "dans le", "dans la"],
+    "de": ["suchen in", "schauen in", "antwort", "in dem", "in der"],
+    "zh": ["在", "找", "答案", "里"],
+    "ua": ["шукати в", "дивитися в", "відповідь", "в", "у"],
+}
 
 
 class SallyAnneResponseParser(ResponseParser):
@@ -47,6 +92,8 @@ class SallyAnneResponseParser(ResponseParser):
         Returns:
             ParsedAnswer with extracted container name
         """
+        lang = get_language(task_params)
+
         if not response or not response.strip():
             return ParsedAnswer(
                 value=None,
@@ -55,7 +102,7 @@ class SallyAnneResponseParser(ResponseParser):
                 confidence=0.0,
                 error="Empty response"
             )
-        
+
         response_clean = response.strip()
         
         # Get known containers from task_params
@@ -87,7 +134,7 @@ class SallyAnneResponseParser(ResponseParser):
             )
         
         # Strategy 3: "Answer:" pattern
-        parsed, strategy = self._try_answer_pattern(response_clean, containers)
+        parsed, strategy = self._try_answer_pattern(response_clean, containers, lang)
         if parsed:
             return ParsedAnswer(
                 value=self._normalize_container(parsed, task_params),
@@ -97,7 +144,7 @@ class SallyAnneResponseParser(ResponseParser):
             )
         
         # Strategy 4: "will look in/for the [container]" pattern
-        parsed, strategy = self._try_look_pattern(response_clean, containers)
+        parsed, strategy = self._try_look_pattern(response_clean, containers, lang)
         if parsed:
             return ParsedAnswer(
                 value=self._normalize_container(parsed, task_params),
@@ -130,7 +177,7 @@ class SallyAnneResponseParser(ResponseParser):
             )
 
         # Strategy 7: Direct container match
-        parsed, strategy = self._try_direct_container_match(cleaned, containers, task_params)
+        parsed, strategy = self._try_direct_container_match(cleaned, containers, task_params, lang)
         if parsed:
             return ParsedAnswer(
                 value=parsed,
@@ -198,15 +245,16 @@ class SallyAnneResponseParser(ResponseParser):
         
         return None, ""
     
-    def _try_answer_pattern(self, response: str, containers: list) -> tuple[Optional[str], str]:
+    def _try_answer_pattern(self, response: str, containers: list, lang: str = "en") -> tuple[Optional[str], str]:
         """Try to extract answer from 'Answer:' pattern (last match)."""
         response_lower = response.lower()
+        answer_labels = build_answer_label_re(lang)
 
         # Pattern: "Answer: [container]" or "**Answer:** [container]"
         patterns = [
-            r'\*?\*?answer\*?\*?\s*:\s*(?:the\s+)?(\w+)',
-            r'answer\s+is\s+(?:the\s+)?(\w+)',
-            r'answer\s+is\s+(?:the\s+)?["\']?(\w+)["\']?',
+            rf'\*?\*?(?:{answer_labels})\*?\*?\s*:\s*(?:the\s+)?(\w+)',
+            rf'(?:{answer_labels})\s+is\s+(?:the\s+)?(\w+)',
+            rf'(?:{answer_labels})\s+is\s+(?:the\s+)?["\']?(\w+)["\']?',
         ]
 
         for pattern in patterns:
@@ -218,11 +266,12 @@ class SallyAnneResponseParser(ResponseParser):
 
         return None, ""
     
-    def _try_look_pattern(self, response: str, containers: list) -> tuple[Optional[str], str]:
+    def _try_look_pattern(self, response: str, containers: list, lang: str = "en") -> tuple[Optional[str], str]:
         """Try to extract from 'will look in/for the [container]' patterns (last match)."""
         response_lower = response.lower()
 
-        patterns = [
+        # Original English-specific patterns (capture group at end)
+        en_specific = [
             r'will\s+(?:naturally\s+)?look\s+(?:for\s+(?:the\s+\w+\s+)?)?in\s+the\s+(\w+)',
             r'will\s+(?:naturally\s+)?look\s+for\s+(?:his|her|the|their)\s+\w+\s+in\s+(?:the\s+)?(\w+)',
             r'will\s+search\s+(?:for\s+(?:the\s+\w+\s+)?)?in\s+the\s+(\w+)',
@@ -233,12 +282,22 @@ class SallyAnneResponseParser(ResponseParser):
             r'she\s+will\s+look\s+in\s+the\s+(\w+)',
         ]
 
-        for pattern in patterns:
+        # Try original English-specific patterns first (they have precise capture groups)
+        for pattern in en_specific:
             match = re_search_last(pattern, response_lower)
             if match:
                 answer = match.group(1).strip()
                 if answer in containers:
                     return answer, "look_pattern"
+
+        # Try multilingual look patterns (pattern + container)
+        look_patterns = merge_keywords(_LOOK_PATTERNS, lang)
+        for lp in look_patterns:
+            for container in containers:
+                pattern = lp + re.escape(container)
+                match = re_search_last(pattern, response_lower)
+                if match:
+                    return container, "look_pattern"
 
         return None, ""
     
@@ -273,37 +332,37 @@ class SallyAnneResponseParser(ResponseParser):
         
         return None, ""
     
-    def _try_direct_container_match(self, response: str, containers: list, task_params: Dict) -> tuple[Optional[str], str]:
+    def _try_direct_container_match(self, response: str, containers: list, task_params: Dict, lang: str = "en") -> tuple[Optional[str], str]:
         """
         Count occurrences of each container and use context to pick the answer.
-        
+
         This handles cases where the model discusses both containers but the answer
         is the one associated with the belief (not reality).
         """
         response_lower = response.lower()
-        
+
+        # Build multilingual context keywords
+        context_kws = merge_keywords(_CONTEXT_KEYWORDS, lang)
+
         # Count occurrences with context weighting
         scores = {}
         for container in containers:
             # Base count
             count = response_lower.count(container)
-            
-            # Boost for answer-related context
-            answer_contexts = [
-                f'look in the {container}',
-                f'look for.*in.*{container}',
-                f'search.*{container}',
-                f'answer.*{container}',
-                f'in the {container}',
-                f'the {container}\\.',  # ends sentence
-                f'\\*\\*{container}\\*\\*',  # bolded
-            ]
-            
+
+            # Boost for answer-related context (multilingual keywords + container)
             context_score = 0
-            for ctx in answer_contexts:
-                if re.search(ctx, response_lower):
+            for kw in context_kws:
+                if re.search(re.escape(kw) + r'.*?' + re.escape(container), response_lower):
                     context_score += 2
-            
+
+            # Always check bolded container
+            if re.search(r'\*\*' + re.escape(container) + r'\*\*', response_lower):
+                context_score += 2
+            # Container at end of sentence
+            if re.search(re.escape(container) + r'\.', response_lower):
+                context_score += 2
+
             scores[container] = count + context_score
         
         # Pick the container with highest score

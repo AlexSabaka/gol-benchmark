@@ -85,4 +85,85 @@ USER_PROMPT_TEMPLATES = {
             "CLASSEMENT :"
         ),
     },
+    "de": {
+        "linguistic": (
+            "Betrachten Sie die folgende Beschreibung:\n\n"
+            "{persona_description}\n\n"
+            "Ordnen Sie auf Grundlage dieser Beschreibung die folgenden Aussagen "
+            "von der WAHRSCHEINLICHSTEN (1) bis zur UNWAHRSCHEINLICHSTEN ({num_options}):\n\n"
+            "{ranked_items}\n\n"
+            "Bitte geben Sie Ihre Rangfolge als nummerierte Liste an, beginnend mit der "
+            "wahrscheinlichsten Option. Erklären Sie kurz Ihre Begründung für die ersten "
+            "3 Platzierungen.\n\n"
+            "RANGFOLGE:"
+        ),
+        "casual": (
+            "Schau dir diese Person an:\n\n"
+            "{persona_description}\n\n"
+            "Was davon ist wahrscheinlicher? Ordne sie von 1-{num_options} "
+            "(wahrscheinlichste bis unwahrscheinlichste):\n\n"
+            "{ranked_items}\n\n"
+            "Gib mir deine Rangfolge und erkläre deine Top 3!\n\n"
+            "RANGFOLGE:"
+        ),
+        "minimal": (
+            "{persona_description}\n\n"
+            "Rangfolge (1=wahrscheinlichste, {num_options}=unwahrscheinlichste):\n"
+            "{ranked_items}\n\n"
+            "RANGFOLGE:"
+        ),
+    },
+    "zh": {
+        "linguistic": (
+            "请阅读以下描述：\n\n"
+            "{persona_description}\n\n"
+            "根据这段描述，请将以下陈述从最可能（1）到最不可能（{num_options}）进行排序：\n\n"
+            "{ranked_items}\n\n"
+            "请以编号列表的形式提供您的排名，从最可能的选项开始。"
+            "同时，请简要说明您对前三名排序的理由。\n\n"
+            "排名："
+        ),
+        "casual": (
+            "看看这个人：\n\n"
+            "{persona_description}\n\n"
+            "下面哪个更可能？从1到{num_options}排个序（从最可能到最不可能）：\n\n"
+            "{ranked_items}\n\n"
+            "给出你的排名，并解释你的前三个选择！\n\n"
+            "排名："
+        ),
+        "minimal": (
+            "{persona_description}\n\n"
+            "排序（1=最可能，{num_options}=最不可能）：\n"
+            "{ranked_items}\n\n"
+            "排名："
+        ),
+    },
+    "ua": {
+        "linguistic": (
+            "Розгляньте наступний опис:\n\n"
+            "{persona_description}\n\n"
+            "На основі цього опису, будь ласка, розташуйте наступні твердження "
+            "від НАЙІМОВІРНІШОГО (1) до НАЙМЕНШ ІМОВІРНОГО ({num_options}):\n\n"
+            "{ranked_items}\n\n"
+            "Будь ласка, надайте ваш рейтинг у вигляді нумерованого списку, починаючи "
+            "з найімовірнішого варіанту. Також коротко поясніть ваші міркування щодо "
+            "перших 3 позицій.\n\n"
+            "РЕЙТИНГ:"
+        ),
+        "casual": (
+            "Подивись на цю людину:\n\n"
+            "{persona_description}\n\n"
+            "Що з цього більш імовірно? Розстав від 1 до {num_options} "
+            "(від найімовірнішого до найменш імовірного):\n\n"
+            "{ranked_items}\n\n"
+            "Дай мені свій рейтинг і поясни свої топ-3 вибори!\n\n"
+            "РЕЙТИНГ:"
+        ),
+        "minimal": (
+            "{persona_description}\n\n"
+            "Рейтинг (1=найімовірніше, {num_options}=найменш імовірне):\n"
+            "{ranked_items}\n\n"
+            "РЕЙТИНГ:"
+        ),
+    },
 }

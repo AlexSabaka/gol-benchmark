@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.12.0** | Last updated: 2026-03-31
+> **Version 2.13.0** | Last updated: 2026-04-01
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -44,7 +44,7 @@ The suite measures how well language models handle:
 ### Design Principles
 
 1. **Procedural generation** — Test cases are generated algorithmically with seeded randomness. Same seed + same config = identical test cases. No static dataset to memorize.
-2. **Prompt-first evaluation** — The same model is tested across multiple prompt configurations (user style x system style x language) to isolate prompt engineering effects from model capability.
+2. **Prompt-first evaluation** — The same model is tested across multiple prompt configurations (user style x system style x language) to isolate prompt engineering effects from model capability. All 18 plugins support 6 languages with multilingual response parsing.
 3. **Plugin architecture** — Each benchmark task is a self-contained plugin with auto-discovery. Adding a new task requires zero changes to the pipeline.
 4. **Portable pipeline** — The 3-stage architecture decouples generation, execution, and analysis. Stage 2 (execution) has near-zero dependencies, making it runnable on remote machines with only Python + a model API.
 
@@ -110,7 +110,7 @@ gol_eval/
 │   ├── plugins/                        # Plugin-based benchmark system (18 plugins)
 │   │   ├── base.py                     #   Abstract base classes + ConfigField
 │   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
-│   │   ├── parse_utils.py              #   End-first parsing utilities
+│   │   ├── parse_utils.py              #   End-first parsing utilities + multilingual keyword merge helpers
 │   │   ├── game_of_life/               #   Conway's Game of Life
 │   │   ├── arithmetic/                 #   Math expression evaluation
 │   │   ├── linda_fallacy/              #   Conjunction fallacy
@@ -185,7 +185,7 @@ gol_eval/
 │   └── ...
 │
 ├── scripts/                            # Batch processing utilities
-├── data/                               # External data (Conway's Life patterns, word lists)
+├── data/                               # (Removed — data co-located in src/plugins/*/data/)
 ├── testsets/                           # Generated test sets (JSON.gz)
 ├── results/                            # Benchmark results (JSON.gz)
 ├── reports/                            # Generated reports & charts
@@ -313,6 +313,8 @@ Base class helpers in `TestCaseGenerator`:
 ### Languages
 
 English (EN), French (FR), Spanish (ES), German (DE), Chinese (ZH), Ukrainian (UA)
+
+All 18 plugins now support all 6 languages for prompts, data, and response parsing (v2.13.0).
 
 ### Why This Matters
 

@@ -1,0 +1,27 @@
+# Strawberry Benchmark — Pangram Sentences (French)
+# Format: sentence|is_pangram|missing_letters
+# Pipe-delimited (sentences may contain commas).
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# is_pangram: true if every letter a-z appears at least once
+# missing_letters: comma-separated letters absent from near-pangrams (empty for true pangrams)
+# Note: Accented letters (é,è,ê,ë,à,â,etc.) count as their base letter.
+
+# --- TRUE PANGRAMS ---
+Portez ce vieux whisky au juge blond qui fume.|true|
+Voyez le brick géant que j'examine près du wharf.|true|
+Joyeux, le coq frivole du whisky porte bien sa gaze mixte.|true|
+Buvez de ce whisky que le patron juge fameux.|true|
+Jack voulut déplacer, whisky fumé, cinq big box en zone grise.|true|
+Zéphyr me vexait, joue blanc du whisky parfumé qui goûte.|true|
+Le vif zéphyr jubile sur les kumquats du clown borgne mixé.|true|
+Dès Noël, où un zéphyr haï me vêt de glaçons würmiens, je dîne d'exquis rôtis de bœuf au kir, à l'aÿ d'âge mûr, et cætera.|true|
+
+# --- NEAR-PANGRAMS (missing 1-3 letters) ---
+Portez ce vieux sirop au juge blond qui fume.|false|h,k,w,y
+Buvez de ce sirop que le patron juge fameux.|false|h,k,w,y
+Le vif zéphyr jubile sur les kumquats du clown borgne.|false|x
+Le vif zéphyr jubile sur les abricots du clown borgne.|false|k,m,q,x
+Joyeux, le coq du pré porte bien sa gaze fine.|false|h,k,m,v,w
+Buvez de ce whisky que le patron juge si bon.|false|f,m,x
+Le zèbre joyeux bondit avec aplomb dans ce grand parc fleuri.|false|h,k,q,w

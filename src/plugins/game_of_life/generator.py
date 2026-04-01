@@ -7,6 +7,7 @@ initial grid states and computing their expected next generation.
 
 from dataclasses import dataclass
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
@@ -62,7 +63,7 @@ class GoLTestCaseGenerator(TestCaseGenerator):
                 """Minimal config for test generation."""
                 models: List[str] = field(default_factory=lambda: ["dummy"])
                 seed: int = 42
-                known_patterns_dir: str = "data/conways_life/known_patterns"
+                known_patterns_dir: str = str(Path(__file__).resolve().parent / "data" / "known_patterns")
 
                 def __post_init__(self):
                     super().__post_init__()

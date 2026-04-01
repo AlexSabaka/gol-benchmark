@@ -1,0 +1,55 @@
+# Strawberry Benchmark — Anagram Pairs (French)
+# Format: word1,word2,is_anagram
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# True pairs: sorted(word1) == sorted(word2)
+# False pairs: near-misses that share many letters but differ
+
+# --- TRUE ANAGRAM PAIRS (short, 3-4 letters) ---
+chien,niche,true
+gare,rage,true
+mare,rame,true
+rime,mire,true
+acre,race,true
+rein,rien,true
+sire,reis,true
+ami,mai,true
+sel,les,true
+sac,cas,true
+par,rap,true
+arc,car,true
+art,rat,true
+dose,odes,true
+oser,rose,true
+user,ruse,true
+vote,veto,true
+ivre,rive,true
+dure,rude,true
+cure,ecru,true
+
+# --- TRUE ANAGRAM PAIRS (medium, 5-7 letters) ---
+crime,merci,true
+crise,cires,true
+singe,signe,true
+ecran,nacre,true
+orgue,rouge,true
+encre,cerne,true
+
+# --- FALSE (NEAR-MISS) PAIRS ---
+# Share many letters but are NOT anagrams
+lune,rune,false
+bras,gras,false
+pomme,gomme,false
+rouge,roue,false
+matin,marin,false
+plage,place,false
+boire,noire,false
+chaud,choux,false
+verre,terre,false
+monde,monte,false
+clair,chair,false
+sable,table,false
+blanc,plant,false
+foire,flore,false
+prise,brise,false
+poste,porte,false

@@ -18,43 +18,32 @@ import re
 from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last, strip_verification_tail
-
-# ---------------------------------------------------------------------------
-# Spelled-out number map (0–20 + common larger ones)
-# ---------------------------------------------------------------------------
-
-_WORD_TO_INT: Dict[str, int] = {
-    "zero": 0, "no": 0, "none": 0,
-    "one": 1, "two": 2, "three": 3, "four": 4, "five": 5,
-    "six": 6, "seven": 7, "eight": 8, "nine": 9, "ten": 10,
-    "eleven": 11, "twelve": 12, "thirteen": 13, "fourteen": 14,
-    "fifteen": 15, "sixteen": 16, "seventeen": 17, "eighteen": 18,
-    "nineteen": 19, "twenty": 20,
-}
-
-_WORD_NUM_PATTERN = re.compile(
-    r"\b(" + "|".join(re.escape(w) for w in _WORD_TO_INT) + r")\b",
-    re.IGNORECASE,
+from src.plugins.parse_utils import (
+    build_word_to_int,
+    get_language,
+    merge_keywords,
+    re_search_last,
+    strip_verification_tail,
+    YES_WORDS,
+    NO_WORDS,
 )
 
 _INT_PATTERN = re.compile(r"(?<![.\d])-?\d+(?![.\d])")
 
-# ---------------------------------------------------------------------------
-# Boolean keyword maps (multilingual)
-# ---------------------------------------------------------------------------
 
-_YES_WORDS = {
-    "yes", "true", "correct", "right", "si", "sí", "oui", "ja",
-    "是", "对", "так", "правда", "verdadero", "vrai", "richtig",
-}
-_NO_WORDS = {
-    "no", "false", "incorrect", "wrong", "non", "nein",
-    "不", "否", "错", "ні", "неправда", "falso", "faux", "falsch",
-}
+def _build_word_num_pattern(word_map: Dict[str, int]) -> re.Pattern:
+    """Build a compiled regex matching any key in *word_map*."""
+    return re.compile(
+        r"\b(" + "|".join(re.escape(w) for w in word_map) + r")\b",
+        re.IGNORECASE,
+    )
 
 
-def _try_parse_int(text: str, word_length: Optional[int] = None) -> Optional[int]:
+def _try_parse_int(
+    text: str,
+    word_map: Dict[str, int],
+    word_length: Optional[int] = None,
+) -> Optional[int]:
     """Try to interpret *text* as a single integer, rejecting bad values."""
     text = text.strip().rstrip(".,;:!?)")
     m = re.fullmatch(r"-?\d+", text)
@@ -66,8 +55,8 @@ def _try_parse_int(text: str, word_length: Optional[int] = None) -> Optional[int
             return None
         return val
     low = text.lower().strip(" .")
-    if low in _WORD_TO_INT:
-        return _WORD_TO_INT[low]
+    if low in word_map:
+        return word_map[low]
     return None
 
 
@@ -110,18 +99,21 @@ class StrawberryParser(ResponseParser):
     def _parse_count(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         text = response.strip()
         word_length = task_params.get("word_length")
+        lang = get_language(task_params)
+        word_map = build_word_to_int(lang)
+        word_num_pattern = _build_word_num_pattern(word_map)
 
         # Strategy 1: LaTeX boxed (last match)
         boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
         if boxed:
-            val = _try_parse_int(boxed.group(1), word_length)
+            val = _try_parse_int(boxed.group(1), word_map, word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="boxed", confidence=0.95)
 
         # Strategy 2: Bold (last match)
         bold = re_search_last(r"\*\*([^*]{1,20})\*\*", text)
         if bold:
-            val = _try_parse_int(bold.group(1), word_length)
+            val = _try_parse_int(bold.group(1), word_map, word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="bold", confidence=0.9)
 
@@ -136,7 +128,7 @@ class StrawberryParser(ResponseParser):
                 text, re.IGNORECASE,
             )
         if label:
-            val = _try_parse_int(label.group(1), word_length)
+            val = _try_parse_int(label.group(1), word_map, word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="label_line", confidence=0.88)
 
@@ -146,27 +138,27 @@ class StrawberryParser(ResponseParser):
             text, re.IGNORECASE | re.MULTILINE,
         )
         if is_n:
-            val = _try_parse_int(is_n.group(1), word_length)
+            val = _try_parse_int(is_n.group(1), word_map, word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="is_n_tail", confidence=0.85)
 
         # Strategy 4: Last standalone integer
         all_ints = _INT_PATTERN.findall(text)
         if all_ints:
-            val = _try_parse_int(all_ints[-1], word_length)
+            val = _try_parse_int(all_ints[-1], word_map, word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="last_number", confidence=0.75)
 
         # Strategy 5: First standalone integer
         if all_ints:
-            val = _try_parse_int(all_ints[0], word_length)
+            val = _try_parse_int(all_ints[0], word_map, word_length)
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="first_number", confidence=0.6)
 
         # Strategy 6: Spelled-out number (last match)
-        word_match = re_search_last(_WORD_NUM_PATTERN, text)
+        word_match = re_search_last(word_num_pattern, text)
         if word_match:
-            val = _WORD_TO_INT.get(word_match.group(1).lower())
+            val = word_map.get(word_match.group(1).lower())
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="spelled_out", confidence=0.55)
 
@@ -317,12 +309,15 @@ class StrawberryParser(ResponseParser):
 
     def _parse_boolean(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         text = strip_verification_tail(response.strip())
+        lang = get_language(task_params)
+        yes_words = set(merge_keywords(YES_WORDS, lang))
+        no_words = set(merge_keywords(NO_WORDS, lang))
 
         def _to_bool(candidate: str) -> Optional[bool]:
             c = candidate.strip().strip(".,;:!?'\"-").lower()
-            if c in _YES_WORDS:
+            if c in yes_words:
                 return True
-            if c in _NO_WORDS:
+            if c in no_words:
                 return False
             return None
 
@@ -364,7 +359,7 @@ class StrawberryParser(ResponseParser):
         # Models often state their answer first ("Yes.", "False."), then explain.
         # Check the first line / first sentence for an unambiguous keyword.
         yes_no_pattern = re.compile(
-            r"\b(" + "|".join(re.escape(w) for w in (_YES_WORDS | _NO_WORDS)) + r")\b",
+            r"\b(" + "|".join(re.escape(w) for w in (yes_words | no_words)) + r")\b",
             re.IGNORECASE,
         )
         first_line = text.split('\n', 1)[0].strip()
