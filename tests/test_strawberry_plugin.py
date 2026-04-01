@@ -119,8 +119,8 @@ class TestGeneratorCount:
     @pytest.mark.parametrize("lang", ["en", "es", "fr", "de", "zh", "ua"])
     def test_multilingual(self, generator, lang):
         cases = generator.generate_batch(
-            config={"mode": "real", "language": lang},
-            prompt_config={"user_style": "minimal", "system_style": "analytical"},
+            config={"mode": "real"},
+            prompt_config={"user_style": "minimal", "system_style": "analytical", "language": lang},
             count=1, seed=7,
         )
         assert len(cases) == 1

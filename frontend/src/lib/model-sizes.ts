@@ -1,116 +1,219 @@
 /**
- * Static lookup for model parameter counts.
- * Infers size from model name patterns (e.g. "3b", "7b", "27b").
- * This is intentionally approximate — extend as needed.
+ * Known model sizes in BILLIONS of total parameters.
+ *
+ * For MoE models, "total" is used (not active/activated), since that's the
+ * standard convention on model cards and HuggingFace. Active params are noted
+ * in comments where meaningfully different.
+ *
+ * Sources: official model cards, technical reports, and HuggingFace pages.
+ * Estimates are clearly marked with [EST] — treat with appropriate skepticism.
+ *
+ * Models omitted entirely:
+ *   - OpenAI GPT-4/GPT-4o/o-series  → no public disclosure
+ *   - Anthropic Claude family        → no public disclosure
+ *   - Google Gemini family           → no public disclosure
+ *   - Amazon Nova family             → no public disclosure
+ *   - xAI Grok-3-mini / grok-code-*  → no public disclosure
+ *   - Various boutique providers     → no reliable public data
  */
-
 const KNOWN_MODELS: Record<string, number> = {
-  // Qwen family
-  "qwen3:0.6b": 0.6e9,
-  "qwen3:1.7b": 1.7e9,
-  "qwen3:4b": 4e9,
-  "qwen3:8b": 8e9,
-  "qwen3:14b": 14e9,
-  "qwen3:30b": 30e9,
-  "qwen3:32b": 32e9,
-  "qwen2.5:0.5b": 0.5e9,
-  "qwen2.5:1.5b": 1.5e9,
-  "qwen2.5:3b": 3e9,
-  "qwen2.5:7b": 7e9,
-  "qwen2.5:14b": 14e9,
-  "qwen2.5:32b": 32e9,
-  "qwen2.5:72b": 72e9,
-  // Gemma family
-  "gemma3:1b": 1e9,
-  "gemma3:4b": 4e9,
-  "gemma3:12b": 12e9,
-  "gemma3:27b": 27e9,
-  "gemma2:2b": 2e9,
-  "gemma2:9b": 9e9,
-  "gemma2:27b": 27e9,
-  // Llama family
-  "llama3.2:1b": 1e9,
-  "llama3.2:3b": 3e9,
-  "llama3.1:8b": 8e9,
-  "llama3.1:70b": 70e9,
-  "llama3.3:70b": 70e9,
-  // Phi family
-  "phi4:14b": 14e9,
-  "phi3:3.8b": 3.8e9,
-  "phi3:14b": 14e9,
-  // Mistral
-  "mistral:7b": 7e9,
-  "mistral-small:24b": 24e9,
-  "mixtral:8x7b": 47e9,
-  "mixtral:8x22b": 141e9,
-  // DeepSeek
-  "deepseek-r1:1.5b": 1.5e9,
-  "deepseek-r1:7b": 7e9,
-  "deepseek-r1:8b": 8e9,
-  "deepseek-r1:14b": 14e9,
-  "deepseek-r1:32b": 32e9,
-  "deepseek-r1:70b": 70e9,
-  // Closed models — estimated parameter counts (publicly reported or community estimates)
-  // OpenAI
-  "gpt-4o": 200e9,
-  "gpt-4o-mini": 8e9,
-  "gpt-4-turbo": 200e9,
-  "gpt-4": 200e9,
-  "gpt-3.5-turbo": 20e9,
-  "o1": 200e9,
-  "o1-mini": 100e9,
-  "o1-preview": 200e9,
-  "o3": 200e9,
-  "o3-mini": 100e9,
-  "o4-mini": 100e9,
-  // Anthropic
-  "claude-3.5-haiku": 8e9,
-  "claude-3-haiku": 8e9,
-  "claude-3.5-sonnet": 70e9,
-  "claude-3-sonnet": 70e9,
-  "claude-3-opus": 137e9,
-  "claude-3.5-opus": 137e9,
-  "claude-sonnet-4": 70e9,
-  "claude-opus-4": 137e9,
-  // Google
-  "gemini-1.5-flash": 9e9,
-  "gemini-1.5-pro": 50e9,
-  "gemini-2.0-flash": 9e9,
-  "gemini-2.5-pro": 50e9,
-  "gemini-2.5-flash": 9e9,
-  // Mistral (API)
-  "mistral-large": 123e9,
-  "mistral-medium": 70e9,
-  "mistral-small": 24e9,
-  // Cohere
-  "command-r": 35e9,
-  "command-r-plus": 104e9,
-  // DeepSeek (API)
-  "deepseek-v3": 671e9,
-  "deepseek-r1": 671e9,
-  // Moonshot / Kimi
-  "kimi-k2": 1000e9,
-  "kimi-k2.5": 1000e9,
-  "moonshot-v1": 200e9,
-}
+  // ── Meta Llama 4 ──────────────────────────────────────────────────────────
+  // MoE; both models share 17B active params per token
+  "meta-llama/llama-4-maverick": 400,   // 128 experts
+  "meta-llama/llama-4-scout":    109,   // 16 experts
+ 
+  // ── DeepSeek ──────────────────────────────────────────────────────────────
+  // All V3/R1 family: 671B total MoE, 37B active
+  "deepseek/deepseek-r1":              671,
+  "deepseek/deepseek-r1-0528":         671,
+  "deepseek/deepseek-chat":            671,  // alias → V3 family
+  "deepseek/deepseek-chat-v3-0324":    671,
+  "deepseek/deepseek-chat-v3.1":       671,
+  "deepseek/deepseek-v3.1":            671,
+  "deepseek/deepseek-v3.1-terminus":   671,
+  // V3.2 is an updated post-trained checkpoint; some sources claim 385B for a
+  // new architecture, but official docs still cite 671B — using 671 pending
+  // a definitive technical report.
+  "deepseek/deepseek-v3.2":           671,
+  "deepseek/deepseek-v3.2-exp":       671,
+  "deepseek/deepseek-v3.2-speciale":  671,
+ 
+  // ── Mistral AI ────────────────────────────────────────────────────────────
+  // Large 2 (dense, 123B) — all 2407 / 2411 tags
+  "mistralai/mistral-large":       123,
+  "mistralai/mistral-large-2407":  123,
+  "mistralai/mistral-large-2411":  123,
+  // Large 3 (MoE, 675B total / 41B active) — 2512 tag
+  "mistralai/mistral-large-2512":  675,
+  // Nemo (12B dense, co-developed with NVIDIA)
+  "mistralai/mistral-nemo":        12,
+  // Saba (24B dense, Arabic/South-Asian specialisation)
+  "mistralai/mistral-saba":        24,
+  // Small 3.x (24B dense)
+  "mistralai/mistral-small-2603":  24,
+  "mistralai/mistral-small-creative": 24,  // same base as Small 3.x
+  // Pixtral Large (multimodal wrapper over Large 2 backbone)
+  "mistralai/pixtral-large-2411":  123,
+  // Devstral 2 (dense, 123B, Apache 2.0)
+  "mistralai/devstral-2512":       123,
+  // Codestral family: original 22B; 2508 checkpoint assumed same architecture
+  "mistralai/codestral-2508":      22,
+ 
+  // ── Microsoft ─────────────────────────────────────────────────────────────
+  "microsoft/phi-4":  14,   // dense SLM (confirmed in technical report)
+ 
+  // ── Cohere ────────────────────────────────────────────────────────────────
+  "cohere/command-a":             111,   // dense; confirmed on docs.cohere.com
+  "cohere/command-r-08-2024":      35,   // open-weight research release
+  "cohere/command-r-plus-08-2024": 104,  // open-weight research release
+ 
+  // ── Qwen / Alibaba ────────────────────────────────────────────────────────
+  // Qwen3-Max: closed-weight trillion-parameter model (Sept 2025 announcement)
+  "qwen/qwen3-max":          1000,
+  "qwen/qwen3-max-thinking": 1000,
+  // Qwen3-Coder (480B total MoE, 35B active — 8 of 160 experts per token)
+  "qwen/qwen3-coder":        480,
+  // qwen/qwen-max
+  // qwen/qwen-plus
+  // qwen/qwen-plus-2025-07-28
+  // qwen/qwen-plus-2025-07-28:thinking
+  // qwen/qwen-turbo
+  // qwen/qwen-vl-max
+  // qwen/qwen-vl-plus
+  // qwen/qwen3.5-flash-02-23
+  // qwen/qwen3.5-plus-02-15
+  // qwen/qwen3.6-plus-preview:free
+ 
+  // ── Zhipu AI / Z.ai (GLM family) ─────────────────────────────────────────
+  // GLM-4.5 / 4.6 / 4.7 share the same MoE backbone: 355B total / 32B active
+  "z-ai/glm-4.5":          355,
+  "z-ai/glm-4.6":          355,
+  "z-ai/glm-4.7":          355,
+  // Air variant: 106B total / 12B active
+  "z-ai/glm-4.5-air":       106,
+  "z-ai/glm-4.5-air:free":  106,
+  // Vision variants inherit the text backbone size (4.5V ≈ 108B per one source)
+  "z-ai/glm-4.5v":  108,   // [EST] vision variant; Zhipu cites ~108B
+  "z-ai/glm-4.6v":  355,   // multimodal build on 4.6 backbone
+  "z-ai/glm-5": 744,       // 744B total for GLM-5, no official data
+ 
+  // ── MiniMax ───────────────────────────────────────────────────────────────
+  // Text-01 / MiniMax-01: 456B total MoE / 45.9B active (hybrid-attention)
+  "minimax/minimax-01":  456,
+  // M1 is built on the Text-01 checkpoint (same 456B / 45.9B architecture)
+  "minimax/minimax-m1":  456,
+  // M2: lighter MoE, 230B total / 10B active
+  "minimax/minimax-m2":      230,
+  "minimax/minimax-m2-her":  230,   // same base, different RLHF variant
+ 
+  // ── Moonshot AI (Kimi) ────────────────────────────────────────────────────
+  // Kimi K2: 1T total MoE / ~32B active
+  "moonshotai/kimi-k2":          1000,
+  "moonshotai/kimi-k2-0905":     1000,
+  "moonshotai/kimi-k2-thinking": 1000,
+ 
+  // ── xAI Grok ─────────────────────────────────────────────────────────────
+  // xAI has never officially confirmed post-Grok-1 parameter counts.
+  // Community consensus places Grok-3/4/4.1/4.20 at ~3T total (MoE).
+  // Treat all Grok entries below as [EST] — omit if you prefer hard data only.
+  "x-ai/grok-3":               3000,  // [EST] ~3T MoE
+  "x-ai/grok-4":               3000,  // [EST] (some sources say ~1.7T)
+  "x-ai/grok-4.1-fast":        3000,  // [EST]
+  "x-ai/grok-4.20":            3000,  // elon is truly overgrown teenager
+ 
+  // ── AI21 Labs ─────────────────────────────────────────────────────────────
+  // Jamba 1.5 Large: SSM-Transformer hybrid MoE, 398B total / 94B active
+  "ai21/jamba-large-1.7":  398,
+ 
+  // –– Anthropic ––───────────────────────────────────────────────────────────
+  "anthropic/claude-3-haiku": 20, // [EST] some sources claim 20B total for Haiku 3
+  "anthropic/claude-3.5-haiku": 25, // [EST] some sources claim 25B total for Haiku 3.5
+  "anthropic/claude-haiku-4.5": 30, // [EST] some sources claim 30B total for Haiku 4.5
+  "anthropic/claude-3.5-sonnet": 175,  // [EST] some sources claim 175B total for Sonnet 3.5
+  "anthropic/claude-3.7-sonnet": 175,  // [EST] some sources claim 175B total for Sonnet 3.5
+  "anthropic/claude-sonnet-4": 200,  // [EST] some sources claim 200B total for Sonnet 4.5
+  "anthropic/claude-sonnet-4.5": 200,  // [EST] some sources claim 200B total for Sonnet 4.5
+  "anthropic/claude-sonnet-4.6": 200,  // [EST] some sources claim 200B total for Sonnet 4.6
+  "anthropic/claude-opus-3": 2000,  // [EST] some sources claim 2T total for Opus 3
+  "anthropic/claude-opus-4": 2500,  // [EST] some sources claim 2.5T total for Opus 4
+  "anthropic/claude-opus-4.1": 2500,  // [EST] some sources claim 2.5T total for Opus 4
+  "anthropic/claude-opus-4.5": 2700,  // [EST] some sources claim 2.7T total for Opus 4.5
+  "anthropic/claude-opus-4.6": 3000,  // [EST] some sources claim 3T total for Opus 4.6
+
+  // ── OpenAI (GPT-4 family) ─────────────────────────────────────────────────
+  "openai/gpt-3.5-turbo": 20,
+  "openai/gpt-4": 1700,
+  "openai/gpt-4.1": 1700,
+  "openai/gpt-4o": 200,
+  // "openai/gpt-5": -1,
+  // "openai/gpt-5-chat": -1,
+  // "openai/gpt-5-codex": -1,
+  // "openai/gpt-5-image": -1,
+  // "openai/gpt-5-image-mini": -1,
+  // "openai/gpt-5-mini": -1,
+  // "openai/gpt-5-nano": -1,
+  // "openai/gpt-5-pro": -1,
+  // "openai/gpt-5.1": -1,
+  // "openai/gpt-5.1-chat": -1,
+  // "openai/gpt-5.1-codex": -1,
+  // "openai/gpt-5.1-codex-max": -1,
+  // "openai/gpt-5.1-codex-mini": -1,
+  // "openai/gpt-5.2": -1,
+  // "openai/gpt-5.2-chat": -1,
+  // "openai/gpt-5.2-codex": -1,
+  // "openai/gpt-5.2-pro": -1,
+  // "openai/gpt-5.3-chat": -1,
+  // "openai/gpt-5.3-codex": -1,
+  // "openai/gpt-5.4": -1,
+  // "openai/gpt-5.4-mini": -1,
+  // "openai/gpt-5.4-nano": -1,
+  // "openai/gpt-5.4-pro": -1,
+   "openai/o1": 300,
+  // "openai/o3": -1,
+  // "openai/o4-mini": -1,
+
+  // ── Google Gemini ───────────────────────────────────────────────────────────
+  "google/gemini-2.0-flash-001": -1,
+  "google/gemini-2.0-flash-lite-001": -1,
+  "google/gemini-2.5-flash": -1,
+  "google/gemini-2.5-flash-image": -1,
+  "google/gemini-2.5-flash-lite": -1,
+  "google/gemini-2.5-flash-lite-preview-09-2025": -1,
+  "google/gemini-2.5-pro": -1,
+  "google/gemini-2.5-pro-preview": -1,
+  "google/gemini-2.5-pro-preview-05-06": -1,
+  "google/gemini-3-flash-preview": -1,
+  "google/gemini-3-pro-image-preview": -1,
+  "google/gemini-3.1-flash-image-preview": -1,
+  "google/gemini-3.1-flash-lite-preview": -1,
+  "google/gemini-3.1-pro-preview": -1,
+  "google/gemini-3.1-pro-preview-customtools": -1,
+  "google/lyria-3-clip-preview": -1,
+  "google/lyria-3-pro-preview": -1,
+};
 
 /** Regex to extract size from model name, e.g. "27b" → 27e9 */
-const SIZE_PATTERN = /(\d+(?:\.\d+)?)\s*[bB]\b/
+const SIZE_PATTERN = /(\d+(?:\.\d+)?)\s*([bBmM])\b/
 
 export function getModelSize(name: string): number | null {
   const lower = name.toLowerCase()
 
   // Direct lookup
-  if (KNOWN_MODELS[lower]) return KNOWN_MODELS[lower]
+  if (KNOWN_MODELS[lower]) return KNOWN_MODELS[lower] * 1e9
 
   // Partial match (model name may include quantization suffix)
   for (const [key, size] of Object.entries(KNOWN_MODELS)) {
-    if (lower.startsWith(key) || lower.includes(key)) return size
+    if (lower.startsWith(key) || lower.includes(key)) return size * 1e9
   }
 
   // Regex fallback: extract "Nb" pattern
   const match = lower.match(SIZE_PATTERN)
-  if (match) return parseFloat(match[1]) * 1e9
+  if (match) {
+    const value = parseFloat(match[1])
+    const unit = match[2].toLowerCase()
+    if (unit === "b") return value * 1e9
+    if (unit === "m") return value * 1e6
+  }
 
   return null
 }

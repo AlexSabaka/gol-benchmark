@@ -24,7 +24,7 @@ const LANGUAGES: { code: string; flag: string; label: string }[] = [
   { code: "fr", flag: "🇫🇷", label: "Français" },
   { code: "de", flag: "🇩🇪", label: "Deutsch" },
   { code: "zh", flag: "🇨🇳", label: "中文" },
-  { code: "uk", flag: "🇺🇦", label: "Українська" },
+  { code: "ua", flag: "🇺🇦", label: "Українська" },
 ]
 
 export default function ConfigurePage() {

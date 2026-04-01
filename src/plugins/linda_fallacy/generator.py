@@ -19,7 +19,7 @@ LANGUAGE_CULTURE_MAP = {
     'fr': ['european', 'african'],
     'de': ['european'],
     'zh': ['east_asian'],
-    'uk': ['european'],
+    'ua': ['european'],
 }
 
 

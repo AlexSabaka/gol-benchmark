@@ -560,7 +560,7 @@ class StrawberryGenerator(TestCaseGenerator):
         rand_min = config.get("random_word_min", 4)
         rand_max = config.get("random_word_max", 12)
         favor_repeated = config.get("favor_repeated", True)
-        language = config.get("language", "en")
+        language = prompt_config.get("language", "en")
 
         user_style = prompt_config.get("user_style", "casual")
         system_style = prompt_config.get("system_style", "analytical")

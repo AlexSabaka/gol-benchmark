@@ -227,9 +227,10 @@ def generate_arithmetic_tests(config: Dict) -> List[Dict]:
             for i, expression in enumerate(expressions):
                 
                 # Create prompt context
+                _lang = prompt_config.get('language', config['execution'].get('prompt_language', 'en'))
                 context = PromptContext(
                     task_type=TaskType.MATH_EXPRESSION,
-                    language=Language(config['execution'].get('prompt_language', 'en')),
+                    language=Language(_lang),
                     style=PromptStyle(prompt_config['user_style']),
                     system_style=SystemPromptStyle(prompt_config['system_style'])
                 )
@@ -262,7 +263,7 @@ def generate_arithmetic_tests(config: Dict) -> List[Dict]:
                     'prompt_metadata': {
                         'user_style': prompt_config['user_style'],
                         'system_style': prompt_config['system_style'],
-                        'language': config['execution'].get('prompt_language', 'en')
+                        'language': _lang
                     },
                     'generation_metadata': {
                         'seed': gen_params['seed'],
@@ -501,8 +502,11 @@ def generate_linda_tests(config: Dict) -> List[Dict]:
     # Import Linda benchmark components
     from src.benchmarks.linda_eval import LindaBenchmark, PersonaTemplate
     
-    # Get language and ensure culture alignment
-    language = config['execution'].get('prompt_language', 'en')
+    # Get language from first prompt_config (fallback to execution-level, then 'en')
+    # NOTE: Linda fallback generator uses a single language for all prompt_configs
+    # because culture alignment depends on language.
+    first_pc = config['task']['prompt_configs'][0] if config['task']['prompt_configs'] else {}
+    language = first_pc.get('language', config['execution'].get('prompt_language', 'en'))
     culture_filter = gen_params.get('culture_filter', None)
     
     # Map language to appropriate cultures to avoid mismatch (English prompt + Chinese name)

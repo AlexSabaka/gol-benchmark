@@ -328,6 +328,36 @@ DECIMAL_COMP_WORDS: Dict[str, Dict[str, Dict[str, str]]] = {
         "version":  {"bigger": "higher",  "smaller": "lower"},
         "date":     {"bigger": "later",   "smaller": "earlier"},
     },
+    "es": {
+        "neutral":  {"bigger": "mayor",   "smaller": "menor"},
+        "decimal":  {"bigger": "mayor",   "smaller": "menor"},
+        "version":  {"bigger": "superior","smaller": "inferior"},
+        "date":     {"bigger": "posterior","smaller": "anterior"},
+    },
+    "fr": {
+        "neutral":  {"bigger": "plus grand","smaller": "plus petit"},
+        "decimal":  {"bigger": "plus grand","smaller": "plus petit"},
+        "version":  {"bigger": "supérieure","smaller": "inférieure"},
+        "date":     {"bigger": "ultérieure","smaller": "antérieure"},
+    },
+    "de": {
+        "neutral":  {"bigger": "größer",  "smaller": "kleiner"},
+        "decimal":  {"bigger": "größer",  "smaller": "kleiner"},
+        "version":  {"bigger": "höher",   "smaller": "niedriger"},
+        "date":     {"bigger": "später",  "smaller": "früher"},
+    },
+    "zh": {
+        "neutral":  {"bigger": "更大",    "smaller": "更小"},
+        "decimal":  {"bigger": "更大",    "smaller": "更小"},
+        "version":  {"bigger": "更高",    "smaller": "更低"},
+        "date":     {"bigger": "更晚",    "smaller": "更早"},
+    },
+    "ua": {
+        "neutral":  {"bigger": "більше",  "smaller": "менше"},
+        "decimal":  {"bigger": "більше",  "smaller": "менше"},
+        "version":  {"bigger": "вище",    "smaller": "нижче"},
+        "date":     {"bigger": "пізніше", "smaller": "раніше"},
+    },
 }
 
 # ---------------------------------------------------------------------------
@@ -411,7 +441,7 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         value_order = config.get("value_order", "random")
         frac_max_denom = config.get("fraction_max_denominator", 16)
         max_dp = config.get("max_decimal_places", 3)
-        language = config.get("language", "en")
+        language = prompt_config.get("language", "en")
         decimal_framings = config.get("decimal_framings",
                                       ["neutral", "decimal", "version", "date"])
         decimal_adversarial_ratio = config.get("decimal_adversarial_ratio", 0.6)

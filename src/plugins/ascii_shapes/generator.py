@@ -144,10 +144,20 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
                 }
 
             # Generate prompts
+            # Engine returns nested dict {shape: {rendered: ...}, question_key: ...}
+            # Fallback path returns flat dict {rendered: ..., question: ...}
+            if 'shape' in shape and isinstance(shape['shape'], dict):
+                rendered = shape['shape'].get('rendered', '')
+                question = self._generate_question(
+                    shape.get('question_type', shape.get('question_key', question_type)),
+                )
+            else:
+                rendered = shape.get('rendered', '')
+                question = shape.get('question', '')
             user_prompt = self._format_user_prompt(
                 USER_PROMPT_TEMPLATES, language_str, user_style_str,
-                shape=shape.get('rendered', ''),
-                question=shape.get('question', ''),
+                shape=rendered,
+                question=question,
             )
             system_prompt = self._get_system_prompt(system_style_str, language_str)
             full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
