@@ -2,6 +2,87 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.14.0] - April 4, 2026
+
+### UI & Workflow Improvements
+
+Major enhancements to the React SPA frontend and FastAPI backend, implementing the PRD for Charts, Results, Test Sets, Configure, and Execute pages.
+
+#### Charts Page
+- **Heatmap legend fix** — gradient direction corrected from horizontal to vertical (bottom=red, top=green)
+- **Chart filters** — new `ChartFilters` component with multi-select popover dropdowns for task type and language filtering; applied to all 4 tabs (heatmap, comparison, scaling, dimensions)
+- **Log scale toggle** — scaling scatter tab has a button to switch X-axis between log and linear scale
+- **Task filter on scaling** — scatter plot recalculates per-model accuracy from only the filtered tasks when task filter is active
+- **"By Dimension" tab** — new tab with bar charts showing accuracy breakdown by Language, User Prompt Style, or System Prompt Style; backend `/api/results/analyze` returns `dimension_breakdowns` computed from `prompt_metadata`
+- **Language-aware filtering** — backend extracts `languages` from result test cases; frontend filters results by language at file-selection level
+
+#### Results Page
+- **Reanalyze button** — re-parse and re-evaluate existing model outputs using current plugin parsers without re-running inference; shows per-file accuracy change toasts
+- **Rerun with params** — opens shared Param Override Modal, finds matching testset by metadata name, navigates to Execute page
+- **Grouping toggle** — sort results by None / Model / Task Type via segmented buttons in toolbar
+- **Select all / deselect all** — checkbox in the table header column toggles all; visual states: filled, half-opacity, dim
+- **Delete button** — red destructive button in header actions, confirmation dialog, new `DELETE /api/results/{filename}` endpoint
+- **Language column** — shows language flags (e.g. flag emojis), with faceted filter
+- **User Style / System Style columns** — shows style name or "multi" when several; with faceted filters
+
+#### Test Sets Page
+- **View Details column** — moved from dropdown menu to its own dedicated table column with Eye icon
+- **Tabbed detail sheet** — Overview (metadata/params) + Cases (paginated with Previous/Next controls)
+- **Paginated cases** — backend `GET /api/testsets/{filename}` now supports `page` and `page_size` query params; returns all cases paginated instead of first 5
+- **Regenerate with params** — opens shared Param Override Modal, generates new testset variant with overridden prompt params
+- **Grouping toggle** — sort testsets by None / Task Type
+- **Language column** — shows language flags, with faceted filter
+- **User Style / System Style columns** — shows style name or "multi"; with faceted filters
+
+#### Configure Page
+- **Count field first** — plugin config forms now sort count-like fields (count, grids_per_difficulty, expressions_per_target, etc.) to appear first; implemented at both API level (`src/web/api/plugins.py`) and client side (`config-form.tsx`)
+- **Custom system prompt** — new card with 3 input modes: Text (textarea), File Upload (.txt/.md), and URL Fetch (via `POST /api/testsets/fetch-prompt-url`); character count display with >4000 char warning; included in `GenerateRequest`
+
+#### Execute Page
+- **Multi-provider model selection** — all providers (Ollama, OpenAI-compatible, HuggingFace) are now collapsible cards visible simultaneously; select models from any combination of providers in a single run
+- **Multiple OpenAI-compatible endpoints** — "Add Another Endpoint" button for configuring Groq, OpenRouter, vLLM, etc. side by side, each with independent model discovery
+- **HuggingFace model search** — search HuggingFace Hub by name (2+ chars), optional API key for gated models
+- **Global model search** — single search box filters across all provider sections
+- **Favorite models** — star toggle per model; localStorage-backed; favorites sorted to top
+- **Favorites sidebar** — sticky side panel showing all favorited models grouped by provider; one-click selection with auto provider-switch
+- **Encrypted credential storage** — Save/Load API credentials for OpenAI-compatible endpoints via Web Crypto API (AES-GCM)
+- **Multi-provider run** — on Run, models are grouped by provider+endpoint and one `/api/jobs/run` request is fired per group; summary badges show count per provider
+
+#### Shared Components & UI Fixes
+- **Param Override Modal** (`param-override-modal.tsx`) — reusable Dialog for overriding user style, system style (including custom prompt), and language; used by both Results (rerun → Execute) and Test Sets (regenerate → new testset)
+- **Textarea component** (`ui/textarea.tsx`) — new shadcn-style textarea primitive
+- **Dialog overflow fix** — `DialogContent` now uses `overflow-hidden overflow-y-auto` with `max-h-[calc(100vh-2rem)]`; prevents horizontal scrollbar and buttons being pushed off-screen by long filenames
+- **Language flags utility** (`lib/language-flags.ts`) — maps language codes to flag emojis
+- **Dimension bar chart** (`charts/dimension-bar-chart.tsx`) — horizontal bar chart for language/style breakdowns
+
+#### Backend — Reanalysis
+- **New module** `src/web/reanalyze.py` — extracted from root `reanalyze_results.py`; provides `reanalyze_result_file()` with atomic file writes (tempfile + `os.replace`)
+- **New endpoint** `POST /api/results/{filename}/reanalyze` — re-parses all test results using current plugin parsers, recalculates summary statistics, returns `{old_accuracy, new_accuracy, changes}`
+
+#### Backend — Custom System Prompts
+- **Plugin base class** (`src/plugins/base.py`) — `_get_system_prompt()` now accepts `custom_system_prompt` param; `_build_prompts()` forwards it; new `_stash_prompt_config()` method stores custom prompt before `generate_batch()` so all generators automatically pick it up without modification
+- **Pipeline** (`src/stages/generate_testset.py`) — propagates `custom_system_prompt` from config through to `prompt_conf` dict; calls `_stash_prompt_config()` before batch generation
+- **API** (`src/web/api/testsets.py`) — `GenerateRequest` gains `custom_system_prompt` field; new `POST /api/testsets/fetch-prompt-url` endpoint fetches prompt text from URL (capped at 50KB)
+
+#### Backend — Task Type Inference Fix
+- **`_infer_task_type_from_id()`** (`src/stages/analyze_results.py`) — replaced fragile 30-line if/elif chain with a clean function checking 18 canonical task types (longest-first) + 6 aliases (`tracking`→`object_tracking`, `ari`→`arithmetic`, `gol`→`game_of_life`, `c14`→`cellular_automata_1d`, `linda`→`linda_fallacy`, `false_belief`→`sally_anne`); prefers explicit `task_params.task_type` when available
+- **Fixed object_tracking "unknown"** — `tracking_0000` test IDs were not matched because the old code only checked `_tracking` (with leading underscore); now also checks `startswith("tracking_")`
+- **Fixed `ari_` test IDs** — old arithmetic abbreviation now recognized via alias
+- **Shared inference** — `_summarize_result()` in `analysis.py` now imports and uses the same `_infer_task_type_from_id()` instead of naive `test_id.split("_")[0]`
+
+#### Backend — Prompt Metadata in Results
+- **`jobs.py`** now stores `prompt_metadata` (user_style, system_style, language) and `config_name` in each result entry, enabling dimension breakdowns and filtering
+- **Testset summaries** (`_peek_testset()`) now extract `languages`, `user_styles`, `system_styles` from test case prompt_metadata
+- **Result summaries** (`_summarize_result()`) now extract `user_styles`, `system_styles` alongside existing `languages`
+- **Analyze endpoint** returns `dimension_breakdowns` with per-bucket accuracy for language, user_style, system_style
+
+#### Frontend Types & API Layer
+- New types: `ParamOverrides`, `ReanalyzeResponse`, `DimensionBucket`, `TestsetDetail.total_cases/page/page_size`
+- Updated types: `ResultSummary.{languages,user_styles,system_styles}`, `TestsetSummary.{languages,user_styles,system_styles}`, `AnalyzeResponse.dimension_breakdowns`
+- New API functions: `reanalyzeResult()`, `fetchPromptFromUrl()`, `deleteResult()`
+- New hooks: `useReanalyzeResult()`, `useDeleteResult()`
+- New libs: `credential-store.ts`, `favorite-models.ts`, `language-flags.ts`
+
 ## [2.13.0] - April 1, 2026
 
 ### Full Multilingual Support (all 18 plugins)

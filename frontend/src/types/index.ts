@@ -1,5 +1,5 @@
 export type { PluginInfo, ConfigField, PluginSchema } from "./plugin"
 export type { Provider, OllamaModel, OpenAIModel, HFModel, OllamaModelsResponse, OpenAIModelsResponse, HFModelsResponse } from "./model"
-export type { TestsetSummary, TestsetDetail, PromptConfig, TaskConfig, GenerateRequest, GenerateResponse } from "./testset"
+export type { TestsetSummary, TestsetDetail, PromptConfig, TaskConfig, GenerateRequest, GenerateResponse, ParamOverrides } from "./testset"
 export type { JobState, Job, RunRequest, RunResponse } from "./job"
-export type { ResultSummary, ResultDetail, ResultEntry, AnalyzeRequest, AnalyzeResponse, ModelAnalysis, ReportInfo, GenerateReportResponse, HeatmapCell, ScatterPoint } from "./result"
+export type { ResultSummary, ResultDetail, ResultEntry, AnalyzeRequest, AnalyzeResponse, ModelAnalysis, DimensionBucket, ReportInfo, GenerateReportResponse, ReanalyzeResponse, HeatmapCell, ScatterPoint } from "./result"

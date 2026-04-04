@@ -11,7 +11,7 @@ _WEB_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _WEB_DIR.resolve().parent.parent
 _SPA_DIR = _PROJECT_ROOT / "frontend" / "dist"
 
-app = FastAPI(title="GoL Benchmark", version="3.0.0")
+app = FastAPI(title="GoL Benchmark", version="2.14.0")
 
 # --- API routes ---------------------------------------------------------------
 app.include_router(api_router, prefix="/api")

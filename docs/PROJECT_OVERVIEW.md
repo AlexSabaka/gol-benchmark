@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.13.0** | Last updated: 2026-04-01
+> **Version 2.14.0** | Last updated: 2026-04-02
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -149,6 +149,7 @@ gol_eval/
 │   │   │   ├── testsets.py             #     Test set creation & listing
 │   │   │   ├── execution.py            #     Job submission & status
 │   │   │   └── analysis.py             #     Result analysis
+│   │   ├── reanalyze.py                #   Reanalysis utilities (re-parse/re-evaluate results)
 │   │   └── config.py                   #   Web server configuration
 │   │
 │   ├── models/                         # LLM provider interfaces
@@ -341,11 +342,12 @@ cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → 
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/` | Dashboard | Summary of available plugins, models, recent runs |
-| `/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix |
-| `/testsets` | Test Sets | Create, list, and inspect test sets |
-| `/execute` | Execute | Submit jobs, monitor real-time progress |
+| `/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix, custom system prompt (text/file/URL) |
+| `/testsets` | Test Sets | Create, list, inspect (tabbed detail with paginated cases), regenerate with param overrides, group by task type |
+| `/execute` | Execute | Submit jobs; model search/filter, favorite models sidebar grouped by provider, encrypted credential storage for OpenAI-compatible endpoints |
 | `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions |
-| `/results` | Results | Browse results with sortable DataTable, model/task faceted filters, view analysis breakdowns |
+| `/results` | Results | Browse results with sortable DataTable, model/task faceted filters; reanalyze, rerun with params, group by task/model |
+| `/charts` | Charts | Heatmap, bar comparison, scaling scatter; task type + language filtering, log/linear scale toggle |
 | `/reports` | Reports | View generated HTML reports in iframe |
 
 ### Frontend Architecture
@@ -355,12 +357,14 @@ frontend/src/
 ├── api/          # Typed fetch client (client.ts, plugins.ts, models.ts, testsets.ts, jobs.ts, results.ts)
 ├── hooks/        # React Query hooks with auto-refresh (use-plugins, use-models, use-testsets, use-jobs, use-results)
 ├── types/        # TypeScript interfaces mirroring backend schemas
-├── pages/        # 7 route pages
+├── pages/        # 8 route pages (Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports)
 ├── components/
-│   ├── ui/           # shadcn/ui primitives (18 components)
+│   ├── ui/           # shadcn/ui primitives (19 components incl. textarea)
 │   ├── layout/       # AppLayout, Sidebar, Header
 │   ├── plugin-config/ # Dynamic ConfigField renderer (number, select, multi-select, boolean, range, weight_map)
-│   └── data-table/   # Generic sortable/filterable DataTable
+│   ├── charts/       # AccuracyHeatmap, ModelBarChart, ScalingScatter, ChartFilters, ChartCard
+│   ├── data-table/   # Generic sortable/filterable DataTable
+│   └── param-override-modal.tsx  # Shared modal for rerun/regenerate with param overrides
 └── App.tsx       # BrowserRouter + QueryClientProvider + ThemeProvider
 ```
 
@@ -372,7 +376,7 @@ frontend/src/
 | `models.py` | `/api/models` | Model listing from Ollama/HF/OpenAI providers |
 | `testsets.py` | `/api/testsets` | Test set generation and listing |
 | `execution.py` | `/api/jobs` | Job submission, status polling, progress |
-| `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns |
+| `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns, reanalysis |
 
 ### Background Jobs
 

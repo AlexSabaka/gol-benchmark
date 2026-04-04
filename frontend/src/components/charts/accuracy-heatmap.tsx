@@ -163,7 +163,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
 
         {/* Color legend */}
         <defs>
-          <linearGradient id="heatmap-legend" x1="0" x2="1" y1="0" y2="0">
+          <linearGradient id="heatmap-legend" x1="0" x2="0" y1="1" y2="0">
             <stop offset="0%" stopColor={accuracyColor(0)} />
             <stop offset="50%" stopColor={accuracyColor(0.5)} />
             <stop offset="100%" stopColor={accuracyColor(1)} />

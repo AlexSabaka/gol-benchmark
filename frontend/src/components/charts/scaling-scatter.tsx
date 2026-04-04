@@ -14,6 +14,7 @@ import type { ScatterPoint } from "@/types"
 
 interface ScalingScatterProps {
   data: ScatterPoint[]
+  logScale?: boolean
 }
 
 type ScatterPayload = {
@@ -58,7 +59,7 @@ function CustomDot(props: {
   )
 }
 
-export function ScalingScatter({ data }: ScalingScatterProps) {
+export function ScalingScatter({ data, logScale = true }: ScalingScatterProps) {
   const known = data.filter((d) => d.paramCount !== null)
   const unknown = data.filter((d) => d.paramCount === null)
 
@@ -93,7 +94,7 @@ export function ScalingScatter({ data }: ScalingScatterProps) {
           <XAxis
             type="number"
             dataKey="x"
-            scale="log"
+            scale={logScale ? "log" : "linear"}
             domain={["auto", "auto"]}
             tickFormatter={(v: number) => formatParamCount(v)}
           >

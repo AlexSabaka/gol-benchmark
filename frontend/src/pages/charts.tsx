@@ -19,12 +19,15 @@ import {
 } from "@/components/ui/collapsible"
 import { Card, CardContent } from "@/components/ui/card"
 import { ChartCard } from "@/components/charts/chart-card"
+import { ChartFilters } from "@/components/charts/chart-filters"
 import { AccuracyHeatmap } from "@/components/charts/accuracy-heatmap"
 import { ModelBarChart } from "@/components/charts/model-bar-chart"
 import { ScalingScatter } from "@/components/charts/scaling-scatter"
+import { DimensionBarChart } from "@/components/charts/dimension-bar-chart"
 import { useResults } from "@/hooks/use-results"
 import { useChartData } from "@/hooks/use-chart-data"
 import { formatPercent } from "@/lib/utils"
+import { getModelSize } from "@/lib/model-sizes"
 import {
   Loader2,
   Grid3X3,
@@ -33,6 +36,7 @@ import {
   Search,
   ChevronRight,
   Check,
+  Languages,
 } from "lucide-react"
 import type { ResultSummary } from "@/types"
 
@@ -68,14 +72,76 @@ export default function ChartsPage() {
   const [search, setSearch] = useState("")
   const deferredSearch = useDeferredValue(search)
   const [selectorOpen, setSelectorOpen] = useState(true)
+  const [taskTypeFilter, setTaskTypeFilter] = useState<Set<string>>(new Set())
+  const [languageFilter, setLanguageFilter] = useState<Set<string>>(new Set())
+  const [logScale, setLogScale] = useState(true)
+  const [dimTab, setDimTab] = useState<"language" | "user_style" | "system_style">("language")
 
-  const filenames = useMemo(() => [...selectedFiles], [selectedFiles])
+  // Apply language filter at file-selection level
+  const filenames = useMemo(() => {
+    if (languageFilter.size === 0 || !results) return [...selectedFiles]
+    // Only include files whose languages overlap with the filter
+    return [...selectedFiles].filter((f) => {
+      const r = results.find((res) => res.filename === f)
+      if (!r?.languages) return true // no language info = include
+      return r.languages.some((l) => languageFilter.has(l))
+    })
+  }, [selectedFiles, languageFilter, results])
   const { data: chartData, isLoading: chartLoading, error } = useChartData(filenames)
 
-  const barData = useMemo(
-    () => chartData?.getBarData(barTask) ?? [],
-    [chartData, barTask]
+  // Extract available filter values from chart data
+  const availableTaskTypes = useMemo(
+    () => chartData?.tasks ?? [],
+    [chartData]
   )
+  const availableLanguages = useMemo(() => {
+    if (!results) return []
+    const langs = new Set<string>()
+    for (const r of results) {
+      if (selectedFiles.has(r.filename) && r.languages) {
+        for (const l of r.languages) langs.add(l)
+      }
+    }
+    return [...langs].sort()
+  }, [results, selectedFiles])
+
+  // Apply task type filter to chart data
+  const filteredHeatmapData = useMemo(() => {
+    if (!chartData) return []
+    if (taskTypeFilter.size === 0) return chartData.heatmapData
+    return chartData.heatmapData.filter((c) => taskTypeFilter.has(c.task))
+  }, [chartData, taskTypeFilter])
+
+  const filteredScatterData = useMemo(() => {
+    if (!chartData) return []
+    if (taskTypeFilter.size === 0) return chartData.scatterData
+    // Recalculate accuracy from only the filtered tasks
+    return chartData.models.map((model) => {
+      const analysis = chartData.raw.models[model]
+      let total = 0
+      let correct = 0
+      for (const [task, tb] of Object.entries(analysis.task_breakdown)) {
+        if (taskTypeFilter.has(task)) {
+          total += tb.total
+          correct += Math.round(tb.accuracy * tb.total)
+        }
+      }
+      return {
+        model,
+        paramCount: getModelSize(model),
+        accuracy: total > 0 ? correct / total : 0,
+      }
+    }).filter((d) => d.accuracy > 0 || taskTypeFilter.size === 0)
+  }, [chartData, taskTypeFilter])
+
+  const barData = useMemo(() => {
+    const raw = chartData?.getBarData(barTask) ?? []
+    // If task filter is set and barTask is "all", the bar data shows overall —
+    // but we can't filter individual models' overall accuracy by task here
+    // since the bar data is pre-aggregated. Task-specific filtering works
+    // through the barTask dropdown selector instead.
+    return raw
+  }, [chartData, barTask])
 
   // Grouped + filtered results
   const grouped = useMemo(() => {
@@ -301,6 +367,10 @@ export default function ChartsPage() {
               <ScatterChart className="mr-1.5 h-4 w-4" />
               Scaling
             </TabsTrigger>
+            <TabsTrigger value="dimensions">
+              <Languages className="mr-1.5 h-4 w-4" />
+              By Dimension
+            </TabsTrigger>
           </TabsList>
 
           {/* Heatmap tab */}
@@ -309,12 +379,22 @@ export default function ChartsPage() {
               title="Accuracy Heatmap"
               description={`${heatmapY === "model" ? "Models" : "Tasks"} vs ${heatmapX === "task" ? "Tasks" : "Models"} — color intensity = accuracy`}
               actions={
-                <Button variant="outline" size="sm" onClick={swapAxes}>
-                  Swap Axes
-                </Button>
+                <div className="flex items-center gap-2">
+                  <ChartFilters
+                    availableTaskTypes={availableTaskTypes}
+                    availableLanguages={availableLanguages}
+                    selectedTaskTypes={taskTypeFilter}
+                    selectedLanguages={languageFilter}
+                    onTaskTypesChange={setTaskTypeFilter}
+                    onLanguagesChange={setLanguageFilter}
+                  />
+                  <Button variant="outline" size="sm" onClick={swapAxes}>
+                    Swap Axes
+                  </Button>
+                </div>
               }
             >
-              <AccuracyHeatmap data={chartData.heatmapData} xKey={heatmapX} yKey={heatmapY} />
+              <AccuracyHeatmap data={filteredHeatmapData} xKey={heatmapX} yKey={heatmapY} />
             </ChartCard>
           </TabsContent>
 
@@ -324,22 +404,32 @@ export default function ChartsPage() {
               title="Model Comparison"
               description={barTask ? `Accuracy on: ${barTask.replace(/_/g, " ")}` : "Overall accuracy across all tasks"}
               actions={
-                <Select
-                  value={barTask ?? "__all__"}
-                  onValueChange={(v) => setBarTask(v === "__all__" ? null : v)}
-                >
-                  <SelectTrigger className="w-[200px]">
-                    <SelectValue placeholder="All tasks" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__all__">All Tasks (Overall)</SelectItem>
-                    {chartData.tasks.map((t) => (
-                      <SelectItem key={t} value={t}>
-                        {t.replace(/_/g, " ")}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                <div className="flex items-center gap-2">
+                  <ChartFilters
+                    availableTaskTypes={availableTaskTypes}
+                    availableLanguages={availableLanguages}
+                    selectedTaskTypes={taskTypeFilter}
+                    selectedLanguages={languageFilter}
+                    onTaskTypesChange={setTaskTypeFilter}
+                    onLanguagesChange={setLanguageFilter}
+                  />
+                  <Select
+                    value={barTask ?? "__all__"}
+                    onValueChange={(v) => setBarTask(v === "__all__" ? null : v)}
+                  >
+                    <SelectTrigger className="w-[200px]">
+                      <SelectValue placeholder="All tasks" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="__all__">All Tasks (Overall)</SelectItem>
+                      {chartData.tasks.map((t) => (
+                        <SelectItem key={t} value={t}>
+                          {t.replace(/_/g, " ")}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
               }
             >
               <ModelBarChart data={barData} />
@@ -351,8 +441,55 @@ export default function ChartsPage() {
             <ChartCard
               title="Inverse Scaling"
               description="Model parameter count vs accuracy — does bigger mean better?"
+              actions={
+                <div className="flex items-center gap-2">
+                  <ChartFilters
+                    availableTaskTypes={availableTaskTypes}
+                    availableLanguages={availableLanguages}
+                    selectedTaskTypes={taskTypeFilter}
+                    selectedLanguages={languageFilter}
+                    onTaskTypesChange={setTaskTypeFilter}
+                    onLanguagesChange={setLanguageFilter}
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => setLogScale((v) => !v)}
+                  >
+                    {logScale ? "Linear" : "Log"} Scale
+                  </Button>
+                </div>
+              }
             >
-              <ScalingScatter data={chartData.scatterData} />
+              <ScalingScatter data={filteredScatterData} logScale={logScale} />
+            </ChartCard>
+          </TabsContent>
+
+          {/* Dimension breakdown tab */}
+          <TabsContent value="dimensions">
+            <ChartCard
+              title="Accuracy by Dimension"
+              description="Performance breakdown by language, user prompt style, and system prompt style"
+              actions={
+                <div className="flex items-center gap-1">
+                  {(["language", "user_style", "system_style"] as const).map((d) => (
+                    <Button
+                      key={d}
+                      variant={dimTab === d ? "secondary" : "ghost"}
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setDimTab(d)}
+                    >
+                      {d === "language" ? "Language" : d === "user_style" ? "User Style" : "System Style"}
+                    </Button>
+                  ))}
+                </div>
+              }
+            >
+              <DimensionBarChart
+                data={chartData.dimensionBreakdowns[dimTab]}
+                label={dimTab === "language" ? "Language" : dimTab === "user_style" ? "User Style" : "System Style"}
+              />
             </ChartCard>
           </TabsContent>
         </Tabs>

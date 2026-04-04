@@ -5,8 +5,12 @@ export function fetchTestsets(): Promise<TestsetSummary[]> {
   return get<TestsetSummary[]>("/api/testsets")
 }
 
-export function fetchTestset(filename: string): Promise<TestsetDetail> {
-  return get<TestsetDetail>(`/api/testsets/${encodeURIComponent(filename)}`)
+export function fetchTestset(filename: string, page: number = 1, pageSize: number = 50): Promise<TestsetDetail> {
+  return get<TestsetDetail>(`/api/testsets/${encodeURIComponent(filename)}?page=${page}&page_size=${pageSize}`)
+}
+
+export function fetchPromptFromUrl(url: string): Promise<{ status: string; text: string }> {
+  return post("/api/testsets/fetch-prompt-url", { url })
 }
 
 export function deleteTestset(filename: string): Promise<{ status: string; filename: string }> {

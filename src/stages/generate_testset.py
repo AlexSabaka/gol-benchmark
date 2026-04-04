@@ -168,7 +168,11 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
                 'system_style': prompt_config['system_style'],
                 'name': prompt_config.get('name', f"{prompt_config['user_style']}_{prompt_config['system_style']}"),
                 'language': prompt_config.get('language', config['execution'].get('prompt_language', 'en')),
+                'custom_system_prompt': config.get('custom_system_prompt', ''),
             }
+
+            # Stash custom system prompt so _get_system_prompt picks it up
+            generator._stash_prompt_config(prompt_conf)
 
             # Generate batch
             batch = generator.generate_batch(

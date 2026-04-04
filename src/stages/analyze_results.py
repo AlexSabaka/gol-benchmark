@@ -196,6 +196,55 @@ def extract_summary_stats(result: Dict) -> Dict:
     }
 
 
+# All known task types, ordered longest-first so more specific patterns match before generic ones.
+# E.g. "symbol_arithmetic" and "time_arithmetic" must match before bare "arithmetic".
+_KNOWN_TASK_TYPES = [
+    "cellular_automata_1d",
+    "symbol_arithmetic",
+    "time_arithmetic",
+    "measure_comparison",
+    "family_relations",
+    "encoding_cipher",
+    "object_tracking",
+    "false_premise",
+    "inverted_cup",
+    "ascii_shapes",
+    "game_of_life",
+    "linda_fallacy",
+    "grid_tasks",
+    "sally_anne",
+    "strawberry",
+    "arithmetic",
+    "misquote",
+    "carwash",
+]
+
+# Aliases: alternative substrings that map to canonical task types
+_TASK_ALIASES = {
+    "gol": "game_of_life",
+    "c14": "cellular_automata_1d",
+    "ari": "arithmetic",
+    "tracking": "object_tracking",
+    "false_belief": "sally_anne",
+    "linda": "linda_fallacy",
+}
+
+
+def _infer_task_type_from_id(test_id: str) -> str:
+    """Infer task type from a test_id string.
+
+    Checks for canonical task type names as substrings (with underscore
+    boundary) or as a prefix, then falls back to aliases.
+    """
+    for tt in _KNOWN_TASK_TYPES:
+        if f"_{tt}" in test_id or test_id.startswith(f"{tt}_"):
+            return tt
+    for alias, canonical in _TASK_ALIASES.items():
+        if f"_{alias}" in test_id or test_id.startswith(f"{alias}_"):
+            return canonical
+    return "unknown"
+
+
 def extract_task_breakdown(results: List[Dict]) -> Dict:
     """Extract task-specific performance breakdown from results."""
     task_stats = defaultdict(lambda: {
@@ -212,43 +261,10 @@ def extract_task_breakdown(results: List[Dict]) -> Dict:
     for r in results:
         # Extract task type from test_id (e.g., 'multi_0000_arithmetic' -> 'arithmetic')
         test_id = r.get('test_id', '')
-        task_type = 'unknown'
-        if '_arithmetic' in test_id:
-            task_type = 'arithmetic'
-        elif '_game_of_life' in test_id or '_gol' in test_id:
-            task_type = 'game_of_life'
-        elif '_linda' in test_id:
-            task_type = 'linda_fallacy'
-        elif '_ascii_shapes' in test_id:
-            task_type = 'ascii_shapes'
-        elif '_cellular_automata_1d' in test_id or '_c14' in test_id:
-            task_type = 'cellular_automata_1d'
-        elif '_object_tracking' in test_id or '_tracking' in test_id:
-            task_type = 'object_tracking'
-        elif '_sally_anne' in test_id or '_false_belief' in test_id:
-            task_type = 'sally_anne'
-        elif '_carwash' in test_id or test_id.startswith('carwash_'):
-            task_type = 'carwash'
-        elif '_inverted_cup' in test_id or test_id.startswith('inverted_cup_'):
-            task_type = 'inverted_cup'
-        elif '_strawberry' in test_id or test_id.startswith('strawberry_'):
-            task_type = 'strawberry'
-        elif '_measure_comparison' in test_id or test_id.startswith('measure_comparison_'):
-            task_type = 'measure_comparison'
-        elif '_grid_tasks' in test_id or test_id.startswith('grid_tasks_'):
-            task_type = 'grid_tasks'
-        elif '_time_arithmetic' in test_id or test_id.startswith('time_arithmetic_'):
-            task_type = 'time_arithmetic'
-        elif '_misquote' in test_id or test_id.startswith('misquote_'):
-            task_type = 'misquote'
-        elif '_false_premise' in test_id or test_id.startswith('false_premise_'):
-            task_type = 'false_premise'
-        elif '_family_relations' in test_id or test_id.startswith('family_relations_'):
-            task_type = 'family_relations'
-        elif '_encoding_cipher' in test_id or test_id.startswith('encoding_cipher_'):
-            task_type = 'encoding_cipher'
-        elif '_symbol_arithmetic' in test_id or test_id.startswith('symbol_arithmetic_'):
-            task_type = 'symbol_arithmetic'
+        # Prefer explicit task_type from task_params if available
+        task_type = r.get('input', {}).get('task_params', {}).get('task_type', '')
+        if not task_type:
+            task_type = _infer_task_type_from_id(test_id)
         
         task_stats[task_type]['total'] += 1
         

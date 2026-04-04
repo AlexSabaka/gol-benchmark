@@ -1,7 +1,7 @@
 import { useCallback, useRef, useState } from "react"
 import { useNavigate } from "react-router"
 import { toast } from "sonner"
-import { Upload, Loader2 } from "lucide-react"
+import { Upload, Loader2, Link2 } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
@@ -10,6 +10,7 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/layout/page-header"
 import { ConfigForm } from "@/components/plugin-config/config-form"
 import { usePlugins } from "@/hooks/use-plugins"
@@ -48,9 +49,15 @@ export default function ConfigurePage() {
   const [systemStyles, setSystemStyles] = useState<Set<string>>(new Set(["analytical"]))
   const [languages, setLanguages] = useState<Set<string>>(new Set(["en"]))
 
+  // Custom system prompt
+  const [customSystemPrompt, setCustomSystemPrompt] = useState("")
+  const [promptUrl, setPromptUrl] = useState("")
+  const [fetchingUrl, setFetchingUrl] = useState(false)
+
   // File refs
   const yamlRef = useRef<HTMLInputElement>(null)
   const gzRef = useRef<HTMLInputElement>(null)
+  const promptFileRef = useRef<HTMLInputElement>(null)
 
   const combos = Math.max(userStyles.size, 1) * Math.max(systemStyles.size, 1) * Math.max(languages.size, 1)
 
@@ -104,6 +111,7 @@ export default function ConfigurePage() {
       })),
       cell_markers: ["1", "0"],
       seed,
+      ...(customSystemPrompt && { custom_system_prompt: customSystemPrompt }),
     }
 
     try {
@@ -263,6 +271,92 @@ export default function ConfigurePage() {
                   </div>
                 </div>
               </div>
+            </CardContent>
+          </Card>
+
+          {/* Custom system prompt */}
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">
+                Custom System Prompt
+                <span className="ml-2 text-xs font-normal text-muted-foreground">optional</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              <p className="text-xs text-muted-foreground">
+                Override the system prompt for all tasks. If set, this replaces the style-based system prompt.
+              </p>
+              <Tabs defaultValue="text">
+                <TabsList className="h-7">
+                  <TabsTrigger value="text" className="text-xs h-6 px-2">Text</TabsTrigger>
+                  <TabsTrigger value="file" className="text-xs h-6 px-2">File Upload</TabsTrigger>
+                  <TabsTrigger value="url" className="text-xs h-6 px-2">From URL</TabsTrigger>
+                </TabsList>
+                <TabsContent value="text" className="mt-2">
+                  <Textarea
+                    value={customSystemPrompt}
+                    onChange={(e) => setCustomSystemPrompt(e.target.value)}
+                    placeholder="Enter a custom system prompt..."
+                    className="min-h-[100px] text-xs"
+                  />
+                </TabsContent>
+                <TabsContent value="file" className="mt-2">
+                  <Input
+                    ref={promptFileRef}
+                    type="file"
+                    accept=".txt,.md"
+                    className="h-8 max-w-md"
+                    onChange={async (e) => {
+                      const file = e.target.files?.[0]
+                      if (!file) return
+                      const text = await file.text()
+                      setCustomSystemPrompt(text)
+                      toast.success(`Loaded ${text.length} characters from ${file.name}`)
+                    }}
+                  />
+                </TabsContent>
+                <TabsContent value="url" className="mt-2">
+                  <div className="flex gap-2">
+                    <Input
+                      value={promptUrl}
+                      onChange={(e) => setPromptUrl(e.target.value)}
+                      placeholder="https://gist.githubusercontent.com/..."
+                      className="h-8"
+                    />
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      disabled={!promptUrl || fetchingUrl}
+                      onClick={async () => {
+                        setFetchingUrl(true)
+                        try {
+                          const { fetchPromptFromUrl } = await import("@/api/testsets")
+                          const res = await fetchPromptFromUrl(promptUrl)
+                          setCustomSystemPrompt(res.text)
+                          toast.success(`Fetched ${res.text.length} characters`)
+                        } catch (err) {
+                          toast.error(`Fetch failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+                        } finally {
+                          setFetchingUrl(false)
+                        }
+                      }}
+                    >
+                      {fetchingUrl ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Link2 className="h-3.5 w-3.5" />}
+                    </Button>
+                  </div>
+                </TabsContent>
+              </Tabs>
+              {customSystemPrompt && (
+                <div className="flex items-center justify-between text-[10px] text-muted-foreground">
+                  <span>{customSystemPrompt.length} characters</span>
+                  {customSystemPrompt.length > 4000 && (
+                    <span className="text-yellow-600">Long prompt — may exceed some model context windows</span>
+                  )}
+                  <Button variant="ghost" size="sm" className="h-5 text-[10px] px-1" onClick={() => setCustomSystemPrompt("")}>
+                    Clear
+                  </Button>
+                </div>
+              )}
             </CardContent>
           </Card>
 

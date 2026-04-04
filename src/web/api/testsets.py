@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import yaml
-from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi import APIRouter, HTTPException, Query, UploadFile, File
 from pydantic import BaseModel, Field
 
 from src.web.config import web_config
@@ -42,6 +42,7 @@ class GenerateRequest(BaseModel):
     no_thinking: bool = True
     cell_markers: List[str] = Field(default_factory=lambda: ["1", "0"])
     seed: int = 42
+    custom_system_prompt: Optional[str] = None
 
 
 # ---------- Helpers -----------------------------------------------------------
@@ -67,6 +68,9 @@ def _peek_testset(filepath: Path) -> dict:
             "statistics": data.get("statistics", {}),
             "test_count": len(cases),
             "task_types": list({tc.get("task_type", "unknown") for tc in cases}),
+            "languages": list({tc.get("prompt_metadata", {}).get("language", "en") for tc in cases}),
+            "user_styles": list({tc.get("prompt_metadata", {}).get("user_style", "") for tc in cases} - {""}),
+            "system_styles": list({tc.get("prompt_metadata", {}).get("system_style", "") for tc in cases} - {""}),
             "created": time.ctime(filepath.stat().st_mtime),
         }
     except Exception as exc:
@@ -84,14 +88,21 @@ async def list_testsets():
 
 
 @router.get("/{filename}")
-async def get_testset(filename: str):
-    """Load full test set metadata + sample test cases."""
+async def get_testset(
+    filename: str,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+):
+    """Load full test set metadata + paginated test cases."""
     filepath = _testsets_dir() / filename
     if not filepath.exists():
         raise HTTPException(404, f"Test set not found: {filename}")
     with gzip.open(str(filepath), "rt", encoding="utf-8") as f:
         data = json.load(f)
     cases = data.get("test_cases", [])
+    total_cases = len(cases)
+    start = (page - 1) * page_size
+    end = start + page_size
     return {
         "filename": filename,
         "metadata": data.get("metadata", {}),
@@ -99,9 +110,12 @@ async def get_testset(filename: str):
         "sampling_params": data.get("sampling_params", {}),
         "execution_params": data.get("execution_params", {}),
         "statistics": data.get("statistics", {}),
-        "test_count": len(cases),
+        "test_count": total_cases,
         "task_types": list({tc.get("task_type", "unknown") for tc in cases}),
-        "sample_cases": cases[:5],
+        "sample_cases": cases[start:end],
+        "total_cases": total_cases,
+        "page": page,
+        "page_size": page_size,
     }
 
 
@@ -137,6 +151,9 @@ async def generate_testset(req: GenerateRequest):
             "cell_markers": req.cell_markers,
         },
     }
+
+    if req.custom_system_prompt:
+        config["custom_system_prompt"] = req.custom_system_prompt
 
     # Single-task vs multi-task
     tasks_yaml = []
@@ -229,3 +246,24 @@ async def upload_testset_gz(file: UploadFile = File(...)):
 
     dest.write_bytes(content)
     return {"status": "ok", "filename": file.filename, "path": str(dest)}
+
+
+class FetchPromptUrlRequest(BaseModel):
+    url: str
+
+
+@router.post("/fetch-prompt-url")
+async def fetch_prompt_from_url(req: FetchPromptUrlRequest):
+    """Fetch text content from a URL for use as a custom system prompt."""
+    import urllib.request
+    import urllib.error
+
+    try:
+        with urllib.request.urlopen(req.url, timeout=10) as resp:
+            content = resp.read(50 * 1024)  # Cap at 50KB
+            text = content.decode("utf-8", errors="replace")
+        return {"status": "ok", "text": text}
+    except urllib.error.URLError as exc:
+        raise HTTPException(400, f"Failed to fetch URL: {exc}")
+    except Exception as exc:
+        raise HTTPException(500, f"Fetch failed: {exc}")

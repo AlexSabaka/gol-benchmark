@@ -135,8 +135,14 @@ def _run_testset_worker(
 
             results_list.append({
                 "test_id": tc.get("test_id", f"test_{i}"),
+                "config_name": tc.get("config_name", ""),
                 "status": "success",
-                "input": {"user_prompt": prompts.get("user", ""), "system_prompt": prompts.get("system", ""), "task_params": task_params},
+                "input": {
+                    "user_prompt": prompts.get("user", ""),
+                    "system_prompt": prompts.get("system", ""),
+                    "task_params": task_params,
+                    "prompt_metadata": tc.get("prompt_metadata", {}),
+                },
                 "output": {"raw_response": raw_response, "parsed_answer": str(parsed) if parsed is not None else None},
                 "evaluation": evaluation or {"correct": False, "match_type": "parse_error"},
                 "tokens": {"input_tokens": input_tok, "output_tokens": output_tok},

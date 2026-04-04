@@ -249,6 +249,15 @@ class TestCaseGenerator(ABC):
         """
         return []
 
+    def _stash_prompt_config(self, prompt_config: Dict[str, Any]) -> None:
+        """Store custom_system_prompt so ``_get_system_prompt`` can find it.
+
+        Called by the pipeline before ``generate_batch()`` so that generators
+        that call ``_get_system_prompt(style, lang)`` without explicitly
+        passing a custom prompt still pick it up.
+        """
+        self._custom_system_prompt = prompt_config.get("custom_system_prompt", "")
+
     # ------------------------------------------------------------------
     # Prompt helpers (shared across all generators)
     # ------------------------------------------------------------------
@@ -260,12 +269,22 @@ class TestCaseGenerator(ABC):
             self._prompt_engine = PromptEngine()
         return self._prompt_engine
 
-    def _get_system_prompt(self, system_style: str, language: str = "en") -> str:
+    def _get_system_prompt(self, system_style: str, language: str = "en",
+                           custom_system_prompt: str = "") -> str:
         """Return the system prompt for *system_style* and *language*.
 
-        Wraps ``PromptEngine.get_system_prompt_by_enum()`` with safe enum
-        parsing so callers can pass plain strings.
+        If *custom_system_prompt* is provided (or stashed via
+        ``_stash_prompt_config()``), it is returned directly, bypassing the
+        enum-based lookup.  Otherwise wraps
+        ``PromptEngine.get_system_prompt_by_enum()`` with safe enum parsing
+        so callers can pass plain strings.
         """
+        custom = custom_system_prompt or getattr(
+            self, "_custom_system_prompt", ""
+        )
+        if custom:
+            return custom
+
         from src.core.PromptEngine import SystemPromptStyle, Language
         from src.plugins.parse_utils import safe_enum
 
@@ -303,6 +322,7 @@ class TestCaseGenerator(ABC):
         language: str,
         user_style: str,
         system_style: str,
+        custom_system_prompt: str = "",
         **variables: Any,
     ) -> Tuple[str, str, str]:
         """Build user, system, and full prompts in one call.
@@ -313,7 +333,9 @@ class TestCaseGenerator(ABC):
         user_prompt = self._format_user_prompt(
             templates, language, user_style, **variables
         )
-        system_prompt = self._get_system_prompt(system_style, language)
+        system_prompt = self._get_system_prompt(
+            system_style, language, custom_system_prompt=custom_system_prompt,
+        )
         full_prompt = (
             f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
         )

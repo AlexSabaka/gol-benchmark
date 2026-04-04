@@ -9,6 +9,9 @@ export interface TestsetSummary {
   statistics: Record<string, unknown>
   test_count: number
   task_types: string[]
+  languages: string[]
+  user_styles: string[]
+  system_styles: string[]
   created: string
   error?: string
 }
@@ -23,6 +26,9 @@ export interface TestsetDetail {
   test_count: number
   task_types: string[]
   sample_cases: Record<string, unknown>[]
+  total_cases?: number
+  page?: number
+  page_size?: number
 }
 
 export interface PromptConfig {
@@ -46,6 +52,14 @@ export interface GenerateRequest {
   no_thinking?: boolean
   cell_markers: string[]
   seed: number
+  custom_system_prompt?: string
+}
+
+export interface ParamOverrides {
+  user_style?: string
+  system_style?: string
+  custom_system_prompt?: string
+  language?: string
 }
 
 export interface GenerateResponse {

@@ -316,6 +316,7 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] False premise parser overhaul (v2.10.7, 61 false negatives fixed — smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, expanded refusal/impossibility patterns)
 - [x] Web UI improvements: Jobs page, faceted filters, plugin descriptions from README, Configure/Execute page split (v2.12.0)
 - [x] Full multilingual support: all 18 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
+- [x] UI & Workflow improvements: reanalysis endpoint, custom system prompts, chart filtering (task/language/log scale), Param Override Modal, favorites sidebar, encrypted credential storage (v2.14.0)
 
 ### 🔄 In Progress
 

@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.13.0** | Last updated: 2026-04-01
+> **Version 2.14.0** | Last updated: 2026-04-02
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 

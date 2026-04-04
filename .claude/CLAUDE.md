@@ -99,7 +99,8 @@ gol_eval/
 │   ├── web/               # FastAPI REST API backend (serves React SPA at /)
 │   │   ├── app.py         # FastAPI app factory, SPA routing
 │   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis)
-│   │   └── jobs.py        # Background job manager (ProcessPoolExecutor)
+│   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor)
+│   │   └── reanalyze.py   # Reanalysis utilities (re-parse/re-evaluate results)
 │   ├── visualization/     # Charts, analysis, reporting
 │   └── utils/             # Logging, model discovery
 │
@@ -108,8 +109,8 @@ gol_eval/
 │   │   ├── api/           # Typed API client layer
 │   │   ├── hooks/         # React Query hooks with auto-refresh
 │   │   ├── types/         # TypeScript interfaces
-│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Reports
-│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table
+│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports
+│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, param-override-modal
 │   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
 │
@@ -722,7 +723,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-01*
-*Version: 2.13.0*
-*Key additions: Full multilingual support — all 18 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), multilingual response parsing (13 parsers refactored with shared parse_utils utilities), confidence scoring standardized across all parsers, data relocated from data/ to src/plugins/*/data/ • Web UI improvements (Jobs page, faceted filters on Results/TestSets, plugin descriptions from README, sampling params moved to Execute page) • Removed TUI and HTMX+Jinja2 interfaces — React SPA is now the sole UI, served at root (/) • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui) • False Premise parser false-negative fixes (61 FNs fixed — smart quote normalization, negation-aware compliance, safe-alternative section detection, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns) • Object tracking/time arithmetic/inverted cup/encoding cipher parser false-negative fixes (28 FNs fixed — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization) • Measure comparison parser overhaul (38 FNs fixed) • Carwash parser expanded conditional/dismissive walk filtering (15 FNs fixed) • Parser false-negative fixes (verification section stripping, ~91 FNs fixed across 6 parsers) • C14 custom cell markers • Symbol Arithmetic plugin (18th) • Encoding & Cipher Decoding plugin (17th) • Measure Comparison decimal framing • Plugin-local prompt templates • Family Relations plugin (16th) • False Premise plugin (15th) • Misquote Attribution plugin (14th) • Time Arithmetic plugin (13th) • Strawberry expansion (6 sub-types) • ConfigField system • Bug fixes*
+*Last updated: 2026-04-04*
+*Version: 2.14.0*
+*Key additions: UI & Workflow Improvements — Reanalysis endpoint (re-parse/re-evaluate without re-running inference), custom system prompts per test set (text/file/URL), Param Override Modal (regenerate testsets or rerun with different params), "By Dimension" chart tab (accuracy by language/user style/system style), chart filtering by task type and language with log scale toggle, multi-provider Execute page (Ollama + multiple OpenAI-compatible endpoints + HuggingFace simultaneously), favorites sidebar grouped by provider, encrypted credential storage (AES-GCM), language/user style/system style columns and faceted filters on Results and Test Sets pages, select all/deselect all + delete for results, task type inference fix (object_tracking/ari_ "unknown" resolved), dialog overflow fix • Full multilingual support — all 18 plugins, 6 languages • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)*
 *For questions or issues: Check [README.md](README.md) or create an issue*

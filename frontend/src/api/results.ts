@@ -1,5 +1,5 @@
-import { get, post } from "./client"
-import type { ResultSummary, ResultDetail, AnalyzeRequest, AnalyzeResponse, ReportInfo, GenerateReportResponse } from "@/types"
+import { get, post, del } from "./client"
+import type { ResultSummary, ResultDetail, AnalyzeRequest, AnalyzeResponse, ReportInfo, GenerateReportResponse, ReanalyzeResponse } from "@/types"
 
 export function fetchResults(): Promise<ResultSummary[]> {
   return get<ResultSummary[]>("/api/results")
@@ -19,6 +19,14 @@ export function generateReport(req: AnalyzeRequest): Promise<GenerateReportRespo
 
 export function fetchReports(): Promise<ReportInfo[]> {
   return get<ReportInfo[]>("/api/results/reports")
+}
+
+export function reanalyzeResult(filename: string): Promise<ReanalyzeResponse> {
+  return post<ReanalyzeResponse>(`/api/results/${encodeURIComponent(filename)}/reanalyze`)
+}
+
+export function deleteResult(filename: string): Promise<{ status: string; filename: string }> {
+  return del(`/api/results/${encodeURIComponent(filename)}`)
 }
 
 export function reportUrl(filename: string): string {

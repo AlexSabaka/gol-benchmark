@@ -10,10 +10,10 @@ export function useTestsets() {
   })
 }
 
-export function useTestset(filename: string | null) {
+export function useTestset(filename: string | null, page: number = 1, pageSize: number = 50) {
   return useQuery({
-    queryKey: ["testset", filename],
-    queryFn: () => fetchTestset(filename!),
+    queryKey: ["testset", filename, page, pageSize],
+    queryFn: () => fetchTestset(filename!, page, pageSize),
     enabled: !!filename,
   })
 }

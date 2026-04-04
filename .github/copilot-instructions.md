@@ -4,7 +4,7 @@
 
 This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 18 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.12.0)
+## Architecture (v2.14.0)
 
 ### 🔌 **Plugin-Based Benchmark System**
 All benchmarks are now self-contained plugins with auto-discovery:
@@ -65,7 +65,7 @@ Config →   Plugin generators →        ModelInterface →        Enhanced Ana
          + base class helpers)
 ```
 
-## Project Structure (v2.12.0)
+## Project Structure (v2.14.0)
 
 ### **Core Architecture (`src/` organization)**
 
@@ -401,17 +401,22 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.13.0 (April 1, 2026)
+**Version**: 2.14.0 (April 4, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
-- Plugin-based benchmark system with auto-discovery
+- Plugin-based benchmark system with auto-discovery (18 plugins)
 - Plugin-local prompt templates (PromptEngine user prompts deprecated)
 - Modern 3-stage architecture with enhanced parsing and analytics
-- 18 built-in plugins: GoL, ARI, Linda, C14, ASCII Shapes, Object Tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison (with decimal framing), Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic
-- Custom cell markers for GoL and C14 (including emoji)
-- Remote Ollama support (`--ollama-host`)
-- Token counting throughout pipeline
-- HTML reports with collapsible thinking blocks and consistent value formatting
-- Full multilingual support: all 18 plugins have 6-language prompts, multilingual data, and multilingual response parsing
-- Shared parse_utils multilingual utilities (merge_keywords, build_word_to_int, YES_WORDS/NO_WORDS dicts)
+- Full multilingual support: all 18 plugins, 6 languages, multilingual response parsing
+- **Multi-provider Execute page** — select models from Ollama + multiple OpenAI-compatible endpoints + HuggingFace simultaneously in a single run
+- **Reanalysis endpoint** — re-parse/re-evaluate results without re-running inference
+- **Custom system prompts** — per-testset custom system prompt (text, file, URL) bypassing enum-based styles
+- **"By Dimension" charts** — accuracy breakdown by language, user prompt style, system prompt style
+- **Chart filtering** — task type and language filters on all chart tabs; log/linear scale toggle; task filter on scaling recalculates per-model accuracy
+- **Language / prompt style columns** — Results and Test Sets pages show language flags, user/system prompt style with faceted filters
+- **Select all / delete** — Results page has select all/deselect all toggle and bulk delete with confirmation
+- **Param Override Modal** — shared component for regenerating testsets or rerunning with different prompt params
+- **Favorites sidebar** — starred models grouped by provider with one-click selection on Execute page
+- **Encrypted credential storage** — AES-GCM encrypted localStorage for API keys
+- **Task type inference fix** — `_infer_task_type_from_id()` replaces fragile if/elif chain; fixes object_tracking and ari_ showing as "unknown"

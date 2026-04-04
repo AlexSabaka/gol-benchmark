@@ -14,6 +14,9 @@ export interface ResultSummary {
   total_tokens: number
   testset_name: string
   task_types: string[]
+  languages: string[]
+  user_styles: string[]
+  system_styles: string[]
   created: string
   error?: string
 }
@@ -44,11 +47,22 @@ export interface AnalyzeRequest {
   comparison?: boolean
 }
 
+export interface DimensionBucket {
+  total: number
+  correct: number
+  accuracy: number
+}
+
 export interface AnalyzeResponse {
   status: string
   model_count: number
   models: Record<string, ModelAnalysis>
   summaries: unknown[]
+  dimension_breakdowns?: {
+    language: Record<string, DimensionBucket>
+    user_style: Record<string, DimensionBucket>
+    system_style: Record<string, DimensionBucket>
+  }
 }
 
 export interface ModelAnalysis {
@@ -71,6 +85,15 @@ export interface GenerateReportResponse {
   report_path: string
   filename: string
   viz_warning?: string
+}
+
+export interface ReanalyzeResponse {
+  status: string
+  filename: string
+  total_results: number
+  changes: number
+  new_accuracy: number
+  old_accuracy: number
 }
 
 // ── Chart types ──

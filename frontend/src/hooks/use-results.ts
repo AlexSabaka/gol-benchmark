@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchResults, fetchResult, analyzeResults, generateReport, fetchReports } from "@/api/results"
+import { fetchResults, fetchResult, analyzeResults, generateReport, fetchReports, reanalyzeResult, deleteResult } from "@/api/results"
 import type { AnalyzeRequest } from "@/types"
 
 export function useResults() {
@@ -29,6 +29,22 @@ export function useGenerateReport() {
   return useMutation({
     mutationFn: (req: AnalyzeRequest) => generateReport(req),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["reports"] }),
+  })
+}
+
+export function useReanalyzeResult() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (filename: string) => reanalyzeResult(filename),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["results"] }),
+  })
+}
+
+export function useDeleteResult() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (filename: string) => deleteResult(filename),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["results"] }),
   })
 }
 

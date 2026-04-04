@@ -26,7 +26,14 @@ export function ConfigForm({ taskType, description, values, onChange }: Props) {
     )
   }
 
-  const fields = schema?.fields ?? []
+  // Sort count-like fields first (defensive — backend also sorts)
+  const rawFields = schema?.fields ?? []
+  const isCountField = (name: string) =>
+    name === "count" || name.includes("per_") || name === "grids_per_difficulty"
+  const fields = [
+    ...rawFields.filter((f) => isCountField(f.name)),
+    ...rawFields.filter((f) => !isCountField(f.name)),
+  ]
   const basic = fields.filter((f) => !f.group || f.group === "basic")
   const advanced = fields.filter((f) => f.group === "advanced")
 

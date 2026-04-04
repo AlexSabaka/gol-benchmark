@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query"
 import { analyzeResults } from "@/api/results"
 import { getModelSize } from "@/lib/model-sizes"
-import type { AnalyzeResponse, HeatmapCell, ScatterPoint } from "@/types"
+import type { AnalyzeResponse, HeatmapCell, ScatterPoint, DimensionBucket } from "@/types"
 
 export interface ChartData {
   raw: AnalyzeResponse
@@ -10,6 +10,11 @@ export interface ChartData {
   heatmapData: HeatmapCell[]
   scatterData: ScatterPoint[]
   getBarData: (task: string | null) => BarDataPoint[]
+  dimensionBreakdowns: {
+    language: Record<string, DimensionBucket>
+    user_style: Record<string, DimensionBucket>
+    system_style: Record<string, DimensionBucket>
+  }
 }
 
 export interface BarDataPoint {
@@ -72,7 +77,11 @@ function transformAnalyzeResponse(data: AnalyzeResponse): ChartData {
       .sort((a, b) => b.accuracy - a.accuracy)
   }
 
-  return { raw: data, models, tasks, heatmapData, scatterData, getBarData }
+  const dimensionBreakdowns = data.dimension_breakdowns ?? {
+    language: {}, user_style: {}, system_style: {},
+  }
+
+  return { raw: data, models, tasks, heatmapData, scatterData, getBarData, dimensionBreakdowns }
 }
 
 export function useChartData(filenames: string[]) {

@@ -55,9 +55,16 @@ def _summarize_result(filepath: Path) -> dict:
         ts_meta = data.get("testset_metadata", {})
         num_results = len(data.get("results", []))
 
-        # Extract task types from results
-        task_types = list({r.get("input", {}).get("task_params", {}).get("task_type", r.get("test_id", "").split("_")[0])
-                          for r in data.get("results", []) if r.get("status") == "success"})
+        # Extract task types, languages, and prompt styles from results
+        from src.stages.analyze_results import _infer_task_type_from_id
+        success = [r for r in data.get("results", []) if r.get("status") == "success"]
+        task_types = list({
+            r.get("input", {}).get("task_params", {}).get("task_type", "") or _infer_task_type_from_id(r.get("test_id", ""))
+            for r in success
+        })
+        languages = list({r.get("input", {}).get("prompt_metadata", {}).get("language", "en") for r in success})
+        user_styles = list({r.get("input", {}).get("prompt_metadata", {}).get("user_style", "") for r in success} - {""})
+        system_styles = list({r.get("input", {}).get("prompt_metadata", {}).get("system_style", "") for r in success} - {""})
 
         return {
             "filename": filepath.name,
@@ -73,6 +80,9 @@ def _summarize_result(filepath: Path) -> dict:
             "total_tokens": stats.get("total_input_tokens", 0) + stats.get("total_output_tokens", 0),
             "testset_name": ts_meta.get("name", ts_meta.get("testset_name", "")),
             "task_types": task_types,
+            "languages": languages,
+            "user_styles": user_styles,
+            "system_styles": system_styles,
             "created": time.ctime(filepath.stat().st_mtime),
         }
     except Exception as exc:
@@ -123,6 +133,17 @@ async def serve_chart(filename: str):
     return FileResponse(str(filepath))
 
 
+@router.delete("/{filename}")
+async def delete_result(filename: str):
+    """Delete a result file."""
+    for d in _results_dirs():
+        filepath = d / filename
+        if filepath.exists():
+            filepath.unlink()
+            return {"status": "deleted", "filename": filename}
+    raise HTTPException(404, f"Result file not found: {filename}")
+
+
 @router.get("/{filename}")
 async def get_result(filename: str):
     """Load a full result file."""
@@ -140,6 +161,30 @@ async def get_result(filename: str):
                 "results_count": len(data.get("results", [])),
                 "results": data.get("results", []),
             }
+    raise HTTPException(404, f"Result file not found: {filename}")
+
+
+class ReanalyzeResponse(BaseModel):
+    status: str
+    filename: str
+    total_results: int
+    changes: int
+    new_accuracy: float
+    old_accuracy: float
+
+
+@router.post("/{filename}/reanalyze")
+async def reanalyze_result(filename: str):
+    """Re-parse and re-evaluate a result file using current plugin parsers."""
+    for d in _results_dirs():
+        filepath = d / filename
+        if filepath.exists():
+            try:
+                from src.web.reanalyze import reanalyze_result_file
+                stats = reanalyze_result_file(filepath)
+                return ReanalyzeResponse(status="ok", **stats)
+            except Exception as exc:
+                raise HTTPException(500, f"Reanalysis failed: {exc}")
     raise HTTPException(404, f"Result file not found: {filename}")
 
 
@@ -183,11 +228,33 @@ async def analyze_results(req: AnalyzeRequest):
                 "task_breakdown": s.get("task_breakdown", {}),
             }
 
+        # Build dimension breakdowns (language, user_style, system_style)
+        dimension_breakdowns: dict = {"language": {}, "user_style": {}, "system_style": {}}
+        for data in loaded:
+            for r in data.get("results", []):
+                if r.get("status") != "success":
+                    continue
+                pm = r.get("input", {}).get("prompt_metadata", {})
+                correct = r.get("evaluation", {}).get("correct", False)
+                for dim in ("language", "user_style", "system_style"):
+                    val = pm.get(dim, "")
+                    if not val:
+                        continue
+                    bucket = dimension_breakdowns[dim].setdefault(val, {"total": 0, "correct": 0})
+                    bucket["total"] += 1
+                    if correct:
+                        bucket["correct"] += 1
+        # Compute accuracy per bucket
+        for dim_data in dimension_breakdowns.values():
+            for bucket in dim_data.values():
+                bucket["accuracy"] = bucket["correct"] / bucket["total"] if bucket["total"] > 0 else 0
+
         return {
             "status": "ok",
             "model_count": len(model_stats),
             "models": model_stats,
             "summaries": summaries,
+            "dimension_breakdowns": dimension_breakdowns,
         }
     except Exception as exc:
         raise HTTPException(500, f"Analysis failed: {exc}")

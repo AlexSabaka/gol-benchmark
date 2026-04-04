@@ -33,5 +33,13 @@ async def plugin_schema(task_type: str):
     schema_fields = generator.get_config_schema()
 
     fields = [f.to_dict() for f in schema_fields]
+
+    # Sort count-like fields to appear first (PRD §4a)
+    _COUNT_NAMES = {"count", "number_of_cases", "grids_per_difficulty",
+                    "expressions_per_target", "personas_per_config", "tests_per_rule"}
+    count_fields = [f for f in fields if f["name"] in _COUNT_NAMES or "per_" in f["name"]]
+    other_fields = [f for f in fields if f not in count_fields]
+    fields = count_fields + other_fields
+
     groups = list(dict.fromkeys(f.group for f in schema_fields))
     return {"task_type": task_type, "fields": fields, "groups": groups}
