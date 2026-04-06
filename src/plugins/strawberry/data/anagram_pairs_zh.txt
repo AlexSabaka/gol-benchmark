@@ -1,0 +1,50 @@
+# Strawberry Benchmark — Anagram Pairs (Chinese)
+# Format: word1,word2,is_anagram
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# True pairs: same characters rearranged into a different valid word
+# False pairs: similar-looking or related words that are NOT anagrams
+
+# --- TRUE ANAGRAM PAIRS (character rearrangement) ---
+蜜蜂,蜂蜜,true
+牛奶,奶牛,true
+上海,海上,true
+故事,事故,true
+演讲,讲演,true
+互相,相互,true
+到达,达到,true
+代替,替代,true
+感情,情感,true
+彩色,色彩,true
+气力,力气,true
+计算,算计,true
+科学,学科,true
+离别,别离,true
+和平,平和,true
+名声,声名,true
+人工,工人,true
+天上,上天,true
+来往,往来,true
+生产,产生,true
+女子,子女,true
+白雪,雪白,true
+语言,言语,true
+法国,国法,true
+山河,河山,true
+
+# --- FALSE ANAGRAM PAIRS (not anagrams) ---
+苹果,果汁,false
+大象,小象,false
+太阳,月亮,false
+春天,秋天,false
+海洋,大海,false
+森林,树林,false
+美丽,漂亮,false
+快乐,幸福,false
+学校,学生,false
+老师,老板,false
+电脑,电话,false
+飞机,飞鸟,false
+草莓,蓝莓,false
+西瓜,冬瓜,false
+桃子,梨子,false

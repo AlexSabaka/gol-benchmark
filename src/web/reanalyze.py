@@ -108,6 +108,7 @@ def reanalyze_result_file(filepath: Path) -> dict:
         total_evaluated += 1
         test_id = r.get("test_id", "")
         task_params = r.get("input", {}).get("task_params", {})
+        prompt_metadata = r.get("input", {}).get("prompt_metadata", {})
         raw_response = r.get("output", {}).get("raw_response", "")
         original_eval = r.get("evaluation", {})
         orig_correct = original_eval.get("correct", False)
@@ -122,6 +123,11 @@ def reanalyze_result_file(filepath: Path) -> dict:
         # Ensure sub_type
         sub_type = infer_sub_type(task_type, task_params)
         enriched_params = dict(task_params)
+        # Merge prompt_metadata so parser gets language, user_style, etc.
+        if prompt_metadata:
+            for key in ("language", "user_style", "system_style"):
+                if key in prompt_metadata and key not in enriched_params:
+                    enriched_params[key] = prompt_metadata[key]
         if sub_type and "sub_type" not in enriched_params:
             enriched_params["sub_type"] = sub_type
 

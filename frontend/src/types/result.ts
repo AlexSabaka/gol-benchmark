@@ -110,3 +110,71 @@ export interface ScatterPoint {
   paramCount: number | null
   accuracy: number
 }
+
+// ── Judge types ──
+
+export interface JudgeRequest {
+  result_filenames: string[]
+  provider: string
+  model: string
+  api_base?: string
+  api_key?: string
+  ollama_host?: string
+  system_prompt?: string
+  user_prompt_template?: string
+  temperature?: number
+  max_tokens?: number
+  only_incorrect?: boolean
+}
+
+export interface JudgeSubmitResponse {
+  status: string
+  job_id: string
+  model: string
+}
+
+export interface JudgeSummary {
+  filename: string
+  judge_model: string
+  judge_provider: string
+  total_judged: number
+  true_incorrect: number
+  false_negative: number
+  parser_failure: number
+  source_results: string[]
+  created: string
+  duration_seconds: number
+}
+
+export interface JudgmentEntry {
+  source_file: string
+  test_id: string
+  model: string
+  verdict: string
+  parser_issue: string | null
+  confidence: string
+  notes: string
+  user_prompt: string
+  raw_response: string
+  parsed_answer: string
+  expected_answer: string
+  language?: string
+  task_type?: string
+  user_style?: string
+  system_style?: string
+  parse_strategy?: string
+}
+
+export interface JudgeResult {
+  format_version: string
+  metadata: Record<string, unknown>
+  source_results: string[]
+  summary: {
+    total_judged: number
+    true_incorrect: number
+    false_negative: number
+    parser_failure: number
+    parser_issues: Record<string, number>
+  }
+  judgments: JudgmentEntry[]
+}

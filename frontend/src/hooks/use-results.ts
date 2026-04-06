@@ -1,6 +1,6 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchResults, fetchResult, analyzeResults, generateReport, fetchReports, reanalyzeResult, deleteResult } from "@/api/results"
-import type { AnalyzeRequest } from "@/types"
+import { fetchResults, fetchResult, analyzeResults, generateReport, fetchReports, reanalyzeResult, deleteResult, submitJudge, fetchJudgeResults } from "@/api/results"
+import type { AnalyzeRequest, JudgeRequest } from "@/types"
 
 export function useResults() {
   return useQuery({
@@ -52,6 +52,20 @@ export function useReports() {
   return useQuery({
     queryKey: ["reports"],
     queryFn: fetchReports,
+    refetchOnWindowFocus: true,
+  })
+}
+
+export function useSubmitJudge() {
+  return useMutation({
+    mutationFn: (req: JudgeRequest) => submitJudge(req),
+  })
+}
+
+export function useJudgeResults() {
+  return useQuery({
+    queryKey: ["judge-results"],
+    queryFn: fetchJudgeResults,
     refetchOnWindowFocus: true,
   })
 }

@@ -411,6 +411,12 @@ class TimeArithmeticGenerator(TestCaseGenerator):
     def get_config_schema(self) -> list[ConfigField]:
         return [
             ConfigField(
+                name="count", label="Number of cases",
+                field_type="number", default=100,
+                min_value=1, max_value=500,
+                help="Cases to generate per prompt configuration.",
+            ),
+            ConfigField(
                 name="sub_types", label="Sub-types",
                 field_type="multi-select", default=DEFAULT_SUB_TYPES,
                 options=ALL_SUB_TYPES,

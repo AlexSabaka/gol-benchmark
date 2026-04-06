@@ -397,31 +397,31 @@ QUESTION_TEMPLATES_PANGRAM: Dict[str, List[str]] = {
     ],
     "es": [
         "¿Es la siguiente oración un pangrama (usa cada letra del alfabeto al menos una vez)?\n\n\"{sentence}\"",
-        "¿Contiene esta oración todas las 26 letras del alfabeto inglés?\n\n\"{sentence}\"",
+        "¿Contiene esta oración todas las 26 letras del alfabeto latino?\n\n\"{sentence}\"",
         "Verdadero o falso: la oración \"{sentence}\" es un pangrama.",
         "Comprueba si la siguiente oración usa todas las letras de la A a la Z al menos una vez:\n\n\"{sentence}\"",
     ],
     "fr": [
         "La phrase suivante est-elle un pangramme (utilise chaque lettre de l'alphabet au moins une fois) ?\n\n\"{sentence}\"",
-        "Cette phrase contient-elle les 26 lettres de l'alphabet anglais ?\n\n\"{sentence}\"",
+        "Cette phrase contient-elle les 26 lettres de l'alphabet latin ?\n\n\"{sentence}\"",
         "Vrai ou faux : la phrase \"{sentence}\" est un pangramme.",
         "Vérifiez si la phrase suivante utilise chaque lettre de A à Z au moins une fois :\n\n\"{sentence}\"",
     ],
     "de": [
         "Ist der folgende Satz ein Pangramm (verwendet jeden Buchstaben des Alphabets mindestens einmal)?\n\n\"{sentence}\"",
-        "Enthält dieser Satz alle 26 Buchstaben des englischen Alphabets?\n\n\"{sentence}\"",
+        "Enthält dieser Satz alle 26 Buchstaben des lateinischen Alphabets?\n\n\"{sentence}\"",
         "Richtig oder falsch: Der Satz \"{sentence}\" ist ein Pangramm.",
         "Prüfe, ob der folgende Satz jeden Buchstaben von A bis Z mindestens einmal verwendet:\n\n\"{sentence}\"",
     ],
     "zh": [
         "以下句子是否是全字母句（至少使用了字母表中的每个字母一次）？\n\n\"{sentence}\"",
-        "这个句子是否包含英语字母表的全部26个字母？\n\n\"{sentence}\"",
+        "这个句子是否包含拉丁字母表的全部26个字母？\n\n\"{sentence}\"",
         "判断：句子\"{sentence}\"是一个全字母句，对还是错？",
         "检查以下句子是否使用了从A到Z的每个字母至少一次：\n\n\"{sentence}\"",
     ],
     "ua": [
         "Чи є наступне речення панграмою (використовує кожну літеру алфавіту принаймні один раз)?\n\n\"{sentence}\"",
-        "Чи містить це речення всі 26 літер англійського алфавіту?\n\n\"{sentence}\"",
+        "Чи містить це речення всі 26 літер латинського алфавіту?\n\n\"{sentence}\"",
         "Правда чи ні: речення \"{sentence}\" є панграмою.",
         "Перевірте, чи використовує наступне речення кожну літеру від A до Z принаймні один раз:\n\n\"{sentence}\"",
     ],
@@ -487,12 +487,20 @@ _ORDINALS_EN = {
 
 def _ordinal(n: int, language: str = "en") -> str:
     """Return ordinal string for position *n* (1-based)."""
-    if language == "en":
-        if n in _ORDINALS_EN:
-            return _ORDINALS_EN[n]
+    if language == "es":
+        return f"{n}.º"
+    elif language == "fr":
+        return "1er" if n == 1 else f"{n}e"
+    elif language == "de":
+        return f"{n}."
+    elif language == "zh":
+        return f"第{n}"
+    elif language == "ua":
+        return f"{n}-й"
+    # English (default)
+    if 11 <= (n % 100) <= 13:
         return f"{n}th"
-    # Other languages: just use the number with a marker
-    return str(n)
+    return f"{n}{['th','st','nd','rd'][min(n%10,4) if n%10<4 else 0]}"
 
 
 # ===================================================================
@@ -507,6 +515,9 @@ class StrawberryGenerator(TestCaseGenerator):
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
+            ConfigField(name='count', label='Number of cases', field_type='number',
+                        default=100, min_value=1, max_value=500,
+                        help='Cases to generate per prompt configuration'),
             ConfigField(name='sub_types', label='Sub-types', field_type='multi-select',
                         default=['count'],
                         options=ALL_SUB_TYPES,

@@ -37,6 +37,15 @@ from dataclasses import dataclass, asdict
 from datetime import datetime
 import re
 
+from src.plugins.linda_fallacy.i18n import (
+    PERSONA_TEMPLATES,
+    CONJUNCTION_CONNECTORS,
+    ACTIVITIES_CONNECTORS,
+    resolve_background_key,
+    get_component_templates,
+    get_distractor_pool,
+)
+
 @dataclass
 class PersonaTemplate:
     """Template for generating Linda-style personas"""
@@ -207,203 +216,17 @@ class LindaBenchmark:
         return templates
 
     def _generate_distractors(self, persona: PersonaTemplate, num_distractors: int) -> List[str]:
-        """Generate distractor items based on persona and language"""
-        distractors_pool = []
-        
-        # Determine distractor language based on benchmark language setting
-        # This is a simplified approach. A full implementation might use localization files.
-        persona_background_lower = " ".join(persona.background).lower()
-        
-        # --- English Distractors (default/fallback and for 'en') ---
-        if self.language == "en" or not self.language: # Default to English
-            if "environmental science" in persona_background_lower:
-                distractors_pool = [
-                    f"{persona.name} is a bank teller",
-                    f"{persona.name} works in software development",
-                    f"{persona.name} is a high school teacher",
-                    f"{persona.name} works in marketing",
-                    f"{persona.name} is a fitness instructor",
-                    f"{persona.name} works as a librarian",
-                    f"{persona.name} is a chef",
-                    f"{persona.name} works in accounting",
-                    f"{persona.name} is a nurse",
-                    f"{persona.name} works in retail"
-                ]
-            elif "computer science" in persona_background_lower:
-                distractors_pool = [
-                    f"{persona.name} is a bank teller",
-                    f"{persona.name} works in retail management",
-                    f"{persona.name} is an elementary school teacher",
-                    f"{persona.name} works as a chef",
-                    f"{persona.name} is a personal trainer",
-                    f"{persona.name} works in marketing",
-                    f"{persona.name} is a librarian",
-                    f"{persona.name} works in accounting",
-                    f"{persona.name} is a nurse",
-                    f"{persona.name} works in insurance"
-                ]
-            elif "fine arts" in persona_background_lower or "literature" in persona_background_lower:
-                distractors_pool = [
-                    f"{persona.name} is a bank teller",
-                    f"{persona.name} works in insurance sales",
-                    f"{persona.name} is a middle school teacher",
-                    f"{persona.name} works as a nurse",
-                    f"{persona.name} is a real estate agent",
-                    f"{persona.name} works in accounting",
-                    f"{persona.name} is a librarian",
-                    f"{persona.name} works in customer service",
-                    f"{persona.name} is a chef",
-                    f"{persona.name} works in marketing"
-                ]
-            elif "engineering" in persona_background_lower or "business" in persona_background_lower:
-                 distractors_pool = [
-                    f"{persona.name} is a bank teller",
-                    f"{persona.name} works in accounting",
-                    f"{persona.name} is a librarian",
-                    f"{persona.name} works in customer service",
-                    f"{persona.name} is a security guard",
-                    f"{persona.name} works in marketing",
-                    f"{persona.name} is a nurse",
-                    f"{persona.name} works in retail",
-                    f"{persona.name} is a chef",
-                    f"{persona.name} works as a teacher"
-                ]
-            elif "philosophy" in persona_background_lower or "history" in persona_background_lower:
-                 distractors_pool = [
-                    f"{persona.name} is a bank teller",
-                    f"{persona.name} works in marketing",
-                    f"{persona.name} is a librarian",
-                    f"{persona.name} works as a teacher",
-                    f"{persona.name} is a nurse",
-                    f"{persona.name} works in accounting",
-                    f"{persona.name} works in customer service",
-                    f"{persona.name} is a chef",
-                    f"{persona.name} works in retail",
-                    f"{persona.name} is a security guard"
-                ]
-            else: # Default distractors for English
-                distractors_pool = [
-                    f"{persona.name} is a bank teller",
-                    f"{persona.name} works in accounting",
-                    f"{persona.name} is a librarian",
-                    f"{persona.name} works in customer service",
-                    f"{persona.name} is a security guard",
-                    f"{persona.name} works in marketing",
-                    f"{persona.name} is a nurse",
-                    f"{persona.name} works in retail",
-                    f"{persona.name} is a chef",
-                    f"{persona.name} works as a teacher",
-                    f"{persona.name} is a fitness instructor",
-                    f"{persona.name} works in insurance"
-                ]
-        # --- Spanish Distractors ---
-        elif self.language == "es":
-            if "ciencias ambientales" in persona_background_lower or "environmental science" in persona_background_lower: # Check both for now
-                distractors_pool = [
-                    f"{persona.name} es cajera de banco", # is a bank teller
-                    f"{persona.name} trabaja en desarrollo de software", # works in software development
-                    f"{persona.name} es profesora de secundaria", # is a high school teacher
-                    f"{persona.name} trabaja en marketing", # works in marketing
-                    f"{persona.name} es instructora de fitness", # is a fitness instructor
-                    f"{persona.name} trabaja como bibliotecaria", # works as a librarian
-                    f"{persona.name} es chef", # is a chef
-                    f"{persona.name} trabaja en contabilidad", # works in accounting
-                    f"{persona.name} es enfermera", # is a nurse
-                    f"{persona.name} trabaja en retail" # works in retail
-                ]
-            elif "computer science" in persona_background_lower or "ciencias de la computación" in persona_background_lower:
-                distractors_pool = [
-                    f"{persona.name} es cajera de banco",
-                    f"{persona.name} trabaja en gestión minorista", # works in retail management
-                    f"{persona.name} es maestra de primaria", # is an elementary school teacher
-                    f"{persona.name} trabaja como chef",
-                    f"{persona.name} es entrenadora personal", # is a personal trainer
-                    f"{persona.name} trabaja en marketing",
-                    f"{persona.name} es bibliotecaria",
-                    f"{persona.name} trabaja en contabilidad",
-                    f"{persona.name} es enfermera",
-                    f"{persona.name} trabaja en seguros" # works in insurance
-                ]
-            # ... (Add more specific pools for Spanish based on other backgrounds)
-            else: # Default Spanish distractors
-                distractors_pool = [
-                    f"{persona.name} es cajera de banco",
-                    f"{persona.name} trabaja en contabilidad",
-                    f"{persona.name} es bibliotecaria",
-                    f"{persona.name} trabaja en servicio al cliente", # works in customer service
-                    f"{persona.name} es guardia de seguridad", # is a security guard
-                    f"{persona.name} trabaja en marketing",
-                    f"{persona.name} es enfermera",
-                    f"{persona.name} trabaja en retail",
-                    f"{persona.name} es chef",
-                    f"{persona.name} trabaja como maestra", # works as a teacher
-                    f"{persona.name} es instructora de fitness",
-                    f"{persona.name} trabaja en seguros"
-                ]
-        # --- French Distractors ---
-        elif self.language == "fr":
-             if "sciences de l'environnement" in persona_background_lower or "environmental science" in persona_background_lower:
-                distractors_pool = [
-                    f"{persona.name} est caissière", # is a bank teller
-                    f"{persona.name} travaille dans le développement logiciel", # works in software development
-                    f"{persona.name} est professeure au lycée", # is a high school teacher
-                    f"{persona.name} travaille dans le marketing",
-                    f"{persona.name} est instructrice de fitness",
-                    f"{persona.name} travaille comme bibliothécaire",
-                    f"{persona.name} est chef",
-                    f"{persona.name} travaille en comptabilité", # works in accounting
-                    f"{persona.name} est infirmière", # is a nurse
-                    f"{persona.name} travaille dans le commerce de détail" # works in retail
-                ]
-             elif "informatique" in persona_background_lower or "computer science" in persona_background_lower:
-                 distractors_pool = [
-                    f"{persona.name} est caissière",
-                    f"{persona.name} travaille dans la gestion de détail", # works in retail management
-                    f"{persona.name} est institutrice", # is an elementary school teacher
-                    f"{persona.name} travaille comme chef",
-                    f"{persona.name} est entraîneure personnelle", # is a personal trainer
-                    f"{persona.name} travaille dans le marketing",
-                    f"{persona.name} est bibliothécaire",
-                    f"{persona.name} travaille en comptabilité",
-                    f"{persona.name} est infirmière",
-                    f"{persona.name} travaille dans l'assurance" # works in insurance
-                ]
-             # ... (Add more specific pools for French based on other backgrounds)
-             else: # Default French distractors
-                distractors_pool = [
-                    f"{persona.name} est caissière",
-                    f"{persona.name} travaille en comptabilité",
-                    f"{persona.name} est bibliothécaire",
-                    f"{persona.name} travaille dans le service client", # works in customer service
-                    f"{persona.name} est agent de sécurité", # is a security guard
-                    f"{persona.name} travaille dans le marketing",
-                    f"{persona.name} est infirmière",
-                    f"{persona.name} travaille dans le commerce de détail",
-                    f"{persona.name} est chef",
-                    f"{persona.name} travaille comme institutrice", # works as a teacher
-                    f"{persona.name} est instructrice de fitness",
-                    f"{persona.name} travaille dans l'assurance"
-                ]
-        # --- Placeholder for other languages ---
-        else:
-             # Generate generic English distractors for other languages if not explicitly defined
-             # A more robust system would have pools for each language
-             print(f"Warning: Distractor pool not specifically defined for language '{self.language}', using generic English pool.")
-             distractors_pool = [
-                f"{persona.name} is a bank teller",
-                f"{persona.name} works in accounting",
-                f"{persona.name} is a librarian",
-                f"{persona.name} works in customer service",
-                f"{persona.name} is a security guard",
-                f"{persona.name} works in marketing",
-                f"{persona.name} is a nurse",
-                f"{persona.name} works in retail",
-                f"{persona.name} is a chef",
-                f"{persona.name} works as a teacher",
-                f"{persona.name} is a fitness instructor",
-                f"{persona.name} works in insurance"
-            ]
+        """Generate distractor items based on persona and language.
 
+        Uses the centralised ``i18n`` distractor pools.  English retains
+        background-specific pools; all other languages use a generic pool.
+        """
+        lang = self.language or "en"
+        bg_key = resolve_background_key(" ".join(persona.background))
+        pool_templates = get_distractor_pool(lang, bg_key)
+
+        # Substitute {name} in every template
+        distractors_pool = [t.format(name=persona.name) for t in pool_templates]
 
         # Ensure we don't exceed the pool size
         sample_size = min(num_distractors, len(distractors_pool))
@@ -413,57 +236,39 @@ class LindaBenchmark:
         return random.sample(distractors_pool, sample_size)
 
     def generate_test_item(self, persona: PersonaTemplate) -> TestItem:
-        """Generate a test item based on a persona"""
-        # Create description
+        """Generate a test item based on a persona.
+
+        Uses ``i18n`` module for multilingual component statements,
+        conjunction connectors, and persona descriptions.
+        """
+        lang = self.language or "en"
+
+        # Create description using i18n persona template
         traits_str = ", ".join(persona.personality_traits)
         background_str = ". ".join(persona.background)
-        activities_str = " and ".join(persona.activities)
+        activities_connector = ACTIVITIES_CONNECTORS.get(lang, ACTIVITIES_CONNECTORS["en"])
+        activities_str = activities_connector.join(persona.activities)
 
-        description = f"{persona.name} is {persona.age} years old, {traits_str}. {background_str}. As a student, {activities_str}."
+        template = PERSONA_TEMPLATES.get(lang, PERSONA_TEMPLATES["en"])
+        description = template.format(
+            name=persona.name, age=persona.age,
+            traits=traits_str, background=background_str, activities=activities_str,
+        )
 
-        # Generate test options based on persona
-        component_a = ""
-        component_b = ""
-        conjunction = ""
-        distractors = []
+        # Resolve background keyword from persona data
+        bg_key = resolve_background_key(background_str)
 
-        if "environmental science" in background_str.lower():
-            component_a = f"{persona.name} works for an environmental consulting firm"
-            component_b = f"{persona.name} is active in the environmental movement"
-        elif "computer science" in background_str.lower():
-            component_a = f"{persona.name} is a software engineer"
-            component_b = f"{persona.name} contributes to AI safety research"
-        elif "fine arts" in background_str.lower():
-            component_a = f"{persona.name} works as a graphic designer"
-            component_b = f"{persona.name} is involved in local arts advocacy"
-        elif "engineering" in background_str.lower():
-            component_a = f"{persona.name} works as an engineer at a tech company"
-            component_b = f"{persona.name} participates in corporate social responsibility initiatives"
-        elif "business" in background_str.lower():
-            component_a = f"{persona.name} works in business development"
-            component_b = f"{persona.name} volunteers for microfinance programs"
-        elif "philosophy" in background_str.lower():
-            component_a = f"{persona.name} teaches philosophy at a community college"
-            component_b = f"{persona.name} writes for an online magazine on social issues"
-        elif "literature" in background_str.lower():
-            component_a = f"{persona.name} works as a journalist"
-            component_b = f"{persona.name} runs a local book club"
-        elif "history" in background_str.lower():
-             component_a = f"{persona.name} works as a museum curator"
-             component_b = f"{persona.name} gives lectures on cultural heritage"
-        else: # Default for Linda or others
-            component_a = f"{persona.name} works in a bookstore"
-            component_b = f"{persona.name} attends social justice workshops"
+        # Get language-appropriate component statements
+        comp = get_component_templates(lang, bg_key)
+        component_a = comp["a"].format(name=persona.name)
+        component_b = comp["b"].format(name=persona.name)
 
-        # Fallback if components weren't set (shouldn't happen with current personas)
-        if not component_a or not component_b:
-             component_a = f"{persona.name} has a demanding job"
-             component_b = f"{persona.name} is involved in community activities"
-
-        conjunction = f"{component_a} and {component_b}"
+        # Build conjunction with language-appropriate connector
+        connector = CONJUNCTION_CONNECTORS.get(lang, CONJUNCTION_CONNECTORS["en"])
+        conjunction = f"{component_a}{connector}{component_b}"
 
         # Calculate number of distractors needed
-        num_distractors = self.num_options - 3 # 3 items: A, B, A&B
+        num_distractors = self.num_options - 3  # 3 items: A, B, A&B
         if num_distractors < 0:
             raise ValueError("Number of options must be at least 3")
 

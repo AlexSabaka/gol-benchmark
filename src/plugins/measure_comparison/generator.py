@@ -376,6 +376,9 @@ class MeasureComparisonGenerator(TestCaseGenerator):
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
+            ConfigField(name='count', label='Number of cases', field_type='number',
+                        default=100, min_value=1, max_value=500,
+                        help='Cases to generate per prompt configuration'),
             ConfigField(name='number_format', label='Number format', field_type='select',
                         default='mixed', options=['integer', 'decimal', 'fraction', 'mixed']),
             ConfigField(name='comparison_type', label='Comparison type', field_type='select',

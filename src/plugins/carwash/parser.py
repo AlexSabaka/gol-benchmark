@@ -49,26 +49,45 @@ DRIVE_KEYWORDS = {
         r"\bdrive\s+it\s+there\b",
     ],
     "es": [
-        r"\bconducir\b", r"\bmanejar\b", r"\bir en (?:coche|auto|carro)\b",
+        r"\bcondu\w+\b",                                          # all conducir forms (conduce, conduces, conducirías, conduciendo...)
+        r"\bmaneja\w*\b",                                          # all manejar forms
+        r"\bir en (?:coche|auto|carro)\b",
         r"\btomar (?:el|tu|mi) (?:coche|auto|carro)\b",
         r"\busar (?:el|tu|mi) (?:coche|auto|carro)\b",
         r"\bve en (?:coche|auto)\b",
+        r"\b(?:en|con)\s+(?:el|tu|mi)\s+(?:coche|auto|carro|vehículo)\b",
     ],
     "fr": [
-        r"\bconduire\b", r"\bprendre (?:la|ta|ma) voiture\b",
-        r"\butler en voiture\b", r"\by aller en voiture\b",
+        r"\bconduir\w*\b",                                        # all conduire forms (conduirais, conduisant...)
+        r"\bconduite\b",                                            # noun form "la conduite"
+        r"\bprendre (?:la|ta|ma) voiture\b",
+        r"\baller en voiture\b",
         r"\butiliser (?:la|ta|ma) voiture\b",
+        r"\bfaire\s+laver\s+(?:la|ta|ma)\s+voiture\b",            # "get car washed" (implies driving)
+        r"\b(?:en|avec)\s+(?:la\s+|ta\s+|ma\s+)?voiture\b",        # "with/in the car" (article optional)
     ],
     "de": [
-        r"\bfahren\b", r"\bAuto (?:nehmen|benutzen)\b",
-        r"\bmit dem Auto\b", r"\bhin ?fahren\b",
+        r"\bfahren\b", r"\bfahrt\b", r"\bfährst\b",               # base + conjugations
+        r"\bzu\s+fahren\b",                                        # infinitive with zu
+        r"\bhinfahren\b", r"\bhin\s*fahren\b",                     # drive there
+        r"\bAuto\s+(?:nehmen|benutzen|fahren)\b",
+        r"\bmit\s+dem\s+Auto\b",
+        r"\b(?:das|zum)\s+[Ff]ahren\b",                            # nominalized "das Fahren"
     ],
     "zh": [
         "开车", "驾车", "坐车", "用车", "开.*去",
     ],
     "ua": [
-        r"\bїхати\b", r"\bпоїхати\b", r"\bвзяти (?:машину|авто)\b",
-        r"\bсісти за кермо\b", r"\bна (?:машині|авто)\b",
+        r"\bїхати\b", r"\bпоїхати\b",                                   # infinitive
+        r"\bїдьте\b", r"\bїдь\b", r"\bїдеш\b",                          # imperative / present
+        r"\bїхатиме\b", r"\bпоїде\b", r"\bпоїхав\b",                    # future / past
+        r"\bвзяти (?:машину|авто|автомобіль)\b",                          # "take the car"
+        r"\bсісти за кермо\b",                                            # "get behind the wheel"
+        r"(?:на|у)\s+(?:машині|авто|автомобілі|автомобілем)\b",           # "by car" (no leading \b)
+        r"\bпідвез(?:ти|іть|и)\b",                                        # "drive over" / "give a ride"
+        r"\bпоїзд(?:ку|кою)\b",                                           # "trip (by car)"
+        r"\bтранспорт(?:ом|і)\b",                                         # "by transport"
+        r"\bавтомийк[иіу]\b",                                             # "car wash" (implies driving)
     ],
 }
 

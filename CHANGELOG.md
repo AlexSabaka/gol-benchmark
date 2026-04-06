@@ -2,6 +2,77 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.16.0] - April 4, 2026
+
+### LLM-as-a-Judge Feature
+
+New feature for auditing incorrect model responses using a judge LLM to classify them as true incorrect, false negative, or parser failure.
+
+#### Backend
+- **New module** `src/web/judge.py` — `run_judge_worker()` subprocess function with default system/user prompts; loads result files, filters to incorrect results, queries judge LLM for each, parses JSON verdicts with regex fallback, saves `judge_*.json.gz` output with summary statistics; atomic writes via tempfile
+- **New `submit_judge()` method** on `JobManager` (`src/web/jobs.py`) — creates judge background jobs reusing the ProcessPoolExecutor with progress tracking
+- **3 new API endpoints** (`src/web/api/analysis.py`):
+  - `POST /api/results/judge` — submit a judge job (model, provider, prompts, sampling params, result files, only_incorrect toggle)
+  - `GET /api/results/judge-results` — list all judge output files with summary stats (verdict counts, parser issue breakdown)
+  - `GET /api/results/judge-results/{filename}` — get full judge result with all individual judgments
+- **Judge output format**: JSON.gz with metadata (judge model, duration), summary (total_judged, true_incorrect, false_negative, parser_failure counts + parser_issues breakdown), and per-result judgments (verdict, parser_issue type, confidence, notes)
+
+#### Frontend
+- **"LLM Judge" button** on Results page toolbar — opens a setup Sheet for configuring the judge
+- **Judge Setup Sheet** (`components/judge-setup-sheet.tsx`) — 4 sections:
+  - Scope: "Only incorrect results" toggle + file count
+  - Model selection: Ollama / OpenAI-Compatible tabs with model discovery + saved credentials
+  - Prompts: collapsible system prompt and user prompt template editors (pre-filled with defaults, editable, with reset-to-default)
+  - Sampling: temperature + max tokens
+- **Toolbar reorganized** — buttons grouped into Analysis (Reanalyze, Analyze, Charts) | Actions (Rerun, Report, LLM Judge) | Destructive (Delete), separated by vertical dividers
+- **New types**: `JudgeRequest`, `JudgeSubmitResponse`, `JudgeSummary`, `JudgmentEntry`, `JudgeResult`
+- **New API/hooks**: `submitJudge()`, `fetchJudgeResults()`, `fetchJudgeResult()`; `useSubmitJudge()`, `useJudgeResults()`
+
+### Multilingual Evaluator Fix
+- **Object Tracking evaluator** — now checks `expected_answer_localized` from task_params alongside English `expected_answer`; new `localized_match` match type for non-English correct answers (e.g. Ukrainian "тумбочці" matching localized "тумбочці" when expected is English "nightstand")
+- **Object Tracking parser** — `_get_known_locations()` now includes `expected_answer_localized` in the known locations set
+- **Sally-Anne evaluator** — checks `expected_answer_localized`, `container_a_display`, `container_b_display` from task_params; reality trap detection also recognizes localized container names
+
+## [2.15.0] - April 4, 2026
+
+### Deep Multilingual Content Localization (all 18 plugins)
+
+All 18 benchmark plugins now generate test content (scenarios, questions, data, narratives) in the requested language — not just prompt wrappers. Previously, only the outer instruction text was translated while generated content remained English.
+
+#### Batch 1: ASCII Shapes, Grid Tasks, Object Tracking
+- **ASCII Shapes** — questions ("What are the dimensions...?") now generated in all 6 languages via `_QUESTIONS` dict
+- **Grid Tasks** — column headers, data values (products, regions, months, departments, cities, etc.), and question templates all localized; new `data/grid_i18n.py` with translation tables for 4 data generators × 6 languages
+- **Object Tracking** — scenario narratives (placement, inversion, movement, distractors, questions) fully localized via `step_i18n.py`; vocabulary (objects, containers, locations, rooms, appliances) translated; subject pronouns/possessives per language; fixed accent errors in Spanish, French, German prompts
+
+#### Batch 2: Encoding Cipher, Family Relations, Sally-Anne
+- **Encoding Cipher** — encoding display names localized ("cifrado César", "凯撒密码"); sentence fragments for decode_only mode translated (10 per language); act instructions translated; new word lists: `words_es.txt`, `words_fr.txt`, `words_de.txt`, `words_zh.txt`
+- **Family Relations** — relationship labels (brother/hermano/frère/Bruder/兄弟/брат), plural forms, pronouns, names, question templates, and narrative templates all localized via `i18n.py`; all 10 template functions accept `language`; fixed accent errors in Spanish, French, German prompts
+- **Sally-Anne** — narrative templates (place/leave/move/witness/return), question templates, objects, containers, pronouns, and names all localized via `scenario_i18n.py`; `ScenarioBuilder` accepts `language`; `expected_answer_localized` added to task_params; fixed accent errors in Spanish, French, German prompts
+
+#### Batch 3: False Premise, Inverted Cup, Strawberry
+- **Inverted Cup** — all 4 constant arrays (`DESCRIPTION_STYLES`, `SOURCES`, `ACTION_QUESTIONS`, `EXTRA_CONTEXTS`) converted to per-language dicts with 7 entries × 6 languages
+- **Strawberry** — `_ordinal()` expanded for 6 languages (Spanish `.º`, French `er/e`, German `.`, Chinese `第`, Ukrainian `-й`); pangram templates fixed ("English alphabet" → "Latin alphabet"); new Chinese data files: `words_zh.txt`, `anagram_pairs_zh.txt`, `pangrams_zh.txt`, `lipograms_zh.txt`
+- **False Premise** — question templates for all 5 domains (chemistry, medicine, food, physics, logic) translated via `i18n.py`; urgency/authority framings localized; chemical/drug names intentionally kept universal; all scenario builder methods accept `language`
+
+#### Batch 4: Linda Fallacy, Misquote Attribution
+- **Misquote** — `FRAMING_TEMPLATES` converted to per-language dict (4 styles × 6 languages) with culturally appropriate quote marks (French « », German „"); `_QUESTIONS_BLOCK` localized for all 6 languages
+- **Linda Fallacy** — persona description templates, conjunction connectors, component statement templates (9 backgrounds × 6 languages), and distractor pools (12 items × 6 languages) all localized via `i18n.py`; legacy `linda_eval.py` refactored to delegate to i18n module
+
+#### Grammatical Gender Fix (UA, ES, FR, DE)
+
+Eliminated all slash patterns ("кинув/кинула", "un/una", "le/la", "der/die") in gendered languages and fixed Ukrainian noun case endings.
+
+- **New shared module** `src/plugins/grammar_utils.py` — `article()` (ES/FR/DE article by gender+case), `pick_templates()` (gender-aware template selection), `resolve_vocab()` (case-form lookup), `vocab_gender()`
+- **Object Tracking** — full rewrite of `step_i18n.py`: Ukrainian vocabulary expanded with nom/acc/loc case forms for all nouns; templates split into m/f variants for UA and FR; ES/FR/DE articles resolved by noun gender; Spanish contracted articles (al, del); German case-aware articles (der/den/dem × m/f/n). Random `subject_gender` per test case stored in `task_params`.
+- **Sally-Anne** — full rewrite of `scenario_i18n.py`: Ukrainian case forms + gender-split templates; French possessives by object gender (son/sa); German possessives with case+gender (seinen/seine/ihr/ihre); ES contracted articles (del); object/subject pronouns per language. Random `subject_gender` per test case.
+- **Family Relations** — article slashes removed from ES/FR/DE question and narrative templates; callers prepend articles via `label_with_article()` helper; Spanish "only child" split into m/f; French verb agreement via pronoun placeholder; German relative pronouns resolved.
+- **Grid Tasks** — ES/FR/DE question templates rephrased to avoid article ambiguity (e.g. "¿Cuál es el valor de {column}?" instead of "¿Cuál es el/la {column}?").
+- **Inverted Cup** — Ukrainian SOURCES split into m/f variants with correct past-tense verbs; random gender per test case.
+
+#### Other fixes in this release
+- **Testset generation count fix** — `generate_testset.py` no longer divides count by number of prompt configs; `count` now means "per prompt config" (e.g. count=100 × 72 configs = 7,200 cases); linda_fallacy pre-multiplication removed
+- **Count ConfigField added** to 7 plugins that lacked it: ascii_shapes, carwash, inverted_cup, measure_comparison, object_tracking, strawberry, time_arithmetic
+
 ## [2.14.0] - April 4, 2026
 
 ### UI & Workflow Improvements

@@ -266,6 +266,58 @@ class JobManager:
     def list_jobs(self) -> List[Dict[str, Any]]:
         return [self.get_status(jid) for jid in sorted(self._jobs, key=lambda k: self._jobs[k].created_at, reverse=True)]
 
+    def submit_judge(
+        self,
+        result_paths: List[str],
+        model_name: str,
+        provider: str = "openai_compatible",
+        system_prompt: str = "",
+        user_prompt_template: str = "",
+        temperature: float = 0.1,
+        max_tokens: int = 500,
+        only_incorrect: bool = True,
+        api_key: str = "",
+        api_base: str = "",
+        ollama_host: str = "http://localhost:11434",
+        output_dir: str = "results",
+    ) -> str:
+        from src.web.judge import run_judge_worker, DEFAULT_SYSTEM_PROMPT, DEFAULT_USER_TEMPLATE
+
+        job_id = uuid.uuid4().hex[:12]
+        job = Job(
+            id=job_id,
+            model_name=f"judge:{model_name}",
+            testset_path=",".join(result_paths),
+        )
+        self._jobs[job_id] = job
+        self._progress[job_id] = {"current": 0, "total": 0, "state": "pending"}
+
+        future = self._pool.submit(
+            run_judge_worker,
+            result_paths, model_name, provider,
+            system_prompt or DEFAULT_SYSTEM_PROMPT,
+            user_prompt_template or DEFAULT_USER_TEMPLATE,
+            temperature, max_tokens, only_incorrect,
+            api_key, api_base, ollama_host, output_dir,
+            job_id, self._progress,
+        )
+        self._futures[job_id] = future
+
+        def _done(fut: Future):
+            j = self._jobs.get(job_id)
+            if not j:
+                return
+            try:
+                j.result_path = fut.result()
+                j.state = JobState.COMPLETED
+            except Exception as exc:
+                j.state = JobState.FAILED
+                j.error = str(exc)
+            j.finished_at = time.time()
+
+        future.add_done_callback(_done)
+        return job_id
+
     def cancel(self, job_id: str) -> bool:
         future = self._futures.get(job_id)
         if future and future.cancel():

@@ -1,6 +1,6 @@
 # Plugin System Guide
 
-> **Version 2.14.0** | Last updated: 2026-04-02
+> **Version 2.16.0** | Last updated: 2026-04-04
 
 Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
@@ -237,9 +237,11 @@ The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt
 
 | Coverage Level | Plugins |
 |---------------|---------|
-| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + parsing | game_of_life, cellular_automata_1d, ascii_shapes, strawberry, measure_comparison, time_arithmetic, carwash, inverted_cup, object_tracking, sally_anne, misquote, false_premise, family_relations, encoding_cipher, symbol_arithmetic, arithmetic, linda_fallacy, grid_tasks |
+| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + content + parsing | All 18 plugins |
 
-All 18 plugins now have full 6-language support for prompts. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
+All 18 plugins generate test **content** (scenarios, questions, grid data, narratives, encoded text) in the requested language — not just prompt wrappers. Each plugin has a dedicated i18n module with localized vocabulary and templates. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
+
+**Grammatical gender** (v2.15.0): Gendered languages (UA, ES, FR, DE) resolve articles, possessives, verb forms, and noun case endings correctly. The shared `grammar_utils.py` module provides `article()` (ES/FR/DE by gender+case), `resolve_vocab()` (Ukrainian nom/acc/loc case lookup), `pick_templates()` (gender-aware m/f template selection), and `vocab_gender()`. Subject gender is randomly assigned (m/f) per test case and stored in `task_params["subject_gender"]`.
 
 ---
 

@@ -140,7 +140,7 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
                     'filled': filled,
                     'question_type': question_type,
                     'expected_answer': expected_answer,
-                    'question': self._generate_question(question_type, x if question_type == 'position' else None, y if question_type == 'position' else None),
+                    'question': self._generate_question(question_type, x if question_type == 'position' else None, y if question_type == 'position' else None, language=language_str),
                 }
 
             # Generate prompts
@@ -150,6 +150,7 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
                 rendered = shape['shape'].get('rendered', '')
                 question = self._generate_question(
                     shape.get('question_type', shape.get('question_key', question_type)),
+                    language=language_str,
                 )
             else:
                 rendered = shape.get('rendered', '')
@@ -200,15 +201,53 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
 
         return tests
 
-    def _generate_question(self, question_type: str, x: Optional[int] = None, y: Optional[int] = None) -> str:
-        """Generate question based on type."""
-        if question_type == 'dimensions':
-            return "What are the dimensions (width x height) of this shape?"
-        elif question_type == 'count':
-            return "How many symbols are in this shape?"
-        elif question_type == 'position':
-            return f"Is there a symbol at position ({x}, {y})?"
-        return "What can you tell me about this shape?"
+    _QUESTIONS: Dict[str, Dict[str, str]] = {
+        "en": {
+            "dimensions": "What are the dimensions (width x height) of this shape?",
+            "count": "How many symbols are in this shape?",
+            "position": "Is there a symbol at position ({x}, {y})?",
+            "default": "What can you tell me about this shape?",
+        },
+        "es": {
+            "dimensions": "¿Cuáles son las dimensiones (ancho x alto) de esta forma?",
+            "count": "¿Cuántos símbolos hay en esta forma?",
+            "position": "¿Hay un símbolo en la posición ({x}, {y})?",
+            "default": "¿Qué puedes decirme sobre esta forma?",
+        },
+        "fr": {
+            "dimensions": "Quelles sont les dimensions (largeur x hauteur) de cette forme ?",
+            "count": "Combien de symboles contient cette forme ?",
+            "position": "Y a-t-il un symbole à la position ({x}, {y}) ?",
+            "default": "Que pouvez-vous me dire sur cette forme ?",
+        },
+        "de": {
+            "dimensions": "Was sind die Abmessungen (Breite x Höhe) dieser Form?",
+            "count": "Wie viele Symbole enthält diese Form?",
+            "position": "Gibt es ein Symbol an Position ({x}, {y})?",
+            "default": "Was können Sie mir über diese Form sagen?",
+        },
+        "zh": {
+            "dimensions": "这个形状的尺寸（宽 × 高）是多少？",
+            "count": "这个形状中有多少个符号？",
+            "position": "在位置 ({x}, {y}) 是否有符号？",
+            "default": "关于这个形状你能告诉我什么？",
+        },
+        "ua": {
+            "dimensions": "Які розміри (ширина × висота) цієї форми?",
+            "count": "Скільки символів у цій формі?",
+            "position": "Чи є символ на позиції ({x}, {y})?",
+            "default": "Що ви можете сказати про цю форму?",
+        },
+    }
+
+    def _generate_question(self, question_type: str, x: Optional[int] = None,
+                           y: Optional[int] = None, language: str = "en") -> str:
+        """Generate question based on type and language."""
+        lang_q = self._QUESTIONS.get(language, self._QUESTIONS["en"])
+        template = lang_q.get(question_type, lang_q["default"])
+        if question_type == "position" and x is not None and y is not None:
+            return template.format(x=x, y=y)
+        return template
 
     def get_default_config(self) -> Dict[str, Any]:
         """Return default generation configuration."""
@@ -224,6 +263,9 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
+            ConfigField(name='count', label='Number of cases', field_type='number',
+                        default=50, min_value=1, max_value=500,
+                        help='Cases to generate per prompt configuration'),
             ConfigField(name='question_types', label='Question types', field_type='multi-select',
                         default=['dimensions', 'count', 'position'],
                         options=['dimensions', 'count', 'position']),

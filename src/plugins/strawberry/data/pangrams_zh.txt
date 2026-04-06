@@ -1,0 +1,27 @@
+# Strawberry Benchmark — Pangram Sentences (Chinese)
+# Format: sentence|is_pangram|missing_letters
+# Pipe-delimited (sentences may contain commas).
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# Note: Chinese does not have a fixed alphabet, so the traditional
+# pangram concept (use every letter A-Z) does not directly apply.
+# Instead, these sentences are evaluated as Latin-alphabet pangrams
+# based on their pinyin romanization — or used as diverse-character
+# sentences for general character-reasoning tasks.
+#
+# For benchmark purposes these are treated as Latin-alphabet pangram
+# checks on the raw sentence text (checking for a-z in the string).
+# Since Chinese characters contain no Latin letters, is_pangram is
+# always false and missing_letters lists the full alphabet.
+
+# --- DIVERSE CHARACTER SENTENCES (all false for a-z pangram check) ---
+春天的花园里百花齐放，蝴蝶在温暖的阳光下翩翩起舞。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+勤劳的农民在广阔的田野上播种希望，等待金色的秋天收获果实。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+这只灵巧的狐狸跳过了那条懒惰的大狗。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+微风吹过竹林发出沙沙的响声让人心旷神怡。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+孩子们在操场上奔跑嬉戏笑声回荡在校园的每个角落。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+夕阳西下金色的光芒洒满大地远处的山峦被染成了橙红色。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+古老的城墙见证了千年的风雨每一块砖石都诉说着历史的故事。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+清晨的露珠挂在嫩绿的叶子上晶莹剔透如同一颗颗小小的宝石。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+繁华的街道上车水马龙霓虹灯闪烁着五彩斑斓的光芒。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z
+雪花纷纷扬扬地飘落覆盖了整个村庄白茫茫一片银装素裹。|false|a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z

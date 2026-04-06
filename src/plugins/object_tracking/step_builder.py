@@ -7,11 +7,21 @@ Generates step sequences for object tracking tests, including:
 - Critical inversion step (container flips, object falls)
 - Post-inversion container moves
 - Post-inversion distractor steps
+
+Gender-aware: accepts ``subject_gender`` ("m"/"f") and resolves
+Ukrainian verb forms + ES/FR/DE articles via grammar_utils.
 """
 
 import random
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Tuple
+
+from src.plugins.grammar_utils import (
+    article,
+    pick_templates,
+    resolve_vocab,
+    vocab_gender,
+)
 
 
 @dataclass
@@ -62,7 +72,8 @@ class Scenario:
         }
 
 
-# Template collections for generating diverse scenarios
+# English-only template collections (kept for backward compatibility with
+# code that references these module-level constants directly)
 PLACEMENT_TEMPLATES = [
     "{subject} put a {object} in a {container} and sit the {container} on the {location}.",
     "{subject} place a {object} into a {container} on the {location}.",
@@ -139,47 +150,221 @@ NUMBERS = [3, 5, 10]
 MOVE_LOCATIONS = ['microwave', 'refrigerator', 'oven', 'sink', 'drawer', 'cabinet']
 
 
+# ── Helpers for Spanish contracted articles ──────────────────────────────
+
+def _es_a_article(gender: str) -> str:
+    """Return 'al' (a + el) for masculine, 'a la' for feminine."""
+    return "al" if gender == "m" else "a la"
+
+
+def _es_de_article(gender: str) -> str:
+    """Return 'del' (de + el) for masculine, 'de la' for feminine."""
+    return "del" if gender == "m" else "de la"
+
+
+def _de_zu_article(gender: str) -> str:
+    """Return 'zum' (zu + dem) for m/n, 'zur' (zu + der) for f."""
+    return "zur" if gender == "f" else "zum"
+
+
 class StepBuilder:
     """Builds object tracking scenarios with configurable complexity."""
 
-    def __init__(self, seed: Optional[int] = None):
-        """Initialize with optional random seed for reproducibility."""
+    def __init__(self, seed: Optional[int] = None, language: str = "en",
+                 subject_gender: str = "m"):
+        """Initialize with optional random seed for reproducibility.
+
+        Args:
+            seed: Random seed.
+            language: Language code.
+            subject_gender: Grammatical gender of the subject ('m' or 'f').
+                Used for Ukrainian verb agreement and French past-participle
+                agreement.
+        """
         self.rng = random.Random(seed)
+        self.language = language
+        self.subject_gender = subject_gender
+        from src.plugins.object_tracking import step_i18n
+        self._i18n = step_i18n
+
+    def _loc(self, en_word: str, vocab_dict: dict, case: str = "nom") -> str:
+        """Localize an English vocabulary word, optionally with case."""
+        return resolve_vocab(en_word, vocab_dict, self.language, case)
+
+    def _templates(self, template_dict: dict) -> list:
+        """Get templates for current language and subject gender."""
+        return pick_templates(template_dict, self.language, self.subject_gender)
 
     def _get_subject_possessive(self, subject: str) -> str:
-        """Get possessive form for subject."""
-        subject_lower = subject.lower()
-        if subject_lower == 'i':
-            return 'my'
-        elif subject_lower == 'you':
-            return 'your'
-        else:
-            # Assume it's a name
-            return f"{subject}'s"
+        """Get possessive form for subject in current language."""
+        _, poss = self._i18n.get_subject_forms(subject, self.language)
+        return poss
 
     def _format_subject(self, subject: str, capitalize: bool = True) -> str:
-        """Format subject for sentence use."""
-        if subject.lower() == 'i':
-            return 'I'
-        elif capitalize:
-            return subject.capitalize()
-        return subject
+        """Format subject for sentence use in current language."""
+        formatted, _ = self._i18n.get_subject_forms(subject, self.language)
+        if capitalize and formatted[0].islower():
+            return formatted.capitalize()
+        return formatted
+
+    def _article_vars(self, obj_en: str, container_en: str,
+                      location_en: str = "",
+                      loc_vocab: dict = None) -> Dict[str, str]:
+        """Compute all article placeholder values for the current language.
+
+        Returns a dict of ``{art_def_obj: ..., art_indef_cont: ..., ...}``
+        that can be passed as ``**kwargs`` to ``str.format()``.
+        """
+        lang = self.language
+        i18n = self._i18n
+        if loc_vocab is None:
+            loc_vocab = i18n.LOCATIONS
+
+        obj_g = vocab_gender(obj_en, i18n.OBJECTS, lang)
+        cont_g = vocab_gender(container_en, i18n.CONTAINERS, lang)
+        loc_g = vocab_gender(location_en, loc_vocab, lang) if location_en else "m"
+
+        d: Dict[str, str] = {}
+        # --- definite / indefinite articles (ES, FR) ---
+        for prefix, g, label in [
+            ("obj", obj_g, "obj"),
+            ("cont", cont_g, "cont"),
+            ("loc", loc_g, "loc"),
+        ]:
+            d[f"art_def_{label}"] = article(lang, g, definite=True)
+            d[f"art_indef_{label}"] = article(lang, g, definite=False)
+
+        # --- German articles need case ---
+        for case in ("nom", "acc", "dat"):
+            for g, label in [(obj_g, "obj"), (cont_g, "cont"), (loc_g, "loc")]:
+                d[f"art_def_{label}_{case}"] = article(lang, g, definite=True, case=case)
+                d[f"art_indef_{label}_{case}"] = article(lang, g, definite=False, case=case)
+
+        # --- Spanish contracted articles: a + el = al, de + el = del ---
+        d["art_def_cont_a"] = _es_a_article(cont_g)
+        d["art_def_loc_a"] = _es_a_article(loc_g)
+        d["art_def_cont_de"] = _es_de_article(cont_g)
+        d["art_def_loc_de"] = _es_de_article(loc_g)
+
+        # --- German zu + article contractions ---
+        d["art_def_loc_zu"] = _de_zu_article(loc_g)
+
+        return d
+
+    def _resolve_list_item(self, item: Any, case: str = "nom") -> str:
+        """Resolve a list-vocab item (str or dict) to the requested form."""
+        if isinstance(item, str):
+            return item
+        if isinstance(item, dict):
+            return item.get(case, item.get("nom", item.get("word", str(item))))
+        return str(item)
+
+    def _item_gender(self, item: Any) -> str:
+        """Get gender from a list-vocab item."""
+        if isinstance(item, dict):
+            return item.get("gender", "m")
+        return "m"
 
     def _fill_template(
         self,
         template: str,
         subject: str,
-        **kwargs
+        *,
+        obj_en: str = "",
+        container_en: str = "",
+        location_en: str = "",
+        loc_vocab: dict = None,
+        appliance_en: str = "",
+        room_item: Any = "",
+        nearby_item: Any = "",
+        **extra_kwargs,
     ) -> str:
-        """Fill a template with variables."""
+        """Fill a template with variables, resolving articles and cases.
+
+        This is the central method that injects:
+        - localized noun forms (``{object}``, ``{container}``, ``{location}``)
+        - case-inflected forms (``{object_acc}``, ``{container_loc}``, etc.)
+        - article placeholders (``{art_def_obj}``, ``{art_indef_cont_acc}``, etc.)
+        """
+        lang = self.language
+        i18n = self._i18n
+        if loc_vocab is None:
+            loc_vocab = i18n.LOCATIONS
+
         possessive = self._get_subject_possessive(subject)
         formatted_subject = self._format_subject(subject)
 
-        return template.format(
-            subject=formatted_subject,
-            possessive=possessive,
-            **kwargs
-        )
+        # --- Build all substitution values ---
+        vals: Dict[str, Any] = {
+            "subject": formatted_subject,
+            "possessive": possessive,
+        }
+
+        # Object forms
+        if obj_en:
+            vals["object"] = resolve_vocab(obj_en, i18n.OBJECTS, lang, "nom")
+            vals["object_nom"] = resolve_vocab(obj_en, i18n.OBJECTS, lang, "nom")
+            vals["object_acc"] = resolve_vocab(obj_en, i18n.OBJECTS, lang, "acc")
+            vals["object_loc"] = resolve_vocab(obj_en, i18n.OBJECTS, lang, "loc")
+
+        # Container forms
+        if container_en:
+            vals["container"] = resolve_vocab(container_en, i18n.CONTAINERS, lang, "nom")
+            vals["container_nom"] = resolve_vocab(container_en, i18n.CONTAINERS, lang, "nom")
+            vals["container_acc"] = resolve_vocab(container_en, i18n.CONTAINERS, lang, "acc")
+            vals["container_loc"] = resolve_vocab(container_en, i18n.CONTAINERS, lang, "loc")
+
+        # Location forms
+        if location_en:
+            vals["location"] = resolve_vocab(location_en, loc_vocab, lang, "nom")
+            vals["location_nom"] = resolve_vocab(location_en, loc_vocab, lang, "nom")
+            vals["location_acc"] = resolve_vocab(location_en, loc_vocab, lang, "acc")
+            vals["location_loc"] = resolve_vocab(location_en, loc_vocab, lang, "loc")
+
+        # Appliance forms
+        if appliance_en:
+            vals["appliance"] = resolve_vocab(appliance_en, i18n.APPLIANCES, lang, "nom")
+            vals["appliance_nom"] = resolve_vocab(appliance_en, i18n.APPLIANCES, lang, "nom")
+            vals["appliance_acc"] = resolve_vocab(appliance_en, i18n.APPLIANCES, lang, "acc")
+
+            # Appliance articles for ES/FR/DE
+            appl_g = vocab_gender(appliance_en, i18n.APPLIANCES, lang)
+            vals["art_def_appl"] = article(lang, appl_g, definite=True)
+            vals["art_def_appl_acc"] = article(lang, appl_g, definite=True, case="acc")
+            vals["art_def_appl_gen"] = article(lang, appl_g, definite=True, case="dat")  # DE genitive approximation
+            vals["art_def_appl_de"] = _es_de_article(appl_g)
+            vals["art_def_appl_a"] = _es_a_article(appl_g)
+
+        # Room forms (list items, not keyed dicts)
+        if room_item:
+            vals["room"] = self._resolve_list_item(room_item, "nom")
+            vals["room_gen"] = self._resolve_list_item(room_item, "gen")
+            vals["room_loc"] = self._resolve_list_item(room_item, "loc")
+            room_g = self._item_gender(room_item)
+            vals["art_def_room"] = article(lang, room_g, definite=True)
+            vals["art_def_room_acc"] = article(lang, room_g, definite=True, case="acc")
+            vals["art_def_room_zu"] = _de_zu_article(room_g)
+
+        # Nearby object forms (list items)
+        if nearby_item:
+            vals["nearby_object"] = self._resolve_list_item(nearby_item, "nom")
+            vals["nearby_object_acc"] = self._resolve_list_item(nearby_item, "acc")
+            nearby_g = self._item_gender(nearby_item)
+            vals["art_def_nearby"] = article(lang, nearby_g, definite=True)
+            vals["art_def_nearby_acc"] = article(lang, nearby_g, definite=True, case="acc")
+
+        # Articles for obj/cont/loc
+        if obj_en or container_en or location_en:
+            art_vars = self._article_vars(
+                obj_en or "", container_en or "", location_en or "",
+                loc_vocab=loc_vocab,
+            )
+            vals.update(art_vars)
+
+        # Extra pass-through kwargs (time, number, etc.)
+        vals.update(extra_kwargs)
+
+        return template.format(**vals)
 
     def _create_placement_step(
         self,
@@ -189,13 +374,10 @@ class StepBuilder:
         location: str
     ) -> ScenarioStep:
         """Create the initial placement step."""
-        template = self.rng.choice(PLACEMENT_TEMPLATES)
+        template = self.rng.choice(self._templates(self._i18n.PLACEMENT))
         description = self._fill_template(
-            template,
-            subject,
-            object=obj,
-            container=container,
-            location=location
+            template, subject,
+            obj_en=obj, container_en=container, location_en=location,
         )
 
         return ScenarioStep(
@@ -214,17 +396,15 @@ class StepBuilder:
         current_location: str,
         is_sticky: bool
     ) -> Tuple[ScenarioStep, str]:
-        """
-        Create the inversion step.
+        """Create the inversion step.
 
         Returns:
             Tuple of (step, new_object_location)
         """
-        template = self.rng.choice(INVERSION_TEMPLATES)
+        template = self.rng.choice(self._templates(self._i18n.INVERSION))
         description = self._fill_template(
-            template,
-            subject,
-            container=container
+            template, subject,
+            container_en=container,
         )
 
         # After inversion, object falls to current location (unless sticky)
@@ -247,20 +427,19 @@ class StepBuilder:
         object_location: str
     ) -> ScenarioStep:
         """Create a container move step."""
-        template = self.rng.choice(MOVE_TEMPLATES)
+        template = self.rng.choice(self._templates(self._i18n.MOVEMENT))
         description = self._fill_template(
-            template,
-            subject,
-            container=container,
-            location=new_location
+            template, subject,
+            container_en=container, location_en=new_location,
+            loc_vocab=self._i18n.MOVE_LOCATIONS,
         )
 
         return ScenarioStep(
             step_number=step_number,
             action_type='move',
             description=description,
-            affects_object=False,  # Object no longer in container (after inversion)
-            object_location_after=object_location  # Object stays where it fell
+            affects_object=False,
+            object_location_after=object_location
         )
 
     def _create_interact_step(
@@ -271,11 +450,10 @@ class StepBuilder:
         object_location: str
     ) -> ScenarioStep:
         """Create an interaction step with an appliance."""
-        template = self.rng.choice(INTERACT_TEMPLATES)
+        template = self.rng.choice(self._templates(self._i18n.INTERACT))
         description = self._fill_template(
-            template,
-            subject,
-            appliance=appliance
+            template, subject,
+            appliance_en=appliance,
         )
 
         return ScenarioStep(
@@ -294,18 +472,35 @@ class StepBuilder:
         object_location: str
     ) -> ScenarioStep:
         """Create a distractor step."""
-        templates = DISTRACTOR_TEMPLATES.get(distractor_type, DISTRACTOR_TEMPLATES['irrelevant'])
+        distractor_map = {
+            'irrelevant': self._i18n.DISTRACTOR_IRRELEVANT,
+            'spatial': self._i18n.DISTRACTOR_SPATIAL,
+            'temporal': self._i18n.DISTRACTOR_TEMPORAL,
+        }
+        templates = self._templates(
+            distractor_map.get(distractor_type, self._i18n.DISTRACTOR_IRRELEVANT)
+        )
         template = self.rng.choice(templates)
 
-        # Fill in template variables
+        # Pick room and nearby_object as full items (may be dicts)
+        rooms_list = pick_templates(self._i18n.ROOMS, self.language, self.subject_gender)
+        nearby_list = pick_templates(self._i18n.NEARBY_OBJECTS, self.language, self.subject_gender)
+
+        room_item = self.rng.choice(rooms_list)
+        nearby_item = self.rng.choice(nearby_list)
+
         description = self._fill_template(
-            template,
-            subject,
+            template, subject,
+            room_item=room_item,
+            nearby_item=nearby_item,
             time=self.rng.choice(TIMES),
             number=self.rng.choice(NUMBERS),
-            room=self.rng.choice(ROOMS),
-            nearby_object=self.rng.choice(NEARBY_OBJECTS),
-            location=self.rng.choice(ROOMS)
+            # Provide fallback plain-text values for templates that use
+            # bare {room}, {nearby_object}, {location} without article
+            # placeholders (e.g. ZH, EN)
+            room=self._resolve_list_item(room_item),
+            nearby_object=self._resolve_list_item(nearby_item),
+            location=self._resolve_list_item(room_item),
         )
 
         return ScenarioStep(
@@ -317,7 +512,7 @@ class StepBuilder:
         )
 
     def _pick_new_location(self, current_location: str, initial_location: str) -> str:
-        """Pick a new location different from current and initial."""
+        """Pick a new location different from current and initial (English keys)."""
         available = [loc for loc in MOVE_LOCATIONS
                      if loc != current_location and loc != initial_location]
         if not available:
@@ -440,6 +635,18 @@ class StepBuilder:
         return '\n'.join(lines)
 
     def generate_question(self, obj: str) -> str:
-        """Generate the question about object location."""
-        template = self.rng.choice(QUESTION_TEMPLATES)
-        return template.format(object=obj)
+        """Generate the question about object location in current language."""
+        i18n = self._i18n
+        lang = self.language
+        templates = self._templates(i18n.QUESTION)
+        template = self.rng.choice(templates)
+
+        # Build substitution values including article placeholders
+        obj_g = vocab_gender(obj, i18n.OBJECTS, lang)
+        vals: Dict[str, str] = {
+            "object": resolve_vocab(obj, i18n.OBJECTS, lang, "nom"),
+            "object_nom": resolve_vocab(obj, i18n.OBJECTS, lang, "nom"),
+            "art_def_obj": article(lang, obj_g, definite=True),
+            "art_def_obj_nom": article(lang, obj_g, definite=True, case="nom"),
+        }
+        return template.format(**vals)

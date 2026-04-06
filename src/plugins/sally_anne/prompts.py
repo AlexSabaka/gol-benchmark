@@ -24,7 +24,7 @@ USER_PROMPT_TEMPLATES = {
     "es": {
         "minimal": "{narrative}\n\n{question}\nRespuesta:",
         "casual": (
-            "Aqui tienes un pequeno escenario:\n\n"
+            "Aquí tienes un pequeño escenario:\n\n"
             "{narrative}\n\n"
             "{question} Solo dame la respuesta en una palabra."
         ),
@@ -37,30 +37,30 @@ USER_PROMPT_TEMPLATES = {
         ),
     },
     "fr": {
-        "minimal": "{narrative}\n\n{question}\nReponse :",
+        "minimal": "{narrative}\n\n{question}\nRéponse :",
         "casual": (
-            "Voici un petit scenario pour toi :\n\n"
+            "Voici un petit scénario pour toi :\n\n"
             "{narrative}\n\n"
-            "{question} Donne-moi la reponse en un seul mot."
+            "{question} Donne-moi la réponse en un seul mot."
         ),
         "linguistic": (
-            "Veuillez lire attentivement le scenario suivant et repondre "
-            "a la question sur ce que le personnage croit.\n\n"
+            "Veuillez lire attentivement le scénario suivant et répondre "
+            "à la question sur ce que le personnage croit.\n\n"
             "{narrative}\n\n"
             "{question}\n"
-            "Fournissez votre reponse en un seul mot."
+            "Fournissez votre réponse en un seul mot."
         ),
     },
     "de": {
         "minimal": "{narrative}\n\n{question}\nAntwort:",
         "casual": (
-            "Hier ist ein kleines Szenario fuer dich:\n\n"
+            "Hier ist ein kleines Szenario für dich:\n\n"
             "{narrative}\n\n"
             "{question} Gib mir die Antwort in einem einzigen Wort."
         ),
         "linguistic": (
-            "Bitte lesen Sie das folgende Szenario sorgfaeltig und beantworten Sie "
-            "die Frage darueber, was die Person glaubt.\n\n"
+            "Bitte lesen Sie das folgende Szenario sorgfältig und beantworten Sie "
+            "die Frage darüber, was die Person glaubt.\n\n"
             "{narrative}\n\n"
             "{question}\n"
             "Geben Sie Ihre Antwort als ein einzelnes Wort an."

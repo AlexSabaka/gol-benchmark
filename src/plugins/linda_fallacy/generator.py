@@ -10,6 +10,10 @@ from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.plugins.linda_fallacy.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.linda_fallacy.i18n import (
+    PERSONA_TEMPLATES,
+    ACTIVITIES_CONNECTORS,
+)
 
 
 # Language to culture mapping
@@ -122,13 +126,15 @@ class LindaTestCaseGenerator(TestCaseGenerator):
             except Exception:
                 continue
 
-            # Format persona description
+            # Format persona description using language-aware template
             traits_str = ", ".join(persona.personality_traits)
             background_str = ". ".join(persona.background)
-            activities_str = " and ".join(persona.activities)
-            persona_description = (
-                f"{persona.name} is {persona.age} years old, {traits_str}. "
-                f"{background_str}. As a student, {activities_str}."
+            activities_connector = ACTIVITIES_CONNECTORS.get(language_str, ACTIVITIES_CONNECTORS["en"])
+            activities_str = activities_connector.join(persona.activities)
+            template = PERSONA_TEMPLATES.get(language_str, PERSONA_TEMPLATES["en"])
+            persona_description = template.format(
+                name=persona.name, age=persona.age,
+                traits=traits_str, background=background_str, activities=activities_str,
             )
 
             ranked_items = '\n'.join(

@@ -1,0 +1,93 @@
+# Strawberry Letter-Counting Benchmark — Word List (Chinese)
+# Curated Chinese words organized by length tiers.
+# Lines starting with # are comments. Blank lines are ignored.
+#
+# Note: For Chinese, "length" refers to character count.
+# These words use common CJK characters suitable for
+# character-counting tasks.
+
+# --- SHORT (2 characters) ---
+草莓
+苹果
+葡萄
+西瓜
+香蕉
+菠萝
+樱桃
+芒果
+蓝莓
+橘子
+柠檬
+桃子
+梨子
+荔枝
+椰子
+杨梅
+木瓜
+枇杷
+龙眼
+桑葚
+甘蔗
+石榴
+山竹
+大象
+老虎
+狮子
+熊猫
+鲨鱼
+鹦鹉
+蝴蝶
+蜻蜓
+乌龟
+孔雀
+海豚
+松鼠
+太阳
+月亮
+星星
+闪电
+彩虹
+春天
+夏天
+秋天
+冬天
+山川
+河流
+森林
+沙漠
+海洋
+草原
+
+# --- MEDIUM (3 characters) ---
+火龙果
+猕猴桃
+百香果
+哈密瓜
+红毛丹
+无花果
+向日葵
+蒲公英
+太阳花
+仙人掌
+含羞草
+薰衣草
+大自然
+图书馆
+博物馆
+幼儿园
+停车场
+游泳池
+电影院
+运动场
+巧克力
+冰淇淋
+棒棒糖
+爆米花
+
+# --- LONG (4+ characters) ---
+蓝色妖姬
+七彩阳光
+春暖花开
+万紫千红
+金碧辉煌
+风和日丽

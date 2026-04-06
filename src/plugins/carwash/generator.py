@@ -27,6 +27,9 @@ class CarwashGenerator(TestCaseGenerator):
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
+            ConfigField(name='count', label='Number of cases', field_type='number',
+                        default=100, min_value=1, max_value=500,
+                        help='Cases to generate per prompt configuration'),
             ConfigField(name='distances', label='Distances', field_type='multi-select',
                         default=[d['label'] for d in DISTANCES['en']],
                         options=[d['label'] for d in DISTANCES['en']], group='advanced',

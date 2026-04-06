@@ -1,0 +1,45 @@
+# Strawberry Benchmark — Lipogram Sentences (Chinese)
+# Format: sentence|avoided_letter|is_lipogram
+# Pipe-delimited. Lines starting with # are comments. Blank lines are ignored.
+#
+# Note: For Chinese, "avoided letter" means an avoided Chinese character.
+# is_lipogram=true: the sentence does NOT contain the avoided character
+# is_lipogram=false: the sentence DOES contain the avoided character (trap case)
+
+# --- TRUE LIPOGRAMS (character genuinely absent) ---
+# Avoiding 的
+春天花园百花盛开，阳光温暖大地。|的|true
+他们在公园里散步，看见许多美丽花朵。|的|true
+孩子们在操场上快乐奔跑，笑声不断。|的|true
+
+# Avoiding 是
+他们在花园里散步，看到了很多美丽的花朵。|是|true
+阳光照耀大地，万物复苏，春天来了。|是|true
+那只小猫在窗台上安静地睡着了。|是|true
+
+# Avoiding 了
+春天来到大地，万物开始生长，百花争相绽放。|了|true
+他很高兴地接受那份礼物，说声谢谢。|了|true
+美丽的彩虹挂在天空，五彩斑斓十分壮观。|了|true
+
+# Avoiding 不
+他很高兴地接受那份礼物，说了声谢谢。|不|true
+春天的花园里百花齐放，蝴蝶翩翩起舞。|不|true
+阳光明媚的日子里，孩子们在草地上玩耍。|不|true
+
+# --- FALSE LIPOGRAMS (character IS present — trap) ---
+# Avoiding 的 (but 的 is present)
+春天的花园里百花齐放，蝴蝶在温暖的阳光下翩翩起舞。|的|false
+勤劳的农民在广阔的田野上播种希望。|的|false
+
+# Avoiding 是 (but 是 is present)
+今天是一个特别好的日子。|是|false
+这是我见过的最美丽的风景。|是|false
+
+# Avoiding 了 (but 了 is present)
+他终于完成了所有的工作。|了|false
+雨停了，天空出现了彩虹。|了|false
+
+# Avoiding 不 (but 不 is present)
+他不想去那个地方。|不|false
+这件事情不容易解决。|不|false

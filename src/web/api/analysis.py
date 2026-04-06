@@ -133,6 +133,104 @@ async def serve_chart(filename: str):
     return FileResponse(str(filepath))
 
 
+# ── LLM-as-a-Judge endpoints (MUST be before /{filename} catch-all) ──────
+
+from typing import Optional
+
+
+class JudgeRequest(BaseModel):
+    result_filenames: List[str] = Field(min_length=1)
+    provider: str = "openai_compatible"
+    model: str = ""
+    api_base: str = ""
+    api_key: str = ""
+    ollama_host: str = "http://localhost:11434"
+    system_prompt: str = ""
+    user_prompt_template: str = ""
+    temperature: float = 0.1
+    max_tokens: int = 500
+    only_incorrect: bool = True
+
+
+@router.post("/judge")
+async def submit_judge(req: JudgeRequest):
+    """Launch an LLM-as-a-Judge background job."""
+    if not req.model:
+        raise HTTPException(400, "Model name is required")
+
+    resolved = []
+    for fname in req.result_filenames:
+        found = False
+        for d in _results_dirs():
+            fp = d / fname
+            if fp.exists():
+                resolved.append(str(fp))
+                found = True
+                break
+        if not found:
+            raise HTTPException(404, f"Result file not found: {fname}")
+
+    from src.web.jobs import job_manager
+
+    job_id = job_manager.submit_judge(
+        result_paths=resolved,
+        model_name=req.model,
+        provider=req.provider,
+        system_prompt=req.system_prompt,
+        user_prompt_template=req.user_prompt_template,
+        temperature=req.temperature,
+        max_tokens=req.max_tokens,
+        only_incorrect=req.only_incorrect,
+        api_key=req.api_key,
+        api_base=req.api_base,
+        ollama_host=req.ollama_host,
+        output_dir=web_config.results_dir,
+    )
+    return {"status": "ok", "job_id": job_id, "model": req.model}
+
+
+@router.get("/judge-results")
+async def list_judge_results():
+    """List all judge result files."""
+    files = []
+    for d in _results_dirs():
+        if d.exists():
+            files.extend(d.glob("judge_*.json.gz"))
+    results = []
+    for f in sorted(files, key=lambda p: p.stat().st_mtime, reverse=True):
+        try:
+            data = _load_result(f)
+            meta = data.get("metadata", {})
+            summary = data.get("summary", {})
+            results.append({
+                "filename": f.name,
+                "judge_model": meta.get("judge_model", "unknown"),
+                "judge_provider": meta.get("judge_provider", "unknown"),
+                "total_judged": summary.get("total_judged", 0),
+                "true_incorrect": summary.get("true_incorrect", 0),
+                "false_negative": summary.get("false_negative", 0),
+                "parser_failure": summary.get("parser_failure", 0),
+                "source_results": data.get("source_results", []),
+                "created": time.ctime(f.stat().st_mtime),
+                "duration_seconds": meta.get("duration_seconds", 0),
+            })
+        except Exception:
+            continue
+    return results
+
+
+@router.get("/judge-results/{filename}")
+async def get_judge_result(filename: str):
+    """Load a full judge result file."""
+    for d in _results_dirs():
+        fp = d / filename
+        if fp.exists():
+            return _load_result(fp)
+    raise HTTPException(404, f"Judge result file not found: {filename}")
+
+
+# ── Catch-all result file endpoints (MUST be last) ──────────────────────
+
 @router.delete("/{filename}")
 async def delete_result(filename: str):
     """Delete a result file."""
@@ -187,6 +285,8 @@ async def reanalyze_result(filename: str):
                 raise HTTPException(500, f"Reanalysis failed: {exc}")
     raise HTTPException(404, f"Result file not found: {filename}")
 
+
+# ── Analysis endpoints ───────────────────────────────────────────────────
 
 class AnalyzeRequest(BaseModel):
     result_filenames: List[str] = Field(min_length=1)

@@ -10,6 +10,7 @@ import {
   BarChart3,
   LineChart,
   FileText,
+  Scale,
   Dna,
 } from "lucide-react"
 
@@ -22,6 +23,7 @@ const NAV_ITEMS = [
   { to: "/results", icon: BarChart3, label: "Results" },
   { to: "/charts", icon: LineChart, label: "Charts" },
   { to: "/reports", icon: FileText, label: "Reports" },
+  { to: "/judge", icon: Scale, label: "Judge" },
 ]
 
 export function AppShell() {

@@ -82,13 +82,20 @@ class SallyAnneResultEvaluator(ResultEvaluator):
         # Normalize answers
         expected_norm = expected_answer.lower().strip()
         model_norm = model_answer.lower().strip()
-        
+
         # Get container locations from task_params
         container_a = task_params.get('container_a', '').lower()  # Correct (belief location)
         container_b = task_params.get('container_b', '').lower()  # Reality trap (actual location)
-        
-        # Check for exact match with expected (container_a)
-        if model_norm == expected_norm or model_norm == container_a:
+
+        # Localized expected answer (multilingual support)
+        expected_localized = task_params.get('expected_answer_localized', '').lower().strip()
+        container_a_display = task_params.get('container_a_display', '').lower().strip()
+        container_b_display = task_params.get('container_b_display', '').lower().strip()
+
+        # Check for exact match with expected (container_a) — English or localized
+        if (model_norm == expected_norm or model_norm == container_a
+                or (expected_localized and model_norm == expected_localized)
+                or (container_a_display and model_norm == container_a_display)):
             return EvaluationResult(
                 correct=True,
                 accuracy=1.0,
@@ -116,7 +123,9 @@ class SallyAnneResultEvaluator(ResultEvaluator):
             )
         
         # Check if model fell for reality trap (answered container_b instead of container_a)
-        if model_norm == container_b or self._is_synonym_match(container_b, model_norm):
+        if (model_norm == container_b or self._is_synonym_match(container_b, model_norm)
+                or (container_b_display and (model_norm == container_b_display
+                    or self._is_synonym_match(container_b_display, model_norm)))):
             return EvaluationResult(
                 correct=False,
                 accuracy=0.0,

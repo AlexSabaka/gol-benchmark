@@ -16,48 +16,48 @@ USER_PROMPT_TEMPLATES = {
         ),
     },
     "es": {
-        "minimal": "{puzzle}\n\nResponde con un solo numero entero.",
+        "minimal": "{puzzle}\n\nResponde con un solo número entero.",
         "casual": (
-            "Oye, aqui tienes un acertijo familiar rapido:\n\n"
+            "Oye, aquí tienes un acertijo familiar rápido:\n\n"
             "{puzzle}\n\n"
-            "Cual es la respuesta? Solo dame el numero."
+            "¿Cuál es la respuesta? Solo dame el número."
         ),
         "linguistic": (
             "Por favor, resuelve el siguiente problema de razonamiento sobre "
-            "relaciones familiares. Piensa cuidadosamente en quien se cuenta "
-            "y desde la perspectiva de quien.\n\n"
+            "relaciones familiares. Piensa cuidadosamente en quién se cuenta "
+            "y desde la perspectiva de quién.\n\n"
             "{puzzle}\n\n"
-            "Proporciona tu respuesta final como un solo numero entero."
+            "Proporciona tu respuesta final como un solo número entero."
         ),
     },
     "fr": {
-        "minimal": "{puzzle}\n\nRepondez avec un seul nombre entier.",
+        "minimal": "{puzzle}\n\nRépondez avec un seul nombre entier.",
         "casual": (
-            "Salut, voici une petite enigme familiale :\n\n"
+            "Salut, voici une petite énigme familiale :\n\n"
             "{puzzle}\n\n"
-            "Quelle est la reponse ? Donne-moi juste le nombre."
+            "Quelle est la réponse ? Donne-moi juste le nombre."
         ),
         "linguistic": (
-            "Veuillez resoudre le probleme de raisonnement suivant portant sur "
-            "les relations familiales. Reflechissez bien a qui est compte "
+            "Veuillez résoudre le problème de raisonnement suivant portant sur "
+            "les relations familiales. Réfléchissez bien à qui est compté "
             "et du point de vue de qui.\n\n"
             "{puzzle}\n\n"
-            "Fournissez votre reponse finale sous la forme d'un seul nombre entier."
+            "Fournissez votre réponse finale sous la forme d'un seul nombre entier."
         ),
     },
     "de": {
         "minimal": "{puzzle}\n\nAntworten Sie mit einer einzelnen ganzen Zahl.",
         "casual": (
-            "Hey, hier ist ein schnelles Familienraetsel:\n\n"
+            "Hey, hier ist ein schnelles Familienrätsel:\n\n"
             "{puzzle}\n\n"
             "Was ist die Antwort? Gib mir einfach die Zahl."
         ),
         "linguistic": (
-            "Bitte loesen Sie die folgende Aufgabe zum logischen Denken ueber "
-            "Familienbeziehungen. Ueberlegen Sie genau, wer gezaehlt wird "
+            "Bitte lösen Sie die folgende Aufgabe zum logischen Denken über "
+            "Familienbeziehungen. Überlegen Sie genau, wer gezählt wird "
             "und aus wessen Perspektive.\n\n"
             "{puzzle}\n\n"
-            "Geben Sie Ihre endgueltige Antwort als einzelne ganze Zahl an."
+            "Geben Sie Ihre endgültige Antwort als einzelne ganze Zahl an."
         ),
     },
     "zh": {

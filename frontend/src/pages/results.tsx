@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef, Table } from "@tanstack/react-table"
 import { toast } from "sonner"
 import { useNavigate } from "react-router"
-import { Eye, BarChart3, LineChart, FileText, Loader2, RefreshCw, RotateCcw, Trash2, CheckSquare, Square } from "lucide-react"
+import { Eye, BarChart3, LineChart, FileText, Loader2, RefreshCw, RotateCcw, Trash2, CheckSquare, Square, Scale } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
   SheetContent,
@@ -23,6 +24,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { DataTable } from "@/components/data-table/data-table"
 import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
+import { JudgeSetupSheet } from "@/components/judge-setup-sheet"
 import { PageHeader } from "@/components/layout/page-header"
 import { TaskBadge } from "@/components/task-badge"
 import { formatDuration, formatPercent } from "@/lib/utils"
@@ -47,6 +49,7 @@ export default function ResultsPage() {
   const [groupBy, setGroupBy] = useState<"none" | "task_type" | "model">("none")
   const [rerunTarget, setRerunTarget] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
+  const [judgeOpen, setJudgeOpen] = useState(false)
 
   const toggleSelect = useCallback((filename: string) => {
     setSelected((prev) => {
@@ -322,7 +325,8 @@ export default function ResultsPage() {
         title="Results"
         description="Browse benchmark results, compare models and generate reports"
         actions={
-          <div className="flex flex-wrap gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {/* Analysis group */}
             <Button variant="outline" onClick={handleReanalyze} disabled={selected.size === 0 || reanalyzeMutation.isPending}>
               {reanalyzeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
               Reanalyze ({selected.size})
@@ -339,13 +343,16 @@ export default function ResultsPage() {
               <LineChart className="mr-2 h-4 w-4" />
               Charts ({selected.size})
             </Button>
+
+            <Separator orientation="vertical" className="h-6" />
+
+            {/* Actions group */}
             <Button
               variant="outline"
               onClick={() => {
                 const first = Array.from(selected)[0]
                 const r = results?.find((res) => res.filename === first)
                 if (!r?.testset_name) { toast.error("No testset info"); return }
-                // Find matching testset filename by metadata name
                 const match = testsets?.find((ts) =>
                   ts.filename.includes(r.testset_name) ||
                   (ts.metadata as Record<string, string>)?.name === r.testset_name
@@ -353,7 +360,6 @@ export default function ResultsPage() {
                 if (match) {
                   setRerunTarget(match.filename)
                 } else {
-                  // Fallback: go straight to execute page, let user pick
                   toast.info("Testset not found — redirecting to Execute page")
                   nav("/execute")
                 }
@@ -367,6 +373,14 @@ export default function ResultsPage() {
               {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
               Generate Report
             </Button>
+            <Button variant="outline" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
+              <Scale className="mr-2 h-4 w-4" />
+              LLM Judge ({selected.size})
+            </Button>
+
+            <Separator orientation="vertical" className="h-6" />
+
+            {/* Destructive */}
             <Button variant="destructive" onClick={() => setDeleteConfirm(true)} disabled={selected.size === 0}>
               <Trash2 className="mr-2 h-4 w-4" />
               Delete ({selected.size})
@@ -495,6 +509,13 @@ export default function ResultsPage() {
           )}
         </SheetContent>
       </Sheet>
+
+      {/* Judge setup sheet */}
+      <JudgeSetupSheet
+        open={judgeOpen}
+        onOpenChange={setJudgeOpen}
+        selectedFiles={Array.from(selected)}
+      />
     </div>
   )
 }

@@ -97,7 +97,6 @@ _NON_ASCII_LANGUAGES = {"zh", "ua"}
 # (multilingual wrapping only — minimal style may be all-ASCII)
 _EN_BODY_PLUGINS = {
     "ascii_shapes",    # Question text from _generate_question() is EN-only
-    "false_premise",   # Chemistry/physics scenarios are EN-only
     "inverted_cup",    # Cup descriptions are EN-only
     "misquote",        # Quotes & framing templates are EN-only
     "family_relations", # Puzzle text is EN-only

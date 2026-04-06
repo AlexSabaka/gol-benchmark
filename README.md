@@ -317,6 +317,8 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Web UI improvements: Jobs page, faceted filters, plugin descriptions from README, Configure/Execute page split (v2.12.0)
 - [x] Full multilingual support: all 18 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
 - [x] UI & Workflow improvements: reanalysis endpoint, custom system prompts, chart filtering (task/language/log scale), Param Override Modal, favorites sidebar, encrypted credential storage (v2.14.0)
+- [x] Deep multilingual content localization: all 18 plugins generate test content in 6 languages, not just prompt wrappers (v2.15.0)
+- [x] LLM-as-a-Judge: audit incorrect model responses via judge LLM with web UI setup and background job execution (v2.16.0)
 
 ### 🔄 In Progress
 

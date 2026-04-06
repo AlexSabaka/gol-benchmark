@@ -119,13 +119,27 @@ class ObjectTrackingResultEvaluator(ResultEvaluator):
         predicted_canonical = self._canonicalize(predicted_str)
         expected_canonical = self._canonicalize(expected_str)
 
-        # Check for matches
+        # Check for matches (English canonical)
         is_exact = predicted_canonical == expected_canonical
         is_raw_match = predicted_str == expected_str
-        is_correct = is_exact or is_raw_match
+
+        # Check localized expected answer (multilingual support)
+        expected_localized = task_params.get('expected_answer_localized', '')
+        is_localized_match = False
+        if expected_localized:
+            exp_loc_str = str(expected_localized).lower().strip()
+            is_localized_match = (
+                predicted_str == exp_loc_str
+                or predicted_str in exp_loc_str
+                or exp_loc_str in predicted_str
+            )
+
+        is_correct = is_exact or is_raw_match or is_localized_match
 
         # Determine match type
-        if is_exact and is_raw_match:
+        if is_localized_match and not is_exact and not is_raw_match:
+            match_type = 'localized_match'
+        elif is_exact and is_raw_match:
             match_type = 'exact'
         elif is_exact:
             match_type = 'synonym_match'

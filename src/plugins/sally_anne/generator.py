@@ -9,17 +9,17 @@ import itertools
 from typing import Dict, List, Any, Optional
 from datetime import datetime
 from ..base import TestCaseGenerator, TestCase, ConfigField
-from .scenario_builder import SallyAnneScenarioBuilder
+from .scenario_builder import SallyAnneScenarioBuilder, _gender_code
 from .prompts import USER_PROMPT_TEMPLATES
 
 
 class SallyAnneTestCaseGenerator(TestCaseGenerator):
     """Generates Sally-Anne false belief test cases."""
-    
+
     def __init__(self):
-        """Initialize generator with scenario builder."""
-        self.scenario_builder = SallyAnneScenarioBuilder()
-    
+        """Initialize generator (scenario builder created per-batch with language)."""
+        self.scenario_builder = None  # Created in generate_batch with language
+
     def generate_batch(
         self,
         config: Dict[str, Any],
@@ -29,7 +29,7 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
     ) -> List[TestCase]:
         """
         Generate a batch of Sally-Anne test cases.
-        
+
         Args:
             config: Task-specific configuration with:
                 - subject_pairs: List of (name_a, gender_a, name_b, gender_b) tuples (empty = random)
@@ -41,13 +41,19 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
             prompt_config: Prompt configuration (not used directly, handled by pipeline)
             count: Number of test cases to generate
             seed: Random seed for reproducibility
-            
+
         Returns:
             List of TestCase objects
         """
         if seed is not None:
             random.seed(seed)
-        
+
+        # Create language-aware scenario builder (subject_gender updated per-scenario)
+        language_str = prompt_config.get('language', 'en')
+        self.scenario_builder = SallyAnneScenarioBuilder(
+            language=language_str, subject_gender="m",
+        )
+
         # Extract configuration
         subject_pairs = config.get('subject_pairs', [])
         objects = config.get('objects', ['marble', 'ball', 'toy'])
@@ -55,12 +61,12 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
         distractor_count = config.get('distractor_count', 0)
         leave_activities = config.get('leave_activities', ['goes for a walk'])
         include_observer = config.get('include_observer', False)
-        
+
         # Use random subject pairs if none provided
         use_random_pairs = len(subject_pairs) == 0
-        
+
         test_cases = []
-        
+
         # If using specific subject pairs, create combinations with other parameters
         if not use_random_pairs and subject_pairs:
             # Create all combinations
@@ -70,15 +76,21 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
                 containers,
                 leave_activities,
             ))
-            
+
             # Sample or repeat to reach count
             if len(combinations) >= count:
                 selected = random.sample(combinations, count)
             else:
                 # Repeat combinations to reach count
                 selected = random.choices(combinations, k=count)
-            
+
             for idx, (subject_pair, obj, container_pair, leave_activity) in enumerate(selected):
+                # Update builder's subject_gender from the pair
+                _name_a, gender_a, _name_b, _gender_b = subject_pair
+                self.scenario_builder.subject_gender = (
+                    "m" if gender_a == "male" else "f"
+                )
+
                 scenario = self.scenario_builder.generate_scenario(
                     subject_pair=subject_pair,
                     obj=obj,
@@ -88,10 +100,10 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
                     include_observer=include_observer,
                     seed=seed + idx if seed else None,
                 )
-                
+
                 test_case = self._create_test_case(scenario, idx, prompt_config)
                 test_cases.append(test_case)
-        
+
         else:
             # Use random subject pairs
             for idx in range(count):
@@ -99,7 +111,11 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
                 obj = random.choice(objects)
                 container_pair = random.choice(containers)
                 leave_activity = random.choice(leave_activities)
-                
+
+                # Pick a random subject gender for character A
+                subject_gender = random.choice(["m", "f"])
+                self.scenario_builder.subject_gender = subject_gender
+
                 scenario = self.scenario_builder.generate_scenario(
                     subject_pair=None,  # Generate random pair
                     obj=obj,
@@ -109,7 +125,7 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
                     include_observer=include_observer,
                     seed=seed + idx if seed else None,
                 )
-                
+
                 test_case = self._create_test_case(scenario, idx, prompt_config)
                 test_cases.append(test_case)
         
@@ -160,13 +176,19 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
             'subject_b': scenario['subject_b_name'],
             'subject_b_gender': scenario['subject_b_gender'],
             'object': scenario['object'],
-            'container_a': scenario['container_a'],  # Belief location (correct)
-            'container_b': scenario['container_b'],  # Actual location (reality trap)
+            'container_a': scenario['container_a'],  # Belief location (correct) — English key
+            'container_b': scenario['container_b'],  # Actual location (reality trap) — English key
             'leave_activity': scenario['leave_activity'],
             'distractor_count': len(scenario['distractor_elements']),
             'has_observer': scenario['observer'] is not None,
             'correct_answer': expected_answer,
             'reality_trap': scenario['container_b'],
+            'subject_gender': _gender_code(scenario['subject_a_gender']),
+            # Localized display names for parser compatibility
+            'expected_answer_localized': scenario.get('container_a_display', expected_answer),
+            'container_a_display': scenario.get('container_a_display', scenario['container_a']),
+            'container_b_display': scenario.get('container_b_display', scenario['container_b']),
+            'object_display': scenario.get('object_display', scenario['object']),
         }
         
         if scenario['observer']:

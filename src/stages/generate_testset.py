@@ -140,7 +140,7 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
             total_count = len(difficulty_levels) * grids_per_difficulty
         elif task_type == 'linda_fallacy':
             personas_per_config = gen_params.get('personas_per_config', 5)
-            total_count = personas_per_config * len(config['task']['prompt_configs'])
+            total_count = personas_per_config
         elif task_type == 'cellular_automata_1d':
             rules = gen_params.get('rules', [110, 30, 90])
             if isinstance(rules, int):
@@ -178,7 +178,7 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
             batch = generator.generate_batch(
                 config=generation_config,
                 prompt_config=prompt_conf,
-                count=total_count // len(config['task']['prompt_configs']) or 1,
+                count=total_count,
                 seed=seed
             )
 

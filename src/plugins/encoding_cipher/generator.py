@@ -30,9 +30,12 @@ ALL_ENCODING_TYPES = ["base64", "caesar", "morse"]
 ALL_CAESAR_SHIFTS = [3, 7, 13]
 
 ENCODING_DISPLAY_NAMES = {
-    "base64": "Base64",
-    "caesar": "Caesar cipher",
-    "morse": "Morse code",
+    "en": {"base64": "Base64", "caesar": "Caesar cipher", "morse": "Morse code"},
+    "es": {"base64": "Base64", "caesar": "cifrado César", "morse": "código Morse"},
+    "fr": {"base64": "Base64", "caesar": "chiffre de César", "morse": "code Morse"},
+    "de": {"base64": "Base64", "caesar": "Caesar-Chiffre", "morse": "Morsecode"},
+    "zh": {"base64": "Base64", "caesar": "凯撒密码", "morse": "摩尔斯电码"},
+    "ua": {"base64": "Base64", "caesar": "шифр Цезаря", "morse": "азбука Морзе"},
 }
 
 # Message length buckets (word counts)
@@ -45,38 +48,132 @@ _LENGTH_RANGES = {
 # ---------------------------------------------------------------------------
 # Template sentence bank for decode_only plaintext generation
 # ---------------------------------------------------------------------------
-_SENTENCE_FRAGMENTS = [
-    "The ancient lighthouse stood alone on the rocky cliff",
-    "A caravan of merchants crossed the sunlit desert",
-    "The clockmaker repaired the old grandfather clock carefully",
-    "Dense fog rolled in from the harbour at dusk",
-    "A single candle illuminated the dusty manuscript",
-    "The astronomer charted a previously unknown constellation",
-    "Waves crashed against the crumbling stone seawall",
-    "The blacksmith forged a blade of exceptional quality",
-    "A thunderstorm gathered strength over the northern mountains",
-    "The cartographer drew detailed maps of the coastline",
-    "An expedition set out to explore the volcanic island",
-    "The librarian catalogued every manuscript in the archive",
-    "Fireflies drifted lazily through the summer meadow",
-    "The glassblower shaped a delicate crystal vessel",
-    "A procession of lanterns wound through the narrow streets",
-    "The navigator relied on the stars to find the way home",
-    "Frost covered the orchard in a thin white veil",
-    "The watchmaker assembled tiny gears with steady hands",
-    "A falcon circled high above the open grassland",
-    "The stonecutter carved an inscription into the marble slab",
-]
+_SENTENCE_FRAGMENTS = {
+    "en": [
+        "The ancient lighthouse stood alone on the rocky cliff",
+        "A caravan of merchants crossed the sunlit desert",
+        "The clockmaker repaired the old grandfather clock carefully",
+        "Dense fog rolled in from the harbour at dusk",
+        "A single candle illuminated the dusty manuscript",
+        "The astronomer charted a previously unknown constellation",
+        "Waves crashed against the crumbling stone seawall",
+        "The blacksmith forged a blade of exceptional quality",
+        "A thunderstorm gathered strength over the northern mountains",
+        "The cartographer drew detailed maps of the coastline",
+        "An expedition set out to explore the volcanic island",
+        "The librarian catalogued every manuscript in the archive",
+        "Fireflies drifted lazily through the summer meadow",
+        "The glassblower shaped a delicate crystal vessel",
+        "A procession of lanterns wound through the narrow streets",
+        "The navigator relied on the stars to find the way home",
+        "Frost covered the orchard in a thin white veil",
+        "The watchmaker assembled tiny gears with steady hands",
+        "A falcon circled high above the open grassland",
+        "The stonecutter carved an inscription into the marble slab",
+    ],
+    "es": [
+        "El antiguo faro se alzaba solitario sobre el acantilado rocoso",
+        "Una caravana de mercaderes cruzó el desierto bañado por el sol",
+        "El relojero reparó cuidadosamente el viejo reloj de péndulo",
+        "Una densa niebla llegó del puerto al anochecer",
+        "Una sola vela iluminaba el polvoriento manuscrito",
+        "El astrónomo trazó una constelación previamente desconocida",
+        "Las olas rompían contra el viejo malecón de piedra",
+        "El herrero forjó una espada de calidad excepcional",
+        "Una tormenta eléctrica se formó sobre las montañas del norte",
+        "El cartógrafo dibujó mapas detallados de la costa",
+    ],
+    "fr": [
+        "Le vieux phare se dressait seul sur la falaise rocheuse",
+        "Une caravane de marchands traversa le désert ensoleillé",
+        "L'horloger répara soigneusement la vieille horloge comtoise",
+        "Un brouillard épais arriva du port au crépuscule",
+        "Une seule bougie éclairait le manuscrit poussiéreux",
+        "L'astronome cartographia une constellation inconnue",
+        "Les vagues se brisaient contre la vieille digue de pierre",
+        "Le forgeron façonna une lame d'une qualité exceptionnelle",
+        "Un orage se forma au-dessus des montagnes du nord",
+        "Le cartographe dessina des cartes détaillées du littoral",
+    ],
+    "de": [
+        "Der alte Leuchtturm stand einsam auf der felsigen Klippe",
+        "Eine Karawane von Händlern durchquerte die sonnige Wüste",
+        "Der Uhrmacher reparierte sorgfältig die alte Standuhr",
+        "Dichter Nebel zog bei Einbruch der Dämmerung vom Hafen herein",
+        "Eine einzelne Kerze beleuchtete das staubige Manuskript",
+        "Der Astronom kartierte ein bisher unbekanntes Sternbild",
+        "Wellen schlugen gegen die bröckelnde Steinmauer",
+        "Der Schmied fertigte eine Klinge von außergewöhnlicher Qualität",
+        "Ein Gewitter sammelte Kraft über den nördlichen Bergen",
+        "Der Kartograph zeichnete detaillierte Karten der Küstenlinie",
+    ],
+    "zh": [
+        "古老的灯塔孤独地矗立在岩石悬崖上",
+        "一支商队穿越了阳光普照的沙漠",
+        "钟表匠仔细地修理了那座古老的落地钟",
+        "浓雾在黄昏时从港口涌来",
+        "一支蜡烛照亮了那本落满灰尘的手稿",
+        "天文学家绘制了一个以前未知的星座",
+        "海浪拍打着摇摇欲坠的石头海堤",
+        "铁匠锻造了一把品质卓越的利刃",
+        "雷暴在北方群山上聚集力量",
+        "制图师绘制了海岸线的详细地图",
+    ],
+    "ua": [
+        "Старовинний маяк стояв самотньо на скелястому утесі",
+        "Караван торговців перетнув залиту сонцем пустелю",
+        "Годинникар ретельно відремонтував старовинний підлоговий годинник",
+        "Густий туман насунув з гавані в сутінках",
+        "Єдина свічка освітлювала запилений рукопис",
+        "Астроном нанів на карту раніше невідоме сузіря",
+        "Хвилі розбивалися об стару кам'яну дамбу",
+        "Коваль викував клинок виняткової якості",
+        "Гроза набирала силу над північними горами",
+        "Картограф намалював детальні карти узбережжя",
+    ],
+}
 
 # Instruction templates for decode_and_act mode.
 # Each template embeds {word} — the model should reply with that word only.
-_ACT_INSTRUCTIONS = [
-    "The secret word is: {word}. Reply with only that word.",
-    "Your task: respond with the single word '{word}' and nothing else.",
-    "Please reply with exactly this word: {word}",
-    "After decoding this message, say only the word '{word}' as your answer.",
-    "Instruction: output the word '{word}' and nothing more.",
-]
+_ACT_INSTRUCTIONS = {
+    "en": [
+        "The secret word is: {word}. Reply with only that word.",
+        "Your task: respond with the single word '{word}' and nothing else.",
+        "Please reply with exactly this word: {word}",
+        "After decoding this message, say only the word '{word}' as your answer.",
+        "Instruction: output the word '{word}' and nothing more.",
+    ],
+    "es": [
+        "La palabra secreta es: {word}. Responde solo con esa palabra.",
+        "Tu tarea: responde con la única palabra '{word}' y nada más.",
+        "Por favor responde exactamente con esta palabra: {word}",
+        "Después de decodificar este mensaje, di solo la palabra '{word}' como respuesta.",
+    ],
+    "fr": [
+        "Le mot secret est : {word}. Répondez uniquement avec ce mot.",
+        "Votre tâche : répondez avec le seul mot '{word}' et rien d'autre.",
+        "Veuillez répondre exactement avec ce mot : {word}",
+        "Après avoir décodé ce message, dites uniquement le mot '{word}' comme réponse.",
+    ],
+    "de": [
+        "Das geheime Wort ist: {word}. Antworte nur mit diesem Wort.",
+        "Deine Aufgabe: antworte mit dem einzelnen Wort '{word}' und nichts anderem.",
+        "Bitte antworte genau mit diesem Wort: {word}",
+        "Nachdem du diese Nachricht dekodiert hast, sage nur das Wort '{word}' als Antwort.",
+    ],
+    "zh": [
+        "秘密词语是：{word}。请只回复这个词。",
+        "你的任务：只回复'{word}'这个词，不要回复其他内容。",
+        "请准确回复这个词：{word}",
+        "解码此消息后，只说出'{word}'这个词作为你的回答。",
+    ],
+    "ua": [
+        "Секретне слово: {word}. Відповідай тільки цим словом.",
+        "Твоє завдання: відповідай одним словом '{word}' і нічим більше.",
+        "Будь ласка, відповідай саме цим словом: {word}",
+        "Після декодування цього повідомлення скажи тільки слово '{word}' як відповідь.",
+    ],
+}
 
 # Mode-specific instruction text inserted into the user prompt
 _MODE_INSTRUCTIONS = {
@@ -161,12 +258,12 @@ def _pick_weighted(options: List[str], weights: Dict[str, float], rng: random.Ra
     return rng.choices(options, weights=w, k=1)[0]
 
 
-def _compose_plaintext(rng: random.Random, length_tier: str) -> str:
+def _compose_plaintext(rng: random.Random, length_tier: str, language: str = "en") -> str:
     """Build a plaintext string for decode_only by concatenating sentence fragments."""
     lo, hi = _LENGTH_RANGES.get(length_tier, _LENGTH_RANGES["medium"])
     target_words = rng.randint(lo, hi)
-    # Shuffle and concatenate fragments until we hit the target word count
-    frags = list(_SENTENCE_FRAGMENTS)
+    lang_frags = _SENTENCE_FRAGMENTS.get(language, _SENTENCE_FRAGMENTS["en"])
+    frags = list(lang_frags)
     rng.shuffle(frags)
     words: List[str] = []
     for frag in frags:
@@ -174,9 +271,10 @@ def _compose_plaintext(rng: random.Random, length_tier: str) -> str:
         if len(words) >= target_words:
             break
     text = " ".join(words[:target_words])
-    # Ensure it ends with a period
-    if not text.endswith("."):
-        text += "."
+    # Ensure it ends with a period (or Chinese period)
+    end_marks = (".", "。")
+    if not text.endswith(end_marks):
+        text += "。" if language == "zh" else "."
     return text
 
 
@@ -191,9 +289,10 @@ def _encode(plaintext: str, encoding_type: str, shift: Optional[int]) -> str:
     raise ValueError(f"Unknown encoding type: {encoding_type}")
 
 
-def _encoding_display(encoding_type: str, shift: Optional[int]) -> str:
+def _encoding_display(encoding_type: str, shift: Optional[int], language: str = "en") -> str:
     """Human-readable encoding name for use in prompts."""
-    name = ENCODING_DISPLAY_NAMES[encoding_type]
+    lang_names = ENCODING_DISPLAY_NAMES.get(language, ENCODING_DISPLAY_NAMES["en"])
+    name = lang_names[encoding_type]
     if encoding_type == "caesar" and shift is not None:
         name += f" (shift {shift})"
     return name
@@ -298,14 +397,14 @@ class EncodingCipherGenerator(TestCaseGenerator):
 
             # Generate plaintext + expected answer
             task_params, plaintext = self._generate_content(
-                mode, rng, words, message_length, shift,
+                mode, rng, words, message_length, shift, language_str,
             )
 
             # Encode
             encoded_text = _encode(plaintext, enc_type, shift)
 
             # Build instruction string
-            enc_display = _encoding_display(enc_type, shift)
+            enc_display = _encoding_display(enc_type, shift, language_str)
             lang_instructions = _MODE_INSTRUCTIONS.get(language_str, _MODE_INSTRUCTIONS["en"])
             instruction = lang_instructions[mode].format(encoding_name=enc_display)
 
@@ -361,17 +460,18 @@ class EncodingCipherGenerator(TestCaseGenerator):
         words: List[str],
         message_length: str,
         shift: Optional[int],
+        language: str = "en",
     ) -> Tuple[Dict[str, Any], str]:
         """Return (task_params_fragment, plaintext) for the given mode."""
         if mode == "decode_and_act":
-            return self._gen_decode_and_act(rng, words)
+            return self._gen_decode_and_act(rng, words, language)
         else:
-            return self._gen_decode_only(rng, message_length)
+            return self._gen_decode_only(rng, message_length, language)
 
     def _gen_decode_only(
-        self, rng: random.Random, message_length: str,
+        self, rng: random.Random, message_length: str, language: str = "en",
     ) -> Tuple[Dict[str, Any], str]:
-        plaintext = _compose_plaintext(rng, message_length)
+        plaintext = _compose_plaintext(rng, message_length, language)
         params = {
             "expected_answer": plaintext,
             "response_word": None,
@@ -379,10 +479,11 @@ class EncodingCipherGenerator(TestCaseGenerator):
         return params, plaintext
 
     def _gen_decode_and_act(
-        self, rng: random.Random, words: List[str],
+        self, rng: random.Random, words: List[str], language: str = "en",
     ) -> Tuple[Dict[str, Any], str]:
         word = rng.choice(words)
-        template = rng.choice(_ACT_INSTRUCTIONS)
+        lang_instructions = _ACT_INSTRUCTIONS.get(language, _ACT_INSTRUCTIONS["en"])
+        template = rng.choice(lang_instructions)
         plaintext = template.format(word=word)
         params = {
             "expected_answer": word,

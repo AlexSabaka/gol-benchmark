@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.14.0** | Last updated: 2026-04-02
+> **Version 2.16.0** | Last updated: 2026-04-04
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -315,7 +315,7 @@ Base class helpers in `TestCaseGenerator`:
 
 English (EN), French (FR), Spanish (ES), German (DE), Chinese (ZH), Ukrainian (UA)
 
-All 18 plugins now support all 6 languages for prompts, data, and response parsing (v2.13.0).
+All 18 plugins now support all 6 languages for prompts, generated content, data, and response parsing (v2.15.0). Since v2.15.0, all generated test content (scenarios, questions, grid data, narratives, encoded text, relationship terms, vocabulary) is produced in the requested language — not just the prompt wrappers. Each plugin has a dedicated i18n module with localized templates and vocabulary. Gendered languages (Ukrainian, Spanish, French, German) use proper grammatical gender: articles resolved by noun gender, Ukrainian nouns decline by case (nominative/accusative/locative), past-tense verbs conjugate by randomly selected subject gender (m/f), and zero slash patterns remain in generated prompts. The shared `grammar_utils.py` module provides article resolution, case-form lookup, and gender-aware template selection.
 
 ### Why This Matters
 
@@ -376,7 +376,7 @@ frontend/src/
 | `models.py` | `/api/models` | Model listing from Ollama/HF/OpenAI providers |
 | `testsets.py` | `/api/testsets` | Test set generation and listing |
 | `execution.py` | `/api/jobs` | Job submission, status polling, progress |
-| `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns, reanalysis |
+| `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns, reanalysis, LLM-as-a-Judge |
 
 ### Background Jobs
 

@@ -21,14 +21,18 @@ except ImportError:
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
 from src.plugins.grid_tasks.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.grid_tasks.data.grid_i18n import (
+    translate_header, get_list, get_question_template, FALLBACK_NAMES,
+)
 from src.utils.text_table import create_table
 
 
 class FakeDataGenerator:
     """Base class for fake data generators."""
-    
-    def __init__(self, seed: Optional[int] = None):
+
+    def __init__(self, seed: Optional[int] = None, language: str = "en"):
         self.seed = seed
+        self.language = language
         self.rng = random.Random(seed)
         self.faker = Faker() if Faker else None
         if self.faker and seed:
@@ -49,32 +53,25 @@ class FakeDataGenerator:
 
 class SalesDataGenerator(FakeDataGenerator):
     """Generate sales report data."""
-    
+
     def generate(self, rows: int, cols: int) -> Tuple[List[str], List[List[Any]], Dict[str, Any]]:
-        # Define column types
+        lang = self.language
         possible_columns = [
-            ('Product', 'product'),
-            ('Salesperson', 'name'),
-            ('Region', 'region'),
-            ('Month', 'month'),
-            ('Quantity', 'int'),
-            ('Revenue', 'float'),
-            ('Commission', 'float'),
-            ('Quarter', 'quarter'),
+            ('Product', 'product'), ('Salesperson', 'name'), ('Region', 'region'),
+            ('Month', 'month'), ('Quantity', 'int'), ('Revenue', 'float'),
+            ('Commission', 'float'), ('Quarter', 'quarter'),
         ]
-        
-        # Select columns
         selected = self.rng.sample(possible_columns, min(cols, len(possible_columns)))
-        headers = [col[0] for col in selected]
+        en_headers = [col[0] for col in selected]
+        headers = [translate_header(h, "sales", lang) for h in en_headers]
         col_types = [col[1] for col in selected]
-        
-        # Generate data
-        products = ['Laptop', 'Phone', 'Tablet', 'Monitor', 'Keyboard', 'Mouse', 'Headset', 'Camera']
-        regions = ['North', 'South', 'East', 'West', 'Central']
-        months = ['January', 'February', 'March', 'April', 'May', 'June', 
-                  'July', 'August', 'September', 'October', 'November', 'December']
-        quarters = ['Q1', 'Q2', 'Q3', 'Q4']
-        
+
+        products = get_list("products", lang)
+        regions = get_list("regions", lang)
+        months = get_list("months", lang)
+        quarters = get_list("quarters", lang)
+        fallback_names = FALLBACK_NAMES.get(lang, FALLBACK_NAMES["en"])
+
         data_rows = []
         for _ in range(rows):
             row = []
@@ -85,7 +82,7 @@ class SalesDataGenerator(FakeDataGenerator):
                     if names:
                         row.append(names.get_full_name())
                     else:
-                        row.append(self.rng.choice(['Alice Smith', 'Bob Johnson', 'Carol White', 'David Brown']))
+                        row.append(self.rng.choice(fallback_names))
                 elif col_type == 'region':
                     row.append(self.rng.choice(regions))
                 elif col_type == 'month':
@@ -97,39 +94,34 @@ class SalesDataGenerator(FakeDataGenerator):
                 elif col_type == 'float':
                     row.append(f"{self.rng.uniform(100, 10000):.2f}")
             data_rows.append(row)
-        
+
         metadata = {
-            'data_type': 'sales',
-            'headers': headers,
-            'col_types': col_types,
+            'data_type': 'sales', 'headers': headers, 'col_types': col_types,
             'numeric_columns': [i for i, t in enumerate(col_types) if t in ('int', 'float')],
             'text_columns': [i for i, t in enumerate(col_types) if t not in ('int', 'float')],
         }
-        
         return headers, data_rows, metadata
 
 
 class HRDataGenerator(FakeDataGenerator):
     """Generate HR/employee data."""
-    
+
     def generate(self, rows: int, cols: int) -> Tuple[List[str], List[List[Any]], Dict[str, Any]]:
+        lang = self.language
         possible_columns = [
-            ('Employee', 'name'),
-            ('Department', 'department'),
-            ('Position', 'position'),
-            ('Salary', 'float'),
-            ('Years', 'int'),
-            ('Location', 'city'),
+            ('Employee', 'name'), ('Department', 'department'), ('Position', 'position'),
+            ('Salary', 'float'), ('Years', 'int'), ('Location', 'city'),
         ]
-        
         selected = self.rng.sample(possible_columns, min(cols, len(possible_columns)))
-        headers = [col[0] for col in selected]
+        en_headers = [col[0] for col in selected]
+        headers = [translate_header(h, "hr", lang) for h in en_headers]
         col_types = [col[1] for col in selected]
-        
-        departments = ['Engineering', 'Sales', 'Marketing', 'HR', 'Finance', 'Operations']
-        positions = ['Manager', 'Senior', 'Junior', 'Lead', 'Associate', 'Director']
-        cities = ['New York', 'San Francisco', 'Chicago', 'Austin', 'Seattle', 'Boston']
-        
+
+        departments = get_list("departments", lang)
+        positions = get_list("positions", lang)
+        cities = get_list("cities", lang)
+        fallback_names = FALLBACK_NAMES.get(lang, FALLBACK_NAMES["en"])
+
         data_rows = []
         for _ in range(rows):
             row = []
@@ -138,7 +130,7 @@ class HRDataGenerator(FakeDataGenerator):
                     if names:
                         row.append(names.get_full_name())
                     else:
-                        row.append(self.rng.choice(['Alice Johnson', 'Bob Smith', 'Carol Lee', 'David Kim']))
+                        row.append(self.rng.choice(fallback_names))
                 elif col_type == 'department':
                     row.append(self.rng.choice(departments))
                 elif col_type == 'position':
@@ -150,38 +142,32 @@ class HRDataGenerator(FakeDataGenerator):
                 elif col_type == 'float':
                     row.append(f"{self.rng.uniform(40000, 200000):.2f}")
             data_rows.append(row)
-        
+
         metadata = {
-            'data_type': 'hr',
-            'headers': headers,
-            'col_types': col_types,
+            'data_type': 'hr', 'headers': headers, 'col_types': col_types,
             'numeric_columns': [i for i, t in enumerate(col_types) if t in ('int', 'float')],
             'text_columns': [i for i, t in enumerate(col_types) if t not in ('int', 'float')],
         }
-        
         return headers, data_rows, metadata
 
 
 class GradesDataGenerator(FakeDataGenerator):
     """Generate student grades data."""
-    
+
     def generate(self, rows: int, cols: int) -> Tuple[List[str], List[List[Any]], Dict[str, Any]]:
+        lang = self.language
         possible_columns = [
-            ('Student', 'name'),
-            ('Math', 'grade'),
-            ('Science', 'grade'),
-            ('English', 'grade'),
-            ('History', 'grade'),
-            ('Art', 'grade'),
-            ('Grade', 'year'),
+            ('Student', 'name'), ('Math', 'grade'), ('Science', 'grade'),
+            ('English', 'grade'), ('History', 'grade'), ('Art', 'grade'), ('Grade', 'year'),
         ]
-        
         selected = self.rng.sample(possible_columns, min(cols, len(possible_columns)))
-        headers = [col[0] for col in selected]
+        en_headers = [col[0] for col in selected]
+        headers = [translate_header(h, "grades", lang) for h in en_headers]
         col_types = [col[1] for col in selected]
-        
-        years = ['9th', '10th', '11th', '12th']
-        
+
+        years = get_list("grade_years", lang)
+        fallback_names = FALLBACK_NAMES.get(lang, FALLBACK_NAMES["en"])
+
         data_rows = []
         for _ in range(rows):
             row = []
@@ -190,45 +176,39 @@ class GradesDataGenerator(FakeDataGenerator):
                     if names:
                         row.append(names.get_full_name())
                     else:
-                        row.append(self.rng.choice(['Alex Brown', 'Jamie Lee', 'Taylor Smith', 'Morgan Davis']))
+                        row.append(self.rng.choice(fallback_names))
                 elif col_type == 'grade':
                     row.append(str(self.rng.randint(60, 100)))
                 elif col_type == 'year':
                     row.append(self.rng.choice(years))
             data_rows.append(row)
-        
+
         metadata = {
-            'data_type': 'grades',
-            'headers': headers,
-            'col_types': col_types,
+            'data_type': 'grades', 'headers': headers, 'col_types': col_types,
             'numeric_columns': [i for i, t in enumerate(col_types) if t == 'grade'],
             'text_columns': [i for i, t in enumerate(col_types) if t not in ('grade',)],
         }
-        
         return headers, data_rows, metadata
 
 
 class InventoryDataGenerator(FakeDataGenerator):
     """Generate inventory/stock data."""
-    
+
     def generate(self, rows: int, cols: int) -> Tuple[List[str], List[List[Any]], Dict[str, Any]]:
+        lang = self.language
         possible_columns = [
-            ('Item', 'item'),
-            ('SKU', 'sku'),
-            ('Quantity', 'int'),
-            ('Price', 'float'),
-            ('Supplier', 'supplier'),
-            ('Category', 'category'),
+            ('Item', 'item'), ('SKU', 'sku'), ('Quantity', 'int'),
+            ('Price', 'float'), ('Supplier', 'supplier'), ('Category', 'category'),
         ]
-        
         selected = self.rng.sample(possible_columns, min(cols, len(possible_columns)))
-        headers = [col[0] for col in selected]
+        en_headers = [col[0] for col in selected]
+        headers = [translate_header(h, "inventory", lang) for h in en_headers]
         col_types = [col[1] for col in selected]
-        
-        items = ['Widget', 'Gadget', 'Gizmo', 'Tool', 'Part', 'Component', 'Module', 'Device']
-        suppliers = ['Acme Corp', 'Global Inc', 'TechSupply', 'Parts Plus', 'Supply Chain Co']
-        categories = ['Electronics', 'Hardware', 'Software', 'Office', 'Industrial']
-        
+
+        items = get_list("items", lang)
+        suppliers = get_list("suppliers", lang)
+        categories = get_list("categories", lang)
+
         data_rows = []
         for _ in range(rows):
             row = []
@@ -246,24 +226,22 @@ class InventoryDataGenerator(FakeDataGenerator):
                 elif col_type == 'float':
                     row.append(f"{self.rng.uniform(5, 500):.2f}")
             data_rows.append(row)
-        
+
         metadata = {
-            'data_type': 'inventory',
-            'headers': headers,
-            'col_types': col_types,
+            'data_type': 'inventory', 'headers': headers, 'col_types': col_types,
             'numeric_columns': [i for i, t in enumerate(col_types) if t in ('int', 'float')],
             'text_columns': [i for i, t in enumerate(col_types) if t not in ('int', 'float')],
         }
-        
         return headers, data_rows, metadata
 
 
 class QuestionFactory:
     """Generate questions and answers based on table data."""
-    
-    def __init__(self, seed: Optional[int] = None):
+
+    def __init__(self, seed: Optional[int] = None, language: str = "en"):
         self.rng = random.Random(seed)
-    
+        self.language = language
+
     def generate_question(
         self,
         question_type: str,
@@ -295,17 +273,17 @@ class QuestionFactory:
     ) -> Tuple[str, Any]:
         """What is X's Y?"""
         if len(rows) == 0 or len(headers) < 2:
-            return "What is the value?", "N/A"
-        
-        # Pick a random row and two columns
+            return get_question_template("cell_lookup", self.language, "fallback_cell") or "What is the value?", "N/A"
+
         row = self.rng.choice(rows)
         id_col = self.rng.randint(0, len(headers) - 1)
         value_col = self.rng.choice([i for i in range(len(headers)) if i != id_col])
-        
+
         identifier = row[id_col]
         answer = row[value_col]
-        
-        question = f"What is {identifier}'s {headers[value_col]}?"
+
+        tmpl = get_question_template("cell_lookup", self.language)
+        question = tmpl.format(identifier=identifier, column=headers[value_col])
         return question, answer
     
     def _row_sum(
@@ -314,12 +292,13 @@ class QuestionFactory:
         """What is the total of X?"""
         numeric_cols = metadata.get('numeric_columns', [])
         if not numeric_cols or len(rows) == 0:
-            return "What is the total?", "0"
-        
+            return get_question_template("row_sum", self.language, "fallback_sum") or "What is the total?", "0"
+
         col_idx = self.rng.choice(numeric_cols)
         total = sum(float(row[col_idx]) for row in rows)
-        
-        question = f"What is the total {headers[col_idx]} across all entries?"
+
+        tmpl = get_question_template("row_sum", self.language)
+        question = tmpl.format(column=headers[col_idx])
         return question, f"{total:.2f}"
     
     def _column_count(
@@ -327,15 +306,15 @@ class QuestionFactory:
     ) -> Tuple[str, Any]:
         """How many X are there?"""
         if len(rows) == 0:
-            return "How many entries are there?", "0"
-        
-        # Count occurrences of a specific value
+            return get_question_template("column_count", self.language, "fallback_count") or "How many entries are there?", "0"
+
         col_idx = self.rng.randint(0, len(headers) - 1)
         values = [row[col_idx] for row in rows]
         value_to_count = self.rng.choice(values)
         count = values.count(value_to_count)
-        
-        question = f"How many entries have {headers[col_idx]} equal to {value_to_count}?"
+
+        tmpl = get_question_template("column_count", self.language)
+        question = tmpl.format(column=headers[col_idx], value=value_to_count)
         return question, str(count)
     
     def _filter_count(
@@ -344,14 +323,15 @@ class QuestionFactory:
         """How many X have Y > Z?"""
         numeric_cols = metadata.get('numeric_columns', [])
         if not numeric_cols or len(rows) < 2:
-            return "How many entries?", str(len(rows))
-        
+            return get_question_template("filter_count", self.language, "fallback_count") or "How many entries?", str(len(rows))
+
         col_idx = self.rng.choice(numeric_cols)
         values = [float(row[col_idx]) for row in rows]
         threshold = self.rng.choice(values)
         count = sum(1 for v in values if v > threshold)
-        
-        question = f"How many entries have {headers[col_idx]} greater than {threshold}?"
+
+        tmpl = get_question_template("filter_count", self.language)
+        question = tmpl.format(column=headers[col_idx], threshold=threshold)
         return question, str(count)
     
     def _max_min(
@@ -360,19 +340,19 @@ class QuestionFactory:
         """Who has the highest/lowest X?"""
         numeric_cols = metadata.get('numeric_columns', [])
         text_cols = metadata.get('text_columns', [])
-        
+
         if not numeric_cols or not text_cols or len(rows) == 0:
-            return "Who has the maximum?", "Unknown"
-        
+            return get_question_template("max_min", self.language, "fallback_max") or "Who has the maximum?", "Unknown"
+
         value_col = self.rng.choice(numeric_cols)
         id_col = self.rng.choice(text_cols)
-        
-        # Find max
+
         max_val = max(float(row[value_col]) for row in rows)
         max_row = next(row for row in rows if float(row[value_col]) == max_val)
         answer = max_row[id_col]
-        
-        question = f"Which {headers[id_col]} has the highest {headers[value_col]}?"
+
+        tmpl = get_question_template("max_min", self.language)
+        question = tmpl.format(id_col=headers[id_col], value_col=headers[value_col])
         return question, answer
 
 
@@ -436,6 +416,8 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
         question_types = config.get('question_types', ['cell_lookup'])
         table_style = config.get('table_style', 'unicode')
         
+        language_str = prompt_config.get('language', 'en')
+
         # Data generators
         generators = {
             'sales': SalesDataGenerator,
@@ -443,9 +425,9 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
             'grades': GradesDataGenerator,
             'inventory': InventoryDataGenerator,
         }
-        
+
         test_cases = []
-        question_factory = QuestionFactory(seed)
+        question_factory = QuestionFactory(seed, language=language_str)
         
         for i in range(count):
             # Randomize table size
@@ -458,7 +440,7 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
             
             # Generate data
             generator_class = generators[data_type]
-            generator = generator_class(seed=seed + i if seed else None)
+            generator = generator_class(seed=seed + i if seed else None, language=language_str)
             headers, rows, metadata = generator.generate(num_rows, num_cols)
             
             # Generate question

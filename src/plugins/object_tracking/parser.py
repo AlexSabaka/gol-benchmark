@@ -403,9 +403,11 @@ class ObjectTrackingResponseParser(ResponseParser):
         if 'post_inversion_container_location' in task_params:
             locations.add(task_params['post_inversion_container_location'])
 
-        # Expected answer
+        # Expected answer (English + localized)
         if 'expected_answer' in task_params:
             locations.add(task_params['expected_answer'])
+        if 'expected_answer_localized' in task_params:
+            locations.add(task_params['expected_answer_localized'])
 
         # Step locations
         for step in task_params.get('steps', []):

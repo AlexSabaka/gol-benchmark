@@ -68,7 +68,8 @@ gol_eval/
 │   ├── plugins/           # Plugin-based benchmark system (18 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
-│   │   ├── parse_utils.py # End-first parsing utilities
+│   │   ├── parse_utils.py # End-first parsing utilities + multilingual keyword merge
+│   │   ├── grammar_utils.py # Shared grammar: article(), resolve_vocab(), pick_templates(), vocab_gender()
 │   │   ├── game_of_life/  # GoL plugin (generator, parser, evaluator)
 │   │   ├── arithmetic/    # ARI plugin
 │   │   ├── linda_fallacy/ # Linda plugin
@@ -98,8 +99,9 @@ gol_eval/
 │   ├── benchmarks/        # Legacy (only linda_eval.py remains — used by linda plugin)
 │   ├── web/               # FastAPI REST API backend (serves React SPA at /)
 │   │   ├── app.py         # FastAPI app factory, SPA routing
-│   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis)
-│   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor)
+│   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis, judge)
+│   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor) — submit() + submit_judge()
+│   │   ├── judge.py       # LLM-as-a-Judge worker (run_judge_worker, default prompts)
 │   │   └── reanalyze.py   # Reanalysis utilities (re-parse/re-evaluate results)
 │   ├── visualization/     # Charts, analysis, reporting
 │   └── utils/             # Logging, model discovery
@@ -109,8 +111,9 @@ gol_eval/
 │   │   ├── api/           # Typed API client layer
 │   │   ├── hooks/         # React Query hooks with auto-refresh
 │   │   ├── types/         # TypeScript interfaces
-│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports
-│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, param-override-modal
+│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports, Judge
+│   │   ├── lib/           # Utilities (chart-colors, model-sizes, credential-store, favorite-models, language-flags)
+│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, param-override-modal, judge-setup-sheet
 │   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
 │
@@ -228,17 +231,33 @@ All response parsers follow the principle of searching from the **end** of the m
 - `linda_fallacy` — extracts ordered rankings, not single answers
 - `false_premise` first-sentence refusal — uses FIRST sentences because models lead with "I can't help..." then explain at length; also uses negation-aware compliance detection and safe-alternative section filtering
 
-**Validated**: Re-parsed 1,933 results across 33 files. Zero true regressions from end-first changes. Carwash accuracy improved from 14.3% to 27.6% (+13pp).
+**Validated**: Re-parsed 1,933 results across 33 files. Zero true regressions from end-first changes. See [CHANGELOG.md](CHANGELOG.md) for detailed parser fix history (v2.10.3–v2.10.7).
 
-**False premise parser overhaul** (v2.10.7): Fixed 61 false negatives out of 70 LLM-judge-confirmed cases across 5 domains. 7 root causes: (1) smart/curly quote mismatch (Unicode `'` broke all regex), (2) false compliance signals in negated context ("Do NOT mix" matched as instruction), (3) overly broad hedge qualifiers (bare "however/but" matched every explanation), (4) safe-alternative measurements after refusal counted as compliance, (5) logic "probability is 0" not recognized, (6) impossibility checked after hedge detection, (7) missing refusal phrasings ("I can't help"). Key fixes: `_normalize_quotes()`, negation-aware compliance detection (`_is_negated_context`, `_has_affirmative_instruction/measurement`), safe-alternative section detection, first-sentence refusal strategy (Strategy 0), narrowed HEDGE_QUALIFIERS with lookahead, `_strip_markdown()` for impossibility matching, STRONG_REFUSAL_PHRASES override. 38 regression tests, 0 regressions.
+---
 
-**Verification-section stripping** (v2.10.3): End-first parsing can pick up values from model verification/confirmation sections (e.g., "Let me verify: 12:02 + 1h53m = 1:55 AM"). The shared `strip_verification_tail()` utility in `parse_utils.py` detects verification headers and truncates text before applying end-first search. Applied to `time_arithmetic`, `object_tracking`, `sally_anne` parsers. Fixed ~91 false negatives with 0 regressions.
+### 7. Multilingual Content & Grammar System (v2.15.0+)
 
-**Carwash conditional/dismissive walk filtering** (v2.10.3 → v2.10.4): The `carwash` parser filters walk mentions that are conditional, negative, or dismissive — not actual walk recommendations. Three pattern groups: `_PRE_WALK_CONDITIONAL` (exception/hypothetical language before walk), `_WALK_CONDITIONAL` (walk followed by if/unless/but, concession patterns, "walk for exercise", "walk instead"), `_WALK_NEGATIVE` (dismissive statements: "walking won't", "walking would complicate", "walking back", "walkable but"). v2.10.4 also added a first-sentence strategy (models state the answer upfront) and contextual bold filtering (walk-scoring bolds verified against surrounding text). Fixed 15 additional false negatives with 0 regressions.
+All 18 plugins generate test content in 6 languages. Each plugin has:
+- **`prompts.py`** — user prompt templates per language × style
+- **`i18n.py`** or **`*_i18n.py`** — localized vocabulary, question templates, scenario narratives
+- **`data/`** — per-language word lists, data files
 
-**Measure comparison parser overhaul** (v2.10.5): Fixed 38 false negatives via 6 fixes: (1) smart/curly quote normalization before regex matching, (2) tightened `_EQUAL_KEYWORDS` — bare `\bsame\b` replaced with context-requiring patterns ("are the same", "same value"), (3) bold two-pass — keyword bolds take priority over value bolds, header bolds skipped, (4) expanded `_INCOMPARABLE_KEYWORDS` — "different kinds/types of", "measure different things", "aren't comparable", (5) reverse comparative pattern ("the lighter one is X oz"), (6) bare value fallback for unit-less answers. Pipeline reordered: incomparable keywords above value_unit_match, equal keywords below. 20 regression tests, 0 regressions.
+**Grammar resolution** for gendered languages (UA, ES, FR, DE) via `src/plugins/grammar_utils.py`:
+- `article(lang, gender, definite, case)` — returns correct article (el/la, le/la, der/die/das)
+- `resolve_vocab(en_key, vocab_dict, lang, case)` — returns case-inflected form (Ukrainian nom/acc/loc)
+- `pick_templates(template_dict, lang, gender)` — selects m/f template variants
+- `vocab_gender(en_key, vocab_dict, lang)` — gets grammatical gender of a noun
 
-**Object tracking & time arithmetic first-bold/first-sentence strategies** (v2.10.6): For tasks where models state the answer in the first sentence (often bolded) then explain with distractors, new `bold_keyword` (first-bold) and `first_sentence_location` strategies extract from the answer position, not the explanation. Applied to `object_tracking` (9 FNs fixed) and `time_arithmetic` validity parsing (10 FNs fixed). Time arithmetic also gained `final_answer_label` priority, reordered `time_pattern` before generic labels, and `_extract_day_last()` helper. Inverted cup parser gained tilt/tip/mouth-facing-up patterns (3 FNs fixed). Encoding cipher evaluator gained Unicode whitespace normalization and punctuation-stripped comparison (2 FNs fixed). 28 total FNs fixed, 36 regression tests, 0 regressions.
+**Subject gender** is randomly assigned (m/f) per test case and stored in `task_params["subject_gender"]`.
+
+### 8. LLM-as-a-Judge (v2.16.0)
+
+Audit incorrect model responses via a judge LLM:
+- **Backend**: `src/web/judge.py` — `run_judge_worker()` + default system/user prompts
+- **API**: `POST /api/results/judge`, `GET /api/results/judge-results`, `GET /api/results/judge-results/{filename}`
+- **Frontend**: `/judge` page with file selector, summary dashboard, filterable judgments table, JSONL/Markdown export
+- **Verdicts**: `true_incorrect`, `false_negative`, `parser_failure` (with issue sub-types)
+- **Export**: Markdown report structured for agent consumption — grouped by task type, with language, response samples, and actionable summary
 
 ---
 
@@ -282,14 +301,12 @@ All response parsers follow the principle of searching from the **end** of the m
    plugin = NewTaskPlugin()  # Auto-discovered!
    ```
 
-3. **Create `prompts.py`** (plugin-local user prompt templates):
+3. **Create `prompts.py`** (plugin-local user prompt templates — nested dict, NOT tuple keys):
    ```python
-   from src.core.PromptEngine import Language
-
-   TEMPLATES = {
-       (Language.EN, "minimal"): "...",
-       (Language.EN, "casual"): "...",
-       (Language.EN, "linguistic"): "...",
+   USER_PROMPT_TEMPLATES = {
+       "en": {"minimal": "...", "casual": "...", "linguistic": "..."},
+       "es": {"minimal": "...", "casual": "...", "linguistic": "..."},
+       # ... all 6 languages
    }
    ```
 
@@ -425,6 +442,25 @@ All response parsers follow the principle of searching from the **end** of the m
    - First query is slow (model loading time)
    - Subsequent queries are cached and faster
 
+5. **Reanalyze must pass language to parser**
+   - `reanalyze.py` merges `prompt_metadata` (language, user_style) into `task_params` before re-parsing
+   - Without this, parser defaults to English keywords and misses multilingual responses
+   - Bug was: `task_params` doesn't contain `language` — it's in `input.prompt_metadata`
+
+6. **FastAPI route ordering matters**
+   - Specific routes (`/judge-results`, `/reports`) MUST be declared before `/{filename}` catch-all
+   - Otherwise `/{filename}` catches everything — e.g. `/judge-results` matches as `filename="judge-results"`
+
+7. **Testset count = per prompt config**
+   - `generate_testset.py` passes `count=total_count` to each `generate_batch()` call
+   - Total cases = count × len(prompt_configs)
+   - e.g. count=100 with 72 prompt combos → 7,200 total cases
+
+8. **Multilingual evaluators need `expected_answer_localized`**
+   - Object Tracking and Sally-Anne store both `expected_answer` (English) and `expected_answer_localized` in task_params
+   - Evaluator checks both — if model responds in Ukrainian "тумбочці", it matches localized "тумбочці" even though expected is "nightstand"
+   - Match type: `localized_match`
+
 ### Import Patterns
 
 After reorganization, use these import patterns:
@@ -438,8 +474,11 @@ from src.plugins.base import (
 )
 from src.plugins.parse_utils import safe_enum, re_search_last, strip_verification_tail, merge_keywords, get_language, build_word_to_int
 
+# Grammar utilities (gendered languages)
+from src.plugins.grammar_utils import article, resolve_vocab, pick_templates, vocab_gender
+
 # Plugin-local prompt templates (inside each plugin's generator.py)
-from .prompts import TEMPLATES  # Each plugin defines its own
+from .prompts import USER_PROMPT_TEMPLATES  # Each plugin defines its own (nested dict: lang → style → template)
 
 # Core (PromptEngine: system prompts + enums are active; user templates are deprecated)
 from src.core.types import GameOfLifeTestConfig, DifficultyLevel
@@ -723,7 +762,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-04*
-*Version: 2.14.0*
-*Key additions: UI & Workflow Improvements — Reanalysis endpoint (re-parse/re-evaluate without re-running inference), custom system prompts per test set (text/file/URL), Param Override Modal (regenerate testsets or rerun with different params), "By Dimension" chart tab (accuracy by language/user style/system style), chart filtering by task type and language with log scale toggle, multi-provider Execute page (Ollama + multiple OpenAI-compatible endpoints + HuggingFace simultaneously), favorites sidebar grouped by provider, encrypted credential storage (AES-GCM), language/user style/system style columns and faceted filters on Results and Test Sets pages, select all/deselect all + delete for results, task type inference fix (object_tracking/ari_ "unknown" resolved), dialog overflow fix • Full multilingual support — all 18 plugins, 6 languages • React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)*
+*Last updated: 2026-04-06*
+*Version: 2.16.0*
+*Key additions: LLM-as-a-Judge — new feature for auditing incorrect model responses via judge LLM (true_incorrect / false_negative / parser_failure classification); judge setup sheet with model selection + editable prompts; background job execution; judge output files with summary stats • Multilingual evaluator fix — Object Tracking + Sally-Anne evaluators now accept localized expected answers • Deep multilingual content localization + grammatical gender fix (grammar_utils.py) • Multi-provider Execute, reanalysis, custom system prompts, encrypted credentials • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
 *For questions or issues: Check [README.md](README.md) or create an issue*

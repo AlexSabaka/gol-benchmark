@@ -34,10 +34,12 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
     def __init__(self):
         self._step_builder: Optional[StepBuilder] = None
 
-    def _get_step_builder(self, seed: Optional[int] = None) -> StepBuilder:
-        """Get or create a StepBuilder with the given seed."""
+    def _get_step_builder(self, seed: Optional[int] = None, language: str = "en",
+                          subject_gender: str = "m") -> StepBuilder:
+        """Get or create a StepBuilder with the given seed, language and gender."""
         if self._step_builder is None or seed is not None:
-            self._step_builder = StepBuilder(seed)
+            self._step_builder = StepBuilder(seed, language=language,
+                                             subject_gender=subject_gender)
         return self._step_builder
 
     def _compute_difficulty(self, scenario: Scenario, distractor_count: int) -> str:
@@ -93,6 +95,10 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
         Returns:
             Complete prompt text
         """
+        from src.plugins.grammar_utils import article, resolve_vocab, vocab_gender
+        from src.plugins.object_tracking.step_i18n import OBJECTS
+        from src.plugins.object_tracking.step_builder import _es_de_article
+
         builder = self._get_step_builder()
 
         # Casual uses narrative format; all others use numbered
@@ -101,10 +107,32 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
         else:
             steps_text = builder.format_steps_numbered(scenario.steps)
 
+        # Compute article-related variables for the linguistic template.
+        # These resolve "du/de la" (FR), "del/de la" (ES), "des/der" (DE)
+        # placeholders that the wrap-around prompt templates use.
+        obj_en = scenario.object
+        obj_loc = resolve_vocab(obj_en, OBJECTS, language, "nom")
+        obj_g = vocab_gender(obj_en, OBJECTS, language)
+
+        # {object_de}: genitive article phrase ("del"/"du"/"des" + gender)
+        if language == "es":
+            object_de = _es_de_article(obj_g)    # "del" / "de la"
+        elif language == "fr":
+            object_de = "du" if obj_g == "m" else "de la"
+        elif language == "de":
+            object_de = article(language, obj_g, definite=True, case="dat")  # genitive ≈ dat for "des/der"
+            # German genitive: "des" (m/n), "der" (f)
+            object_de = "des" if obj_g in ("m", "n") else "der"
+        else:
+            object_de = ""
+
+        # {object_loc}: the localized object name (used after the article)
         return self._format_user_prompt(
             USER_PROMPT_TEMPLATES, language, style,
             steps_text=steps_text, question=question,
-            object=scenario.object,
+            object=obj_loc,
+            object_loc=obj_loc,
+            object_de=object_de,
         )
 
     def generate_batch(
@@ -140,7 +168,10 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
             List of TestCase objects
         """
         tests = []
-        builder = self._get_step_builder(seed)
+        language_str = prompt_config.get('language', 'en')
+        # Create an initial builder for the RNG (seeded once)
+        builder = self._get_step_builder(seed, language=language_str,
+                                         subject_gender="m")
 
         # Extract generation configuration with defaults
         objects = config.get('object', DEFAULT_OBJECTS)
@@ -159,13 +190,18 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
         config_name = prompt_config.get('name', f"{user_style_str}_{system_style_str}")
 
         for i in range(count):
-            # Sample scenario parameters
+            # Sample scenario parameters (using the shared RNG for
+            # reproducibility)
             obj = builder.rng.choice(objects)
             container = builder.rng.choice(containers)
             location = builder.rng.choice(locations)
             subject = builder.rng.choice(subjects)
             distractor_count = builder.rng.choice(distractor_counts)
             post_inv_moves = builder.rng.choice(post_inv_move_range)
+
+            # Randomise subject gender per test case
+            subject_gender = builder.rng.choice(["m", "f"])
+            builder.subject_gender = subject_gender
 
             # Determine if object is sticky
             is_sticky = obj in sticky_objects
@@ -212,10 +248,12 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
                     'object': obj,
                     'container': container,
                     'subject': subject,
+                    'subject_gender': subject_gender,
                     'initial_location': location,
                     'steps': [s.to_dict() for s in scenario.steps],
                     'inversion_step_index': scenario.inversion_step_index,
                     'expected_answer': scenario.final_object_location,
+                    'expected_answer_localized': builder._loc(scenario.final_object_location, builder._i18n.LOCATIONS),
                     'sticky_object': is_sticky,
                     'distractor_count': distractor_count,
                     'post_inversion_moves': post_inv_moves,
@@ -230,7 +268,7 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
                 },
                 generation_metadata={
                     'seed': seed,
-                    'generator_version': '1.0.0',
+                    'generator_version': '1.1.0',
                     'created_at': datetime.now().isoformat()
                 }
             )
@@ -254,6 +292,9 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
 
     def get_config_schema(self) -> List[ConfigField]:
         return [
+            ConfigField(name='count', label='Number of cases', field_type='number',
+                        default=100, min_value=1, max_value=500,
+                        help='Cases to generate per prompt configuration'),
             ConfigField(name='distractor_count', label='Distractor count', field_type='multi-select',
                         default=[0, 1, 2], options=[0, 1, 2, 3, 4]),
             ConfigField(name='post_inversion_moves', label='Post-inversion moves', field_type='multi-select',
