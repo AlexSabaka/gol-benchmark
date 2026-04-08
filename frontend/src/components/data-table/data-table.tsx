@@ -12,7 +12,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import { ChevronDown, ChevronsUpDown, ChevronUp, Search, SlidersHorizontal } from "lucide-react"
 
 import { Button } from "@/components/ui/button"
@@ -46,6 +46,8 @@ interface DataTableProps<TData, TValue> {
   searchPlaceholder?: string
   toolbar?: React.ReactNode | ((table: ReturnType<typeof useReactTable<TData>>) => React.ReactNode)
   loading?: boolean
+  /** Called when filtered row set changes — receives the filtered data array */
+  onFilteredRowsChange?: (rows: TData[]) => void
 }
 
 export function DataTable<TData, TValue>({
@@ -55,6 +57,7 @@ export function DataTable<TData, TValue>({
   searchPlaceholder = "Search...",
   toolbar,
   loading,
+  onFilteredRowsChange,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -77,6 +80,14 @@ export function DataTable<TData, TValue>({
     state: { sorting, columnFilters, columnVisibility, rowSelection },
     initialState: { pagination: { pageSize: 20 } },
   })
+
+  // Expose filtered rows to parent
+  const filteredRows = table.getFilteredRowModel().rows
+  useEffect(() => {
+    if (onFilteredRowsChange) {
+      onFilteredRowsChange(filteredRows.map((r) => r.original))
+    }
+  }, [filteredRows, onFilteredRowsChange])
 
   return (
     <div className="space-y-3">

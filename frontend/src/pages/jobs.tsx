@@ -36,9 +36,24 @@ export default function JobsPage() {
 
   const columns: ColumnDef<Job>[] = [
     {
+      id: "type",
+      header: "Type",
+      cell: ({ row }) => {
+        const isJudge = row.original.model_name.startsWith("judge:")
+        return (
+          <Badge variant={isJudge ? "secondary" : "outline"} className="text-[10px]">
+            {isJudge ? "judge" : "inference"}
+          </Badge>
+        )
+      },
+    },
+    {
       accessorKey: "model_name",
       header: "Model",
-      cell: ({ row }) => <span className="font-medium truncate max-w-[200px] block">{row.original.model_name}</span>,
+      cell: ({ row }) => {
+        const name = row.original.model_name.replace(/^judge:/, "")
+        return <span className="font-medium truncate max-w-[200px] block">{name}</span>
+      },
     },
     {
       accessorKey: "testset_path",
@@ -114,7 +129,7 @@ export default function JobsPage() {
                 variant="ghost"
                 size="sm"
                 className="h-7 px-2"
-                onClick={() => nav("/results")}
+                onClick={() => nav(job.model_name.startsWith("judge:") ? "/judge" : "/results")}
               >
                 <Eye className="h-3.5 w-3.5" />
               </Button>

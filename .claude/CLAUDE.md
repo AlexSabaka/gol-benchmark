@@ -113,7 +113,7 @@ gol_eval/
 │   │   ├── types/         # TypeScript interfaces
 │   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports, Judge
 │   │   ├── lib/           # Utilities (chart-colors, model-sizes, credential-store, favorite-models, language-flags)
-│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, param-override-modal, judge-setup-sheet
+│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, param-override-modal, judge-setup-sheet, language-filter-chip, prompt-style-badge
 │   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
 │
@@ -461,6 +461,15 @@ Audit incorrect model responses via a judge LLM:
    - Evaluator checks both — if model responds in Ukrainian "тумбочці", it matches localized "тумбочці" even though expected is "nightstand"
    - Match type: `localized_match`
 
+9. **prompt_metadata must be merged into task_params for parsers**
+   - `run_testset.py` and `src/web/jobs.py` now merge `prompt_metadata` (language, user_style, system_style) into `task_params` before calling plugin parsers/evaluators
+   - Without this, parsers default to English keywords and miss multilingual responses
+   - Fixed in v2.16.1 for both CLI and Web UI execution paths
+
+10. **Long testset filenames can exceed filesystem limits**
+    - `path_manager.py` truncates task list if >120 chars → `N_tasks`, total filename capped at 240 chars
+    - Without truncation, configs with many task types could produce filenames too long for some filesystems
+
 ### Import Patterns
 
 After reorganization, use these import patterns:
@@ -762,7 +771,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-06*
-*Version: 2.16.0*
-*Key additions: LLM-as-a-Judge — new feature for auditing incorrect model responses via judge LLM (true_incorrect / false_negative / parser_failure classification); judge setup sheet with model selection + editable prompts; background job execution; judge output files with summary stats • Multilingual evaluator fix — Object Tracking + Sally-Anne evaluators now accept localized expected answers • Deep multilingual content localization + grammatical gender fix (grammar_utils.py) • Multi-provider Execute, reanalysis, custom system prompts, encrypted credentials • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
+*Last updated: 2026-04-08*
+*Version: 2.16.1*
+*Key additions: Compact Results toolbar (icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping) • Localized measure comparison (unit display names + decimal framing templates in all 6 languages) • prompt_metadata propagation fix (language now reaches parsers in CLI and Web UI) • Filename truncation for long testset names • Judge page delete + tooltip • Language filter labels with flag emojis • LLM-as-a-Judge • Deep multilingual content localization + grammatical gender • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
 *For questions or issues: Check [README.md](README.md) or create an issue*

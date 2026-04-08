@@ -109,6 +109,32 @@ for _cat, _units in UNITS.items():
         _UNIT_CATEGORY[_ukey] = _cat
 
 
+# ---- Localized unit display names ----------------------------------------
+# Metric abbreviations (mm, cm, km, kg, L, °C, etc.) are international.
+# Imperial/customary units get localized display names for CJK and Slavic.
+UNIT_DISPLAY_NAMES: Dict[str, Dict[str, str]] = {
+    "es": {"foot": "pie", "cup": "taza"},
+    "fr": {"inch": "po", "foot": "pi", "cup": "tasse"},
+    "de": {"inch": "Zoll", "foot": "Fuß", "mile": "Meile", "lb": "Pfund", "cup": "Tasse"},
+    "zh": {
+        "inch": "英寸", "foot": "英尺", "yard": "码", "mile": "英里",
+        "oz": "盎司", "lb": "磅", "cup": "杯", "fl_oz": "液盎司",
+        "pint": "品脱", "gallon": "加仑", "mph": "英里/时",
+    },
+    "ua": {
+        "inch": "дюйм", "foot": "фут", "yard": "ярд", "mile": "миля",
+        "oz": "унція", "lb": "фунт", "cup": "чашка", "fl_oz": "рід. унція",
+        "pint": "пінта", "gallon": "галон", "mph": "миль/год",
+    },
+}
+
+
+def _unit_display(unit_key: str, language: str = "en") -> str:
+    """Return localized unit display string for prompts."""
+    overrides = UNIT_DISPLAY_NAMES.get(language, {})
+    return overrides.get(unit_key, UNIT_SYMBOLS.get(unit_key, unit_key))
+
+
 # ---- Temperature helpers ------------------------------------------------
 
 def _to_kelvin(value: float, unit_key: str) -> float:
@@ -317,6 +343,36 @@ DECIMAL_FRAMING_TEMPLATES: Dict[str, Dict[str, List[str]]] = {
             "Interpreting {val1} and {val2} as Month.Day dates: which comes later?",
             "As calendar dates (Month.Day), which is later: {val1} or {val2}?",
         ],
+    },
+    "es": {
+        "neutral": ["¿Cuál es mayor: {val1} o {val2}?", "Entre {val1} y {val2}, ¿cuál es mayor?"],
+        "decimal": ["Tratándolos como números decimales, ¿cuál es mayor: {val1} o {val2}?", "Como valores decimales, ¿{val1} o {val2} es mayor?"],
+        "version": ["Si {val1} y {val2} son versiones de software, ¿cuál es la versión superior?", "Comparando versiones: ¿{val1} o {val2} es más reciente?"],
+        "date": ["Si {val1} y {val2} son fechas en formato Mes.Día, ¿cuál es posterior?", "Como fechas (Mes.Día), ¿cuál es posterior: {val1} o {val2}?"],
+    },
+    "fr": {
+        "neutral": ["Lequel est plus grand : {val1} ou {val2} ?", "Entre {val1} et {val2}, lequel est plus grand ?"],
+        "decimal": ["En tant que nombres décimaux, lequel est plus grand : {val1} ou {val2} ?", "Comme valeurs décimales, {val1} ou {val2} est plus grand ?"],
+        "version": ["Si {val1} et {val2} sont des numéros de version, laquelle est supérieure ?", "En comparant les versions : {val1} ou {val2} est plus récente ?"],
+        "date": ["Si {val1} et {val2} représentent des dates au format Mois.Jour, laquelle est ultérieure ?", "Comme dates (Mois.Jour), laquelle est ultérieure : {val1} ou {val2} ?"],
+    },
+    "de": {
+        "neutral": ["Was ist größer: {val1} oder {val2}?", "Zwischen {val1} und {val2}, was ist größer?"],
+        "decimal": ["Als Dezimalzahlen betrachtet, was ist größer: {val1} oder {val2}?", "Als Dezimalwerte, ist {val1} oder {val2} größer?"],
+        "version": ["Wenn {val1} und {val2} Softwareversionen sind, welche ist höher?", "Versionsvergleich: ist {val1} oder {val2} neuer?"],
+        "date": ["Wenn {val1} und {val2} Daten im Format Monat.Tag sind, welches Datum ist später?", "Als Kalenderdaten (Monat.Tag), welches ist später: {val1} oder {val2}?"],
+    },
+    "zh": {
+        "neutral": ["{val1} 和 {val2}，哪个更大？", "哪个更大：{val1} 还是 {val2}？"],
+        "decimal": ["作为十进制数，哪个更大：{val1} 还是 {val2}？", "将 {val1} 和 {val2} 视为十进制数，哪个更大？"],
+        "version": ["如果 {val1} 和 {val2} 是软件版本号，哪个版本更高？", "比较版本号：{val1} 和 {val2} 哪个更新？"],
+        "date": ["如果 {val1} 和 {val2} 是月.日格式的日期，哪个日期更晚？", "作为日历日期（月.日），哪个更晚：{val1} 还是 {val2}？"],
+    },
+    "ua": {
+        "neutral": ["Що є більше: {val1} чи {val2}?", "Між {val1} та {val2}, що є більше?"],
+        "decimal": ["Як десяткові числа, що більше: {val1} чи {val2}?", "Як десяткові значення, {val1} чи {val2} більше?"],
+        "version": ["Якщо {val1} та {val2} — версії програм, яка версія вища?", "Порівнюючи версії: {val1} чи {val2} новіша?"],
+        "date": ["Якщо {val1} та {val2} — дати у форматі Місяць.День, яка дата пізніша?", "Як дати (Місяць.День), яка пізніша: {val1} чи {val2}?"],
     },
 }
 
@@ -1104,8 +1160,8 @@ class MeasureComparisonGenerator(TestCaseGenerator):
         cat = case["category"].split("+")[0]  # use first cat for word lookup
         comp_word = self._get_comp_word(language, cat, direction)
 
-        u1_sym = UNIT_SYMBOLS[case["unit1_key"]]
-        u2_sym = UNIT_SYMBOLS[case["unit2_key"]]
+        u1_sym = _unit_display(case["unit1_key"], language)
+        u2_sym = _unit_display(case["unit2_key"], language)
 
         templates = QUESTION_TEMPLATES.get(language, QUESTION_TEMPLATES["en"])
         template = rng.choice(templates)

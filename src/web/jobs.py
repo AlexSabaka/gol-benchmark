@@ -120,9 +120,16 @@ def _run_testset_worker(
             task_type = tc.get("task_type", "")
             task_params = tc.get("task_params", {})
 
-            parsed = parse_answer_via_plugin(raw_response, task_type, task_params)
+            # Merge prompt_metadata into task_params so parser gets language
+            prompt_meta = tc.get("prompt_metadata", {})
+            enriched_params = dict(task_params)
+            for key in ("language", "user_style", "system_style"):
+                if key in prompt_meta and key not in enriched_params:
+                    enriched_params[key] = prompt_meta[key]
+
+            parsed = parse_answer_via_plugin(raw_response, task_type, enriched_params)
             expected = task_params.get("expected_answer", task_params.get("correct_answer"))
-            evaluation = evaluate_via_plugin(parsed, expected, task_type, task_params)
+            evaluation = evaluate_via_plugin(parsed, expected, task_type, enriched_params)
 
             is_correct = evaluation.get("correct", False) if evaluation else False
             if is_correct:

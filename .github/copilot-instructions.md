@@ -4,7 +4,7 @@
 
 This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 18 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.16.0)
+## Architecture (v2.16.1)
 
 ### 🔌 **Plugin-Based Benchmark System**
 All benchmarks are now self-contained plugins with auto-discovery:
@@ -65,7 +65,7 @@ Config →   Plugin generators →        ModelInterface →        Enhanced Ana
          + base class helpers)
 ```
 
-## Project Structure (v2.16.0)
+## Project Structure (v2.16.1)
 
 ### **Core Architecture (`src/` organization)**
 
@@ -325,6 +325,9 @@ Tests validate 3-stage pipeline, config serialization, parsing enhancements, and
 4. **Report Generation**: Harmonized HTML/Markdown reports with embedded visualizations
 5. **"Unknown" task type in reports (2026-02-21)**: Fixed `extract_task_breakdown()` in `analyze_results.py` — added `carwash` and `inverted_cup` recognition patterns
 8. **Remote Ollama support (2026-02-21)**: `OllamaProvider` now accepts a `host` parameter; non-default hosts use REST API for discovery and availability checks
+9. **prompt_metadata propagation (2026-04-08)**: `run_testset.py` and `src/web/jobs.py` now merge `prompt_metadata` (language, user_style, system_style) into `task_params` before calling plugin parsers/evaluators — fixes multilingual parsing in both CLI and Web UI
+10. **Measure Comparison localized units (2026-04-08)**: Imperial/customary unit display names localized for ZH/UA/DE/FR/ES; decimal framing templates for all 6 languages
+11. **Filename truncation (2026-04-08)**: `path_manager.py` truncates long testset filenames (task list >120 chars → `N_tasks`, total filename capped at 240 chars)
 
 ### ⚠️ **Known Limitations**
 - **Emoji cell markers** (`🟩/🟥`) now work correctly for GoL (v2.10.1) and C14 (v2.10.2), but models still perform best with `1/0` markers  
@@ -401,7 +404,7 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.16.0 (April 4, 2026)
+**Version**: 2.16.1 (April 8, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
@@ -414,3 +417,5 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 - **Multi-provider Execute page** — Ollama + multiple OpenAI-compatible endpoints + HuggingFace
 - **Reanalysis, custom system prompts, "By Dimension" charts, favorites, encrypted credentials**
 - **Task type inference** — `_infer_task_type_from_id()` with aliases for all 18 task types
+- **Compact Results toolbar** — icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping
+- **Localized measure comparison** — unit display names + decimal framing templates in all 6 languages

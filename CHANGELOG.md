@@ -2,6 +2,48 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.16.1] - April 8, 2026
+
+### Frontend UX Improvements
+
+#### Results Page Toolbar Redesign
+- **Icon-only action buttons with tooltips** — Reanalyze, Analyze, Charts, LLM Judge, and Delete buttons are now compact icon buttons with selection-count badges and tooltip labels; "Generate Report" keeps its text label as the primary action
+- **Per-row dropdown actions** — each result row now has a `⋯` menu with View Details, Rerun with Params, and Delete (replaces the old eye icon)
+- **Filter-aware select-all** — "Select All" now selects only the currently filtered/visible rows, not the entire dataset
+- **Test Set grouping** — new "Test Set" option in the Group By toolbar alongside None/Model/Task
+
+#### DataTable Enhancement
+- **`onFilteredRowsChange` callback** — `DataTable` component now exposes filtered rows to parent via a new optional prop, enabling filter-aware bulk operations
+
+#### Jobs Page
+- **Job type badge** — jobs now display a "judge" or "inference" badge; judge model names strip the `judge:` prefix for cleaner display
+- **Smart navigation** — "View" button on completed jobs routes to `/judge` page for judge jobs, `/results` for inference jobs
+
+#### Judge Page
+- **Delete judge results** — new destructive "Delete" button in the judge result detail view with confirmation toast
+- **Tooltip on notes** — long judgment notes now display full text on hover via tooltip
+
+#### TestSets Page
+- **Language filter labels** — language filter chips now show flag emoji + full language name (e.g. "🇬🇧 English") instead of raw codes
+- **Controlled detail tabs** — detail sheet tab state is now controlled (preserves selection on re-open)
+
+#### New Components
+- **`language-filter-chip.tsx`** — `languageLabel()` and `languageFilterOptions()` utilities mapping language codes to flag + name
+- **`prompt-style-badge.tsx`** — compact badge component showing prompt style with user/system icon
+
+### Multilingual Measure Comparison Enhancements
+- **Localized unit display names** — imperial/customary units now display localized names in CJK and Slavic languages (e.g. "英尺" for foot in Chinese, "фут" in Ukrainian, "Fuß" in German); metric abbreviations remain international
+- **Decimal framing templates** — all 4 framing types (neutral, decimal, version, date) now available in all 6 languages (ES, FR, DE, ZH, UA added)
+- **New `_unit_display()` helper** with `UNIT_DISPLAY_NAMES` lookup table
+
+### Bug Fix: prompt_metadata Propagation to Parsers
+- **`run_testset.py`** — merges `prompt_metadata` fields (language, user_style, system_style) into `task_params` before calling plugin parsers and evaluators, so multilingual parsers receive the correct language context during CLI execution
+- **`src/web/jobs.py`** — same prompt_metadata → task_params merge applied in the web worker execution path, fixing multilingual parsing in the Web UI
+
+### Quality of Life
+- **Filename truncation** (`path_manager.py`) — testset filenames with many task types are now truncated: task list capped at 120 chars (replaced with `N_tasks`), total filename capped at 240 chars to avoid filesystem errors
+- **Standalone `reanalyze_results.py`** — CLI script for bulk re-analysis of result files using current plugin parsers; detects false negatives from falsy expected_answer bugs and boolean parser issues; supports `--fix` and `--reparse-all` modes
+
 ## [2.16.0] - April 4, 2026
 
 ### LLM-as-a-Judge Feature

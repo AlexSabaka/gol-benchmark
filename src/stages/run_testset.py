@@ -1457,8 +1457,15 @@ def run_testset(
             individual_task_type = test_case.get('task_type', task_type)
             task_params = test_case.get('task_params', {})
 
+            # Merge prompt_metadata into task_params so parser gets language
+            prompt_meta = test_case.get('prompt_metadata', {})
+            enriched_params = dict(task_params)
+            for key in ("language", "user_style", "system_style"):
+                if key in prompt_meta and key not in enriched_params:
+                    enriched_params[key] = prompt_meta[key]
+
             # Try plugin-based parsing first (preferred)
-            parsed_answer = parse_answer_via_plugin(raw_response, individual_task_type, task_params)
+            parsed_answer = parse_answer_via_plugin(raw_response, individual_task_type, enriched_params)
 
             # Fallback to built-in parser if plugin failed
             if parsed_answer is None:
@@ -1478,7 +1485,7 @@ def run_testset(
                     expected_answer = task_params.get('expected_next_state')
 
             # Try plugin-based evaluation first
-            evaluation = evaluate_via_plugin(parsed_answer, expected_answer, individual_task_type, task_params)
+            evaluation = evaluate_via_plugin(parsed_answer, expected_answer, individual_task_type, enriched_params)
 
             # Fallback to built-in evaluation if plugin failed
             if evaluation is None:

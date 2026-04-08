@@ -2,7 +2,7 @@ import { useCallback, useMemo, useState } from "react"
 import type { ColumnDef, Table } from "@tanstack/react-table"
 import { toast } from "sonner"
 import { useNavigate } from "react-router"
-import { Eye, BarChart3, LineChart, FileText, Loader2, RefreshCw, RotateCcw, Trash2, CheckSquare, Square, Scale } from "lucide-react"
+import { Eye, BarChart3, LineChart, FileText, Loader2, MoreHorizontal, RefreshCw, RotateCcw, Trash2, CheckSquare, Square, Scale } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -14,6 +14,13 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
@@ -22,6 +29,7 @@ import {
   SheetTitle,
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable } from "@/components/data-table/data-table"
 import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
 import { JudgeSetupSheet } from "@/components/judge-setup-sheet"
@@ -46,7 +54,7 @@ export default function ResultsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [detailTarget, setDetailTarget] = useState<string | null>(null)
   const { data: detail } = useResult(detailTarget)
-  const [groupBy, setGroupBy] = useState<"none" | "task_type" | "model">("none")
+  const [groupBy, setGroupBy] = useState<"none" | "task_type" | "model" | "testset">("none")
   const [rerunTarget, setRerunTarget] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [judgeOpen, setJudgeOpen] = useState(false)
@@ -89,8 +97,15 @@ export default function ResultsPage() {
     if (totalChanges === 0) toast.info("No evaluation changes detected")
   }
 
+  // Track filtered rows from DataTable for filter-aware select all
+  const [filteredFilenames, setFilteredFilenames] = useState<string[]>([])
+  const handleFilteredRowsChange = useCallback((rows: ResultSummary[]) => {
+    setFilteredFilenames(rows.map((r) => r.filename))
+  }, [])
+
   const handleSelectAll = () => {
-    if (results) setSelected(new Set(results.map((r) => r.filename)))
+    // Select only visible/filtered rows, not all results
+    setSelected(new Set(filteredFilenames.length > 0 ? filteredFilenames : (results ?? []).map((r) => r.filename)))
   }
   const handleDeselectAll = () => setSelected(new Set())
 
@@ -151,6 +166,8 @@ export default function ResultsPage() {
       sorted.sort((a, b) => a.model_name.localeCompare(b.model_name))
     } else if (groupBy === "task_type") {
       sorted.sort((a, b) => (a.task_types[0] ?? "").localeCompare(b.task_types[0] ?? ""))
+    } else if (groupBy === "testset") {
+      sorted.sort((a, b) => (a.testset_name ?? "").localeCompare(b.testset_name ?? ""))
     }
     return sorted
   }, [results, groupBy])
@@ -174,7 +191,7 @@ export default function ResultsPage() {
       )}
       <div className="flex items-center gap-1 ml-2">
         <span className="text-xs text-muted-foreground">Group:</span>
-        {(["none", "model", "task_type"] as const).map((g) => (
+        {(["none", "model", "task_type", "testset"] as const).map((g) => (
           <Button
             key={g}
             variant={groupBy === g ? "secondary" : "ghost"}
@@ -182,7 +199,7 @@ export default function ResultsPage() {
             className="h-6 text-xs px-2"
             onClick={() => setGroupBy(g)}
           >
-            {g === "none" ? "None" : g === "model" ? "Model" : "Task"}
+            {g === "none" ? "None" : g === "model" ? "Model" : g === "task_type" ? "Task" : "Test Set"}
           </Button>
         ))}
       </div>
@@ -312,9 +329,45 @@ export default function ResultsPage() {
     {
       id: "actions",
       cell: ({ row }) => (
-        <Button variant="ghost" size="icon" className="h-7 w-7" onClick={() => setDetailTarget(row.original.filename)}>
-          <Eye className="h-4 w-4" />
-        </Button>
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button variant="ghost" size="icon" className="h-7 w-7">
+              <MoreHorizontal className="h-4 w-4" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end">
+            <DropdownMenuItem onClick={() => setDetailTarget(row.original.filename)}>
+              <Eye className="mr-2 h-3.5 w-3.5" /> View Details
+            </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => {
+              const r = row.original
+              if (!r.testset_name) { toast.error("No testset info"); return }
+              const match = testsets?.find((ts) =>
+                ts.filename.includes(r.testset_name) ||
+                (ts.metadata as Record<string, string>)?.name === r.testset_name
+              )
+              if (match) {
+                setRerunTarget(match.filename)
+              } else {
+                toast.info("Testset not found — redirecting to Execute page")
+                nav("/execute")
+              }
+            }}>
+              <RotateCcw className="mr-2 h-3.5 w-3.5" /> Rerun with Params
+            </DropdownMenuItem>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem variant="destructive" onClick={async () => {
+              try {
+                await deleteMutation.mutateAsync(row.original.filename)
+                toast.success(`Deleted ${row.original.filename.slice(0, 40)}...`)
+              } catch {
+                toast.error(`Delete failed: ${row.original.filename}`)
+              }
+            }}>
+              <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
       ),
     },
   ]
@@ -325,71 +378,73 @@ export default function ResultsPage() {
         title="Results"
         description="Browse benchmark results, compare models and generate reports"
         actions={
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex items-center gap-1">
             {/* Analysis group */}
-            <Button variant="outline" onClick={handleReanalyze} disabled={selected.size === 0 || reanalyzeMutation.isPending}>
-              {reanalyzeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <RefreshCw className="mr-2 h-4 w-4" />}
-              Reanalyze ({selected.size})
-            </Button>
-            <Button variant="outline" onClick={handleAnalyze} disabled={selected.size === 0 || analyzeMutation.isPending}>
-              {analyzeMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <BarChart3 className="mr-2 h-4 w-4" />}
-              Analyze ({selected.size})
-            </Button>
-            <Button
-              variant="outline"
-              onClick={() => nav(`/charts?files=${Array.from(selected).join(",")}`)}
-              disabled={selected.size === 0}
-            >
-              <LineChart className="mr-2 h-4 w-4" />
-              Charts ({selected.size})
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={handleReanalyze} disabled={selected.size === 0 || reanalyzeMutation.isPending}>
+                  {reanalyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Reanalyze</TooltipContent>
+            </Tooltip>
 
-            <Separator orientation="vertical" className="h-6" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={handleAnalyze} disabled={selected.size === 0 || analyzeMutation.isPending}>
+                  {analyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Analyze</TooltipContent>
+            </Tooltip>
 
-            {/* Actions group */}
-            <Button
-              variant="outline"
-              onClick={() => {
-                const first = Array.from(selected)[0]
-                const r = results?.find((res) => res.filename === first)
-                if (!r?.testset_name) { toast.error("No testset info"); return }
-                const match = testsets?.find((ts) =>
-                  ts.filename.includes(r.testset_name) ||
-                  (ts.metadata as Record<string, string>)?.name === r.testset_name
-                )
-                if (match) {
-                  setRerunTarget(match.filename)
-                } else {
-                  toast.info("Testset not found — redirecting to Execute page")
-                  nav("/execute")
-                }
-              }}
-              disabled={selected.size !== 1}
-            >
-              <RotateCcw className="mr-2 h-4 w-4" />
-              Rerun with Params
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => nav(`/charts?files=${Array.from(selected).join(",")}`)} disabled={selected.size === 0}>
+                  <LineChart className="h-4 w-4" />
+                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Charts</TooltipContent>
+            </Tooltip>
+
+            <Separator orientation="vertical" className="mx-1 h-6" />
+
+            {/* Generate Report keeps text label */}
             <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
               {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
               Generate Report
             </Button>
-            <Button variant="outline" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
-              <Scale className="mr-2 h-4 w-4" />
-              LLM Judge ({selected.size})
-            </Button>
 
-            <Separator orientation="vertical" className="h-6" />
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
+                  <Scale className="h-4 w-4" />
+                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>LLM Judge</TooltipContent>
+            </Tooltip>
+
+            <Separator orientation="vertical" className="mx-1 h-6" />
 
             {/* Destructive */}
-            <Button variant="destructive" onClick={() => setDeleteConfirm(true)} disabled={selected.size === 0}>
-              <Trash2 className="mr-2 h-4 w-4" />
-              Delete ({selected.size})
-            </Button>
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button variant="destructive" size="icon" className="relative h-8 w-8" onClick={() => setDeleteConfirm(true)} disabled={selected.size === 0}>
+                  <Trash2 className="h-4 w-4" />
+                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Delete</TooltipContent>
+            </Tooltip>
           </div>
         }
       />
 
-      <DataTable columns={columns} data={groupedResults} loading={isLoading} searchKey="model_name" searchPlaceholder="Search results..." toolbar={toolbar} />
+      <DataTable columns={columns} data={groupedResults} loading={isLoading} searchKey="model_name" searchPlaceholder="Search results..." toolbar={toolbar} onFilteredRowsChange={handleFilteredRowsChange} />
 
       {/* Analyze results dialog (inline) */}
       {analyzeMutation.isSuccess && analyzeMutation.data && (

@@ -1,5 +1,6 @@
 import { useMemo, useState } from "react"
 import type { ColumnDef } from "@tanstack/react-table"
+import { toast } from "sonner"
 import {
   Scale,
   Loader2,
@@ -9,6 +10,7 @@ import {
   Bug,
   Download,
   FileText,
+  Trash2,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -26,9 +28,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select"
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable } from "@/components/data-table/data-table"
 import { PageHeader } from "@/components/layout/page-header"
-import { useJudgeResults } from "@/hooks/use-results"
+import { useJudgeResults, useDeleteResult } from "@/hooks/use-results"
 import { fetchJudgeResult } from "@/api/results"
 import type { JudgeSummary, JudgeResult, JudgmentEntry } from "@/types"
 
@@ -305,12 +308,27 @@ function exportMarkdown(result: JudgeResult, filename: string) {
 // ── Main page ──
 
 export default function JudgePage() {
-  const { data: judgeFiles, isLoading: filesLoading } = useJudgeResults()
+  const { data: judgeFiles, isLoading: filesLoading, refetch: refetchJudgeFiles } = useJudgeResults()
+  const deleteMutation = useDeleteResult()
   const [selectedFile, setSelectedFile] = useState<string | null>(null)
   const [judgeResult, setJudgeResult] = useState<JudgeResult | null>(null)
   const [resultLoading, setResultLoading] = useState(false)
   const [verdictFilter, setVerdictFilter] = useState<string>("__all__")
   const [confidenceFilter, setConfidenceFilter] = useState<string>("__all__")
+
+  const handleDeleteJudge = async (filename: string) => {
+    try {
+      await deleteMutation.mutateAsync(filename)
+      toast.success("Judge result deleted")
+      if (selectedFile === filename) {
+        setSelectedFile(null)
+        setJudgeResult(null)
+      }
+      refetchJudgeFiles()
+    } catch {
+      toast.error("Delete failed")
+    }
+  }
 
   const handleSelectFile = async (filename: string) => {
     setSelectedFile(filename)
@@ -384,11 +402,20 @@ export default function JudgePage() {
     {
       accessorKey: "notes",
       header: "Notes",
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground truncate max-w-[200px] block" title={row.original.notes}>
-          {row.original.notes || "-"}
-        </span>
-      ),
+      cell: ({ row }) => {
+        const notes = row.original.notes
+        if (!notes) return <span className="text-xs text-muted-foreground/40">-</span>
+        return (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="text-xs text-muted-foreground truncate max-w-[200px] block cursor-help">
+                {notes}
+              </span>
+            </TooltipTrigger>
+            <TooltipContent className="max-w-sm text-xs">{notes}</TooltipContent>
+          </Tooltip>
+        )
+      },
     },
   ]
 
@@ -438,6 +465,9 @@ export default function JudgePage() {
               </Button>
               <Button variant="outline" size="sm" onClick={() => exportMarkdown(judgeResult, selectedFile)}>
                 <FileText className="mr-1.5 h-3.5 w-3.5" /> Export Report
+              </Button>
+              <Button variant="destructive" size="sm" onClick={() => handleDeleteJudge(selectedFile!)}>
+                <Trash2 className="mr-1.5 h-3.5 w-3.5" /> Delete
               </Button>
             </div>
           ) : undefined

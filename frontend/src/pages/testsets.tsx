@@ -34,6 +34,7 @@ import { TaskBadge } from "@/components/task-badge"
 import { ParamOverrideModal } from "@/components/param-override-modal"
 import { formatBytes } from "@/lib/utils"
 import { langFlags } from "@/lib/language-flags"
+import { languageFilterOptions } from "@/components/language-filter-chip"
 import { useTestsets, useTestset, useDeleteTestset } from "@/hooks/use-testsets"
 import type { TestsetSummary } from "@/types"
 
@@ -43,6 +44,7 @@ export default function TestSetsPage() {
   const deleteMutation = useDeleteTestset()
   const [deleteTarget, setDeleteTarget] = useState<string | null>(null)
   const [detailTarget, setDetailTarget] = useState<string | null>(null)
+  const [detailTab, setDetailTab] = useState<string>("overview")
   const [regenTarget, setRegenTarget] = useState<string | null>(null)
   const [casesPage, setCasesPage] = useState(1)
   const { data: detail } = useTestset(detailTarget, casesPage)
@@ -65,7 +67,7 @@ export default function TestSetsPage() {
 
   const langOptions = useMemo(() => {
     const unique = [...new Set((testsets ?? []).flatMap((ts) => ts.languages ?? []))].sort()
-    return unique.map((l) => ({ label: l, value: l }))
+    return languageFilterOptions(unique)
   }, [testsets])
 
   const userStyleOptions = useMemo(() => {
@@ -279,7 +281,7 @@ export default function TestSetsPage() {
             <SheetTitle className="text-sm truncate">{detailTarget}</SheetTitle>
           </SheetHeader>
           {detail && (
-            <Tabs defaultValue="overview" className="mt-4">
+            <Tabs value={detailTab} onValueChange={setDetailTab} className="mt-4">
               <TabsList>
                 <TabsTrigger value="overview">Overview</TabsTrigger>
                 <TabsTrigger value="cases">

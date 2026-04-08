@@ -119,12 +119,18 @@ class PathManager:
         parts = ["testset", config_name]
         if task_types:
             tasks_str = "-".join(sorted(task_types))
+            # Truncate task list if it would make filename too long (>200 chars)
+            if len(tasks_str) > 120:
+                tasks_str = f"{len(task_types)}_tasks"
             parts.append(tasks_str)
         if config_hash:
             parts.append(config_hash[:8])
         parts.append(timestamp)
-        
+
         filename = "_".join(parts) + ".json.gz"
+        # Final safety: truncate entire filename if still too long
+        if len(filename) > 240:
+            filename = filename[:230] + ".json.gz"
         filepath = self.output_dir / filename
         filepath.parent.mkdir(parents=True, exist_ok=True)
         return filepath

@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.16.0** | Last updated: 2026-04-04
+> **Version 2.16.1** | Last updated: 2026-04-08
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
