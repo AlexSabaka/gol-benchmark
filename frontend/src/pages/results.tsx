@@ -412,12 +412,6 @@ export default function ResultsPage() {
 
             <Separator orientation="vertical" className="mx-1 h-6" />
 
-            {/* Generate Report keeps text label */}
-            <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
-              {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-              Generate Report
-            </Button>
-
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
@@ -440,6 +434,12 @@ export default function ResultsPage() {
               </TooltipTrigger>
               <TooltipContent>Delete</TooltipContent>
             </Tooltip>
+
+            {/* Generate Report keeps text label */}
+            <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
+              {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+              Generate Report
+            </Button>
           </div>
         }
       />

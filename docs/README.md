@@ -1,6 +1,6 @@
 # GoL Benchmark Documentation
 
-Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 18 structured cognitive tasks.
+Documentation for the GoL Benchmark Suite — a procedural benchmark for testing LLM reasoning across 19 structured cognitive tasks.
 
 ---
 
@@ -8,7 +8,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 | Document | Description |
 |----------|-------------|
-| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 18 tasks, research findings, quick start |
+| [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 19 tasks, research findings, quick start |
 | [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) | Plugin system reference, per-plugin docs, adding new plugins |
 
 ---
@@ -43,7 +43,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 
 ---
 
-## Benchmark Tasks (18 plugins)
+## Benchmark Tasks (19 plugins)
 
 | Task | Plugin | Answer Type |
 |------|--------|-------------|
@@ -65,6 +65,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | Family Relations | `family_relations` | Integer (person count) |
 | Encoding & Cipher Decoding | `encoding_cipher` | Decoded text / response word |
 | Symbol Arithmetic | `symbol_arithmetic` | Symbol from operation table |
+| Picross (Nonogram) | `picross` | 2D binary grid |
 
 See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for detailed per-plugin documentation.
 

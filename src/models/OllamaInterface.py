@@ -44,7 +44,7 @@ class OllamaInterface(ModelInterface):
                 headers={"Content-Type": "application/json"},
             )
 
-            with urllib.request.urlopen(req, timeout=params.get("timeout_seconds", 120)) as resp:
+            with urllib.request.urlopen(req, timeout=params.get("timeout_seconds", 300)) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
 
             end_time = time.time()

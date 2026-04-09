@@ -61,7 +61,7 @@ class OpenAICompatibleInterface(ModelInterface):
                 data=request_data,
                 headers=headers,
             )
-            with urllib.request.urlopen(req, timeout=params.get("timeout_seconds", 120)) as resp:
+            with urllib.request.urlopen(req, timeout=params.get("timeout_seconds", 300)) as resp:
                 result = json.loads(resp.read().decode("utf-8"))
 
             end_time = time.time()

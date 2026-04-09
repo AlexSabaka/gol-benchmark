@@ -1,8 +1,8 @@
 # Plugin System Guide
 
-> **Version 2.16.1** | Last updated: 2026-04-08
+> **Version 2.17.0** | Last updated: 2026-04-08
 
-Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all 18 benchmark plugins, and a step-by-step walkthrough for adding new ones.
+Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all **19** benchmark plugins, and a step-by-step walkthrough for adding new ones.
 
 ---
 
@@ -58,7 +58,7 @@ PluginRegistry (auto-discovers at first access)
     │                       ├── CarwashParser
     │                       └── CarwashEvaluator
     │
-    └── ... (18 plugins total)
+    └── ... (19 plugins total)
 ```
 
 ### Base Classes
@@ -237,9 +237,9 @@ The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt
 
 | Coverage Level | Plugins |
 |---------------|---------|
-| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + content + parsing | All 18 plugins |
+| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + content + parsing | All 19 plugins |
 
-All 18 plugins generate test **content** (scenarios, questions, grid data, narratives, encoded text) in the requested language — not just prompt wrappers. Each plugin has a dedicated i18n module with localized vocabulary and templates. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
+All 19 plugins generate test **content** (scenarios, questions, grid data, narratives, encoded text) in the requested language — not just prompt wrappers. Each plugin has a dedicated i18n module with localized vocabulary and templates. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
 
 **Grammatical gender** (v2.15.0): Gendered languages (UA, ES, FR, DE) resolve articles, possessives, verb forms, and noun case endings correctly. The shared `grammar_utils.py` module provides `article()` (ES/FR/DE by gender+case), `resolve_vocab()` (Ukrainian nom/acc/loc case lookup), `pick_templates()` (gender-aware m/f template selection), and `vocab_gender()`. Subject gender is randomly assigned (m/f) per test case and stored in `task_params["subject_gender"]`.
 

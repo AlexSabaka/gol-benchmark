@@ -26,6 +26,7 @@
 - **Family Relations**: Perspective-aware family counting puzzles — sibling count, shared children, generational chains, perspective shifts
 - **Encoding & Cipher Decoding**: Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection
 - **Symbol Arithmetic**: Custom operation tables on abstract symbol sets — pure rule-following with zero semantic anchor
+- **Picross (Nonogram)**: Grid-based deductive reasoning — solve puzzles from row/column clue constraints
 
 ### Key Characteristics
 
@@ -65,7 +66,7 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (18 plugins)
+│   ├── plugins/           # Plugin-based benchmark system (19 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
 │   │   ├── parse_utils.py # End-first parsing utilities + multilingual keyword merge
@@ -87,7 +88,8 @@ gol_eval/
 │   │   ├── false_premise/ # False Premise (dangerous/impossible premise detection)
 │   │   ├── family_relations/ # Family Relations (perspective-aware counting)
 │   │   ├── encoding_cipher/ # Encoding & Cipher Decoding (Base64, Caesar, Morse)
-│   │   └── symbol_arithmetic/ # Symbol Arithmetic (custom operation tables)
+│   │   ├── symbol_arithmetic/ # Symbol Arithmetic (custom operation tables)
+│   │   └── picross/       # Picross (Nonogram) grid puzzle solving
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
 │   │   ├── generate_testset.py  # Stage 1: YAML → test sets
 │   │   ├── run_testset.py       # Stage 2: Execute tests
@@ -132,7 +134,7 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (18 plugins)** | |
+| **Plugin System (19 plugins)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
 | [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
@@ -154,6 +156,7 @@ gol_eval/
 | [src/plugins/family_relations/](src/plugins/family_relations/) | Family Relations plugin (perspective-aware counting) |
 | [src/plugins/encoding_cipher/](src/plugins/encoding_cipher/) | Encoding & Cipher Decoding plugin (Base64, Caesar, Morse) |
 | [src/plugins/symbol_arithmetic/](src/plugins/symbol_arithmetic/) | Symbol Arithmetic plugin (custom operation tables) |
+| [src/plugins/picross/](src/plugins/picross/) | Picross (Nonogram) plugin (grid puzzle solving) |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
@@ -237,7 +240,7 @@ All response parsers follow the principle of searching from the **end** of the m
 
 ### 7. Multilingual Content & Grammar System (v2.15.0+)
 
-All 18 plugins generate test content in 6 languages. Each plugin has:
+All 19 plugins generate test content in 6 languages. Each plugin has:
 - **`prompts.py`** — user prompt templates per language × style
 - **`i18n.py`** or **`*_i18n.py`** — localized vocabulary, question templates, scenario narratives
 - **`data/`** — per-language word lists, data files
@@ -772,6 +775,6 @@ pytest tests/
 ---
 
 *Last updated: 2026-04-08*
-*Version: 2.16.1*
-*Key additions: Compact Results toolbar (icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping) • Localized measure comparison (unit display names + decimal framing templates in all 6 languages) • prompt_metadata propagation fix (language now reaches parsers in CLI and Web UI) • Filename truncation for long testset names • Judge page delete + tooltip • Language filter labels with flag emojis • LLM-as-a-Judge • Deep multilingual content localization + grammatical gender • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
+*Version: 2.17.0*
+*Key additions: Picross (Nonogram) plugin (19th benchmark — grid-based deductive reasoning with line solver, 3 clue formats, partial-solution mode) • Compact Results toolbar (icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping) • Localized measure comparison (unit display names + decimal framing templates in all 6 languages) • prompt_metadata propagation fix (language now reaches parsers in CLI and Web UI) • Filename truncation for long testset names • Judge page delete + tooltip • Language filter labels with flag emojis • LLM-as-a-Judge • Deep multilingual content localization + grammatical gender • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
 *For questions or issues: Check [README.md](README.md) or create an issue*

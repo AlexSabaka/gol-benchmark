@@ -2,9 +2,9 @@
 
 ## Project Overview
 
-This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 18 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
+This is a comprehensive LLM reasoning benchmark suite testing model capabilities across 19 procedural tasks (Game of Life, arithmetic expressions, Linda fallacy, cellular automata, ASCII shapes, object tracking, Sally-Anne, Carwash Paradox, Inverted Cup, Strawberry, Measure Comparison, Grid Tasks, Time Arithmetic, Misquote Attribution, False Premise, Family Relations, Encoding & Cipher Decoding, Symbol Arithmetic, Picross/Nonogram). The system features a modern 3-stage architecture with a **plugin-based benchmark system**, support for multiple model providers (Ollama local & remote, HuggingFace), multilingual prompts (EN/ES/FR/DE/ZH/UA), configurable prompt styles, and advanced analytics.
 
-## Architecture (v2.16.1)
+## Architecture (v2.17.0)
 
 ### 🔌 **Plugin-Based Benchmark System**
 All benchmarks are now self-contained plugins with auto-discovery:
@@ -29,7 +29,8 @@ src/plugins/
 ├── false_premise/             # False Premise: dangerous/impossible premise detection
 ├── family_relations/          # Family Relations: perspective-aware counting puzzles
 ├── encoding_cipher/           # Encoding & Cipher Decoding: Base64, Caesar, Morse
-└── symbol_arithmetic/         # Symbol Arithmetic: custom operation tables
+├── symbol_arithmetic/         # Symbol Arithmetic: custom operation tables
+└── picross/                   # Picross (Nonogram): grid puzzle solving
 ```
 
 **Benefits:**
@@ -65,7 +66,7 @@ Config →   Plugin generators →        ModelInterface →        Enhanced Ana
          + base class helpers)
 ```
 
-## Project Structure (v2.16.1)
+## Project Structure (v2.17.0)
 
 ### **Core Architecture (`src/` organization)**
 
@@ -92,7 +93,8 @@ src/
 │   ├── false_premise/  # False Premise plugin (dangerous/impossible premise detection)
 │   ├── family_relations/ # Family Relations plugin (perspective-aware counting)
 │   ├── encoding_cipher/ # Encoding & Cipher Decoding plugin (Base64, Caesar, Morse)
-│   └── symbol_arithmetic/ # Symbol Arithmetic plugin (custom operation tables)
+│   ├── symbol_arithmetic/ # Symbol Arithmetic plugin (custom operation tables)
+│   └── picross/        # Picross (Nonogram) plugin (grid puzzle solving)
 ├── stages/             # 3-Stage Pipeline Scripts (uses plugins)
 │   ├── generate_testset.py    # Stage 1: YAML → Test Sets (plugin dispatch)
 │   ├── run_testset.py         # Stage 2: Execute on Models (plugin parsers)
@@ -146,7 +148,7 @@ python -m src.web
 cd frontend && npm run dev       # http://localhost:5173/ (proxies /api → :8000)
 
 # Supports:
-# - All 18 benchmark plugins with dynamic config forms
+# - All 19 benchmark plugins with dynamic config forms
 # - Model selection with provider detection
 # - Multi-language selection with flag emojis
 # - Prompt style matrix configuration (3×3 combinations)
@@ -348,6 +350,7 @@ Tests validate 3-stage pipeline, config serialization, parsing enhancements, and
 - **Measure Comparison (decimal)**: Expected 40-80% accuracy; framing sensitivity rate reveals how often models change answers based on framing context. v2.10.5 fixed 38 false negatives (smart quote normalization, tightened equal keywords, pipeline reorder, expanded incomparable patterns)
 - **Encoding & Cipher Decoding**: Expected 50-80% accuracy (Base64 easiest, Morse hardest; hallucinated execution is the interesting failure mode)
 - **Symbol Arithmetic**: Expected 40-70% accuracy (commutativity/associativity assumptions are the classic failure modes; partial tables and emoji symbols are hardest)
+- **Picross (Nonogram)**: Expected 30-70% accuracy (trivial 3×3 puzzles near-solvable, hard 10×10 requires sustained deductive reasoning; grid_header format helps spatial grounding; line-solvable constraint ensures fair puzzles)
 - **Multi-Task Combined**: 50-80% overall accuracy depending on model capability
 - **Parse Error Rate**: <20% with enhanced multi-strategy parsing (down from 100% in some cases)
 
@@ -360,7 +363,7 @@ python -m src.web
 # Open http://127.0.0.1:8000/
 
 # The React SPA supports:
-# 1. All 18 benchmark plugins with dynamic config forms
+# 1. All 19 benchmark plugins with dynamic config forms
 # 2. Model selection with provider detection
 # 3. Multi-language selection with flag emojis
 # 4. Prompt style matrix (3×3 combinations)
@@ -404,18 +407,18 @@ python src/benchmarks/ari_eval.py --model qwen3:0.6b --batch-size 5 --difficulty
 
 ---
 
-**Version**: 2.16.1 (April 8, 2026)
+**Version**: 2.17.0 (April 8, 2026)
 **Status**: Production Ready 🚀
 **Key Features**:
 - React SPA frontend (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
-- Plugin-based benchmark system with auto-discovery (18 plugins)
+- Plugin-based benchmark system with auto-discovery (19 plugins)
 - **LLM-as-a-Judge** — audit incorrect model responses via judge LLM; classifies as true_incorrect / false_negative / parser_failure; setup sheet with model selection, editable prompts, sampling params; background job execution; judge output files with verdict summaries
-- **Deep multilingual content localization** — all 18 plugins generate test content in 6 languages with per-plugin i18n modules
+- **Deep multilingual content localization** — all 19 plugins generate test content in 6 languages with per-plugin i18n modules
 - **Grammatical gender** — `grammar_utils.py` for article resolution, case-form lookup, gender-aware templates; zero slash patterns in UA/ES/FR/DE
 - **Multilingual evaluator fix** — Object Tracking + Sally-Anne evaluators accept localized expected answers
 - Modern 3-stage architecture with enhanced parsing and analytics
 - **Multi-provider Execute page** — Ollama + multiple OpenAI-compatible endpoints + HuggingFace
 - **Reanalysis, custom system prompts, "By Dimension" charts, favorites, encrypted credentials**
-- **Task type inference** — `_infer_task_type_from_id()` with aliases for all 18 task types
+- **Task type inference** — `_infer_task_type_from_id()` with aliases for all 19 task types
 - **Compact Results toolbar** — icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping
 - **Localized measure comparison** — unit display names + decimal framing templates in all 6 languages

@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.16.1** | Last updated: 2026-04-08
+> **Version 2.17.0** | Last updated: 2026-04-08
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -40,11 +40,12 @@ The suite measures how well language models handle:
 - **Safety reasoning** — Detecting dangerous or impossible premises (false premise)
 - **Perspective-aware reasoning** — Family counting puzzles with self-reference traps (family relations)
 - **Encoding comprehension** — Decoding Base64, Caesar cipher, and Morse code messages, then following embedded instructions (encoding cipher)
+- **Grid deduction** — Solving Picross/Nonogram puzzles from row and column clue constraints (picross)
 
 ### Design Principles
 
 1. **Procedural generation** — Test cases are generated algorithmically with seeded randomness. Same seed + same config = identical test cases. No static dataset to memorize.
-2. **Prompt-first evaluation** — The same model is tested across multiple prompt configurations (user style x system style x language) to isolate prompt engineering effects from model capability. All 18 plugins support 6 languages with multilingual response parsing.
+2. **Prompt-first evaluation** — The same model is tested across multiple prompt configurations (user style x system style x language) to isolate prompt engineering effects from model capability. All 19 plugins support 6 languages with multilingual response parsing.
 3. **Plugin architecture** — Each benchmark task is a self-contained plugin with auto-discovery. Adding a new task requires zero changes to the pipeline.
 4. **Portable pipeline** — The 3-stage architecture decouples generation, execution, and analysis. Stage 2 (execution) has near-zero dependencies, making it runnable on remote machines with only Python + a model API.
 
@@ -86,7 +87,7 @@ Each stage is independently runnable. Stage 2 includes minimal self-contained mo
 
 ### Plugin System
 
-All 18 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
+All 19 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
 
 Each plugin provides three components:
 
@@ -107,7 +108,7 @@ A modern single-page application built with **React 19 + TypeScript + Tailwind C
 ```
 gol_eval/
 ├── src/
-│   ├── plugins/                        # Plugin-based benchmark system (18 plugins)
+│   ├── plugins/                        # Plugin-based benchmark system (19 plugins)
 │   │   ├── base.py                     #   Abstract base classes + ConfigField
 │   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
 │   │   ├── parse_utils.py              #   End-first parsing utilities + multilingual keyword merge helpers
@@ -128,7 +129,8 @@ gol_eval/
 │   │   ├── false_premise/              #   Dangerous/impossible premise detection
 │   │   ├── family_relations/           #   Perspective-aware family counting puzzles
 │   │   ├── encoding_cipher/            #   Encoding & cipher decoding (Base64, Caesar, Morse)
-│   │   └── symbol_arithmetic/          #   Custom operation tables on abstract symbol sets
+│   │   ├── symbol_arithmetic/          #   Custom operation tables on abstract symbol sets
+│   │   └── picross/                    #   Picross (Nonogram) grid puzzle solving
 │   │
 │   ├── stages/                         # 3-stage pipeline
 │   │   ├── generate_testset.py         #   Stage 1: YAML → test sets
@@ -315,7 +317,7 @@ Base class helpers in `TestCaseGenerator`:
 
 English (EN), French (FR), Spanish (ES), German (DE), Chinese (ZH), Ukrainian (UA)
 
-All 18 plugins now support all 6 languages for prompts, generated content, data, and response parsing (v2.15.0). Since v2.15.0, all generated test content (scenarios, questions, grid data, narratives, encoded text, relationship terms, vocabulary) is produced in the requested language — not just the prompt wrappers. Each plugin has a dedicated i18n module with localized templates and vocabulary. Gendered languages (Ukrainian, Spanish, French, German) use proper grammatical gender: articles resolved by noun gender, Ukrainian nouns decline by case (nominative/accusative/locative), past-tense verbs conjugate by randomly selected subject gender (m/f), and zero slash patterns remain in generated prompts. The shared `grammar_utils.py` module provides article resolution, case-form lookup, and gender-aware template selection.
+All 19 plugins now support all 6 languages for prompts, generated content, data, and response parsing (v2.15.0). Since v2.15.0, all generated test content (scenarios, questions, grid data, narratives, encoded text, relationship terms, vocabulary) is produced in the requested language — not just the prompt wrappers. Each plugin has a dedicated i18n module with localized templates and vocabulary. Gendered languages (Ukrainian, Spanish, French, German) use proper grammatical gender: articles resolved by noun gender, Ukrainian nouns decline by case (nominative/accusative/locative), past-tense verbs conjugate by randomly selected subject gender (m/f), and zero slash patterns remain in generated prompts. The shared `grammar_utils.py` module provides article resolution, case-form lookup, and gender-aware template selection.
 
 ### Why This Matters
 

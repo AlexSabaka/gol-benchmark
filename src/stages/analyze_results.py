@@ -217,6 +217,7 @@ _KNOWN_TASK_TYPES = [
     "arithmetic",
     "misquote",
     "carwash",
+    "picross",
 ]
 
 # Aliases: alternative substrings that map to canonical task types
@@ -227,6 +228,8 @@ _TASK_ALIASES = {
     "tracking": "object_tracking",
     "false_belief": "sally_anne",
     "linda": "linda_fallacy",
+    "nono": "picross",
+    "nonogram": "picross",
 }
 
 

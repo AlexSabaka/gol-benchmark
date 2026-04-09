@@ -2,6 +2,27 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.17.0] - April 8, 2026
+
+### New Benchmark Plugin: Picross (Nonogram)
+
+19th benchmark plugin — grid-based deductive reasoning puzzle.
+
+#### Plugin Implementation (`src/plugins/picross/`)
+- **`solver.py`** — Nonogram line solver (constraint propagation) + backtracking solver for uniqueness validation; `derive_clues()`, `line_solve()`, `backtrack_solve()`, `is_line_solvable()`
+- **`grid_gen.py`** — Random puzzle generation with validation (line-solvable / unique solution); `generate_puzzle()` with configurable size, density, retry budget (200 attempts); `difficulty_to_size()` mapping: trivial=3, easy=5, hard=10, nightmare=15
+- **`generator.py`** — `PicrossGenerator` with `ConfigField` schema for Web UI; 3 clue formats (inline, grid_header with full vertical alignment, JSON); optional partial-solution mode (~50% cells blanked randomly); 6 languages × 3 styles prompt matrix
+- **`parser.py`** — `PicrossParser` with 4-strategy end-first grid extraction (line_scan_reverse, marker_search, digit_extraction, last_resort); normalizes X/., ■/□, #/- markers to 1/0
+- **`evaluator.py`** — `PicrossEvaluator` with cell-by-cell comparison; normalized accuracy formula `2*(raw - 0.5)`; match types: exact, partial, mismatch, dimension_mismatch, parse_error
+- **`prompts.py`** — User prompt templates for all 6 languages (EN/ES/FR/DE/ZH/UA) × 3 styles (linguistic/casual/minimal)
+
+#### Integration
+- `src/stages/analyze_results.py` — added `"picross"` to `_KNOWN_TASK_TYPES` + `"nono"` / `"nonogram"` aliases in `_TASK_ALIASES`
+- `reanalyze_results.py` — added `"picross"` to `_TASK_TYPE_SUFFIXES`
+
+#### Tests
+- `tests/plugins/test_picross.py` — 38 tests covering solver, grid generation, plugin discovery, generator (all formats + partial solution + multilingual), parser (edge cases: code blocks, unicode markers, end-first, wrong dims), evaluator (exact/partial/dimension_mismatch/parse_error/aggregation)
+
 ## [2.16.1] - April 8, 2026
 
 ### Frontend UX Improvements

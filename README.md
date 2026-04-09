@@ -42,6 +42,7 @@ Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, b
 | 16 | **Family Relations** | Perspective-aware family counting puzzles — sibling count, shared children, generational, perspective shift |
 | 17 | **Encoding & Cipher Decoding** | Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection |
 | 18 | **Symbol Arithmetic** | Evaluate expressions under arbitrary binary operations (custom operation tables, commutativity/associativity detection) |
+| 19 | **Picross (Nonogram)** | Grid-based deductive reasoning — solve puzzles from row/column clue constraints |
 
 ---
 
@@ -301,7 +302,7 @@ This is a **personal experiment**, but if you're curious and want to:
 
 ### ✅ Completed
 
-- [x] Plugin-based benchmark architecture — 18 tasks with auto-discovery (v2.1.0+)
+- [x] Plugin-based benchmark architecture — **19** tasks with auto-discovery (v2.1.0+)
 - [x] 3-stage pipeline: generate → execute → analyze
 - [x] React SPA web UI (Vite + React 19 + TypeScript + shadcn/ui) (v2.11.0)
 - [x] Plugin config schema introspection (`ConfigField` system)
@@ -315,9 +316,9 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Object tracking, time arithmetic, inverted cup, encoding cipher parser fixes (v2.10.6, 28 false negatives fixed — first-bold/first-sentence strategies, validity yes/no detection, tilt/tip patterns, Unicode whitespace normalization)
 - [x] False premise parser overhaul (v2.10.7, 61 false negatives fixed — smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, expanded refusal/impossibility patterns)
 - [x] Web UI improvements: Jobs page, faceted filters, plugin descriptions from README, Configure/Execute page split (v2.12.0)
-- [x] Full multilingual support: all 18 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
+- [x] Full multilingual support: all 19 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
 - [x] UI & Workflow improvements: reanalysis endpoint, custom system prompts, chart filtering (task/language/log scale), Param Override Modal, favorites sidebar, encrypted credential storage (v2.14.0)
-- [x] Deep multilingual content localization: all 18 plugins generate test content in 6 languages, not just prompt wrappers (v2.15.0)
+- [x] Deep multilingual content localization: all 19 plugins generate test content in 6 languages, not just prompt wrappers (v2.15.0)
 - [x] LLM-as-a-Judge: audit incorrect model responses via judge LLM with web UI setup and background job execution (v2.16.0)
 
 ### 🔄 In Progress
