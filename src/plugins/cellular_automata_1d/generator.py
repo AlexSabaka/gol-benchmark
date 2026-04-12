@@ -9,10 +9,10 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.cellular_automata_1d.prompts import (
-    USER_PROMPT_TEMPLATES,
-    BOUNDARY_DESCRIPTIONS,
-)
+from src.plugins.i18n.loader import load_plugin_i18n
+
+_i18n = load_plugin_i18n("cellular_automata_1d")
+BOUNDARY_DESCRIPTIONS = _i18n.get("boundary_descriptions", {})
 
 
 def _normalize_cell_markers(raw) -> List[str]:
@@ -130,8 +130,8 @@ class C14TestCaseGenerator(TestCaseGenerator):
                 )
 
                 # Generate prompts
-                user_prompt, system_prompt, full_prompt = self._build_prompts(
-                    USER_PROMPT_TEMPLATES,
+                user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+                    "cellular_automata_1d",
                     language=language_str,
                     user_style=user_style_str,
                     system_style=system_style_str,

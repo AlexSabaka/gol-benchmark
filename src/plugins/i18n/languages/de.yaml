@@ -1,0 +1,63 @@
+code: de
+name: German
+
+grammar:
+  genders: [m, f, n]
+  cases: [nom, acc, dat]
+  articles:
+    def:
+      m:
+        nom: der
+        acc: den
+        dat: dem
+      f:
+        nom: die
+        acc: die
+        dat: der
+      n:
+        nom: das
+        acc: das
+        dat: dem
+    indef:
+      m:
+        nom: ein
+        acc: einen
+        dat: einem
+      f:
+        nom: eine
+        acc: eine
+        dat: einer
+      n:
+        nom: ein
+        acc: ein
+        dat: einem
+  ordinal: "{n}."
+
+parse:
+  word_to_int:
+    "null": 0
+    eins: 1
+    ein: 1
+    eine: 1
+    zwei: 2
+    drei: 3
+    vier: 4
+    "f\xFCnf": 5
+    sechs: 6
+    sieben: 7
+    acht: 8
+    neun: 9
+    zehn: 10
+    elf: 11
+    "zw\xF6lf": 12
+    dreizehn: 13
+    vierzehn: 14
+    "f\xFCnfzehn": 15
+    sechzehn: 16
+    siebzehn: 17
+    achtzehn: 18
+    neunzehn: 19
+    zwanzig: 20
+  answer_labels: [antwort, ergebnis, "endg\xFCltige antwort", "l\xF6sung"]
+  yes_words: [ja, richtig, korrekt, wahr]
+  no_words: [nein, falsch, inkorrekt, unwahr]

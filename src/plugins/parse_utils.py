@@ -146,11 +146,30 @@ def merge_keywords(keyword_dict: Dict[str, List[str]], language: str) -> List[st
 
     Always includes English as fallback since models often respond
     in English even when prompted in another language.
+
+    For languages not in *keyword_dict*, falls back to the ``LanguageSpec``
+    registry (``src.plugins.languages``) so new languages registered there
+    work automatically without editing this file.
     """
     en = keyword_dict.get("en", [])
     if language == "en":
         return en
-    local = keyword_dict.get(language, [])
+    local = keyword_dict.get(language)
+    if local is None:
+        from src.plugins import languages as _langs  # late import avoids circular
+        spec = _langs.get(language)
+        if spec is not None:
+            # Map known dicts to their LanguageSpec attribute
+            if keyword_dict is ANSWER_LABELS:
+                local = spec.answer_labels
+            elif keyword_dict is YES_WORDS:
+                local = spec.yes_words
+            elif keyword_dict is NO_WORDS:
+                local = spec.no_words
+            else:
+                local = []
+        else:
+            local = []
     return list(dict.fromkeys(en + local))  # dedupe preserving order
 
 
@@ -222,9 +241,15 @@ WORD_TO_INT: Dict[str, Dict[str, int]] = {
 
 def build_word_to_int(language: str) -> Dict[str, int]:
     """Merge English + target language number word maps."""
+    from src.plugins import languages as _langs  # late import avoids circular
     merged = dict(WORD_TO_INT["en"])
-    if language != "en" and language in WORD_TO_INT:
-        merged.update(WORD_TO_INT[language])
+    if language == "en":
+        return merged
+    lang_data = WORD_TO_INT.get(language)
+    if lang_data is None:
+        spec = _langs.get(language)
+        lang_data = spec.word_to_int if spec else {}
+    merged.update(lang_data)
     return merged
 
 
@@ -250,6 +275,7 @@ def build_answer_label_re(language: str) -> str:
     """
     labels = merge_keywords(ANSWER_LABELS, language)
     return "|".join(re.escape(l) for l in labels)
+
 
 
 # ---------------------------------------------------------------------------

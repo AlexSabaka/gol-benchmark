@@ -13,6 +13,12 @@ export interface ResultSummary {
   duration_seconds: number
   total_tokens: number
   testset_name: string
+  run_group_id?: string | null
+  matrix_batch_id?: string | null
+  matrix_cell_id?: string | null
+  matrix_label?: string | null
+  matrix_plugin?: string | null
+  matrix_axes?: Record<string, unknown> | null
   task_types: string[]
   languages: string[]
   user_styles: string[]

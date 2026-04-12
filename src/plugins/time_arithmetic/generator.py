@@ -15,7 +15,7 @@ from typing import Any, Dict, List, Optional
 from src.core.PromptEngine import Language
 from src.plugins.base import ConfigField, TestCase, TestCaseGenerator
 from src.plugins.parse_utils import safe_enum
-from src.plugins.time_arithmetic.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 
 # ── constants ────────────────────────────────────────────────────────
 
@@ -857,8 +857,8 @@ class TimeArithmeticGenerator(TestCaseGenerator):
         task_params: dict[str, Any],
     ) -> TestCase:
         language_str = lang.value
-        user_prompt = self._format_user_prompt(
-            USER_PROMPT_TEMPLATES, language_str, user_style, question=question,
+        user_prompt = compose_user_prompt(
+            "time_arithmetic", language_str, user_style, question=question,
         )
         system_prompt = self._get_system_prompt(sys_style, language_str)
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt

@@ -18,7 +18,7 @@ _TASK_TYPE_SUFFIXES = [
     "object_tracking", "sally_anne", "time_arithmetic", "game_of_life",
     "arithmetic", "linda_fallacy", "cellular_automata_1d", "ascii_shapes",
     "grid_tasks", "misquote", "false_premise", "family_relations",
-    "encoding_cipher", "symbol_arithmetic",
+    "encoding_cipher", "symbol_arithmetic", "fancy_unicode",
 ]
 
 

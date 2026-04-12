@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional
 import random
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.object_tracking.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 from src.plugins.object_tracking.step_builder import StepBuilder, Scenario
 
 
@@ -127,8 +127,8 @@ class ObjectTrackingTestCaseGenerator(TestCaseGenerator):
             object_de = ""
 
         # {object_loc}: the localized object name (used after the article)
-        return self._format_user_prompt(
-            USER_PROMPT_TEMPLATES, language, style,
+        return compose_user_prompt(
+            "object_tracking", language, style,
             steps_text=steps_text, question=question,
             object=obj_loc,
             object_loc=obj_loc,

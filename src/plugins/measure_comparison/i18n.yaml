@@ -1,0 +1,24 @@
+# Measure Comparison plugin — quantity comparison with units.
+#
+# Variables: {question}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# minimal and casual match the shared wrappers exactly.
+# linguistic is domain-specific and fully overridden.
+
+body:
+  en: "{question}"
+  es: "{question}"
+  fr: "{question}"
+  de: "{question}"
+  zh: "{question}"
+  ua: "{question}"
+
+overrides:
+  linguistic:
+    en: "I have a measurement comparison question for you.\n\n{question}\n\nPlease provide just the winning measurement (or 'equal' / 'incomparable' if applicable)."
+    es: "Tengo una pregunta sobre comparación de medidas.\n\n{question}\n\nPor favor, proporciona solo la medida ganadora."
+    fr: "J'ai une question de comparaison de mesures.\n\n{question}\n\nVeuillez fournir uniquement la mesure gagnante."
+    de: "Ich habe eine Frage zum Vergleich von Maßeinheiten.\n\n{question}\n\nBitte geben Sie nur die größere Messung an."
+    zh: "我有一个关于测量比较的问题。\n\n{question}\n\n请只提供较大的测量值。"
+    ua: "У мене є питання про порівняння вимірювань.\n\n{question}\n\nБудь ласка, надайте лише більше вимірювання."

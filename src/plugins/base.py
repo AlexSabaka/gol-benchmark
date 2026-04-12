@@ -312,7 +312,15 @@ class TestCaseGenerator(ABC):
             Rendered prompt string.  Falls back to ``"en"`` for language
             and ``"casual"`` for style when the requested key is missing.
         """
-        lang_templates = templates.get(language, templates.get("en", {}))
+        import logging as _logging
+        lang_templates = templates.get(language)
+        if lang_templates is None:
+            if language != "en":
+                _logging.getLogger(__name__).warning(
+                    "Plugin has no %r prompt templates, falling back to 'en'",
+                    language,
+                )
+            lang_templates = templates.get("en", {})
         template = lang_templates.get(style, lang_templates.get("casual", ""))
         return template.format(**variables).strip()
 
@@ -332,6 +340,37 @@ class TestCaseGenerator(ABC):
         """
         user_prompt = self._format_user_prompt(
             templates, language, user_style, **variables
+        )
+        system_prompt = self._get_system_prompt(
+            system_style, language, custom_system_prompt=custom_system_prompt,
+        )
+        full_prompt = (
+            f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt
+        )
+        return user_prompt, system_prompt, full_prompt
+
+    def _build_prompts_yaml(
+        self,
+        plugin_name: str,
+        language: str,
+        user_style: str,
+        system_style: str,
+        custom_system_prompt: str = "",
+        **variables: Any,
+    ) -> Tuple[str, str, str]:
+        """Build prompts from YAML i18n files (style wrappers + plugin body).
+
+        Drop-in replacement for ``_build_prompts()`` that reads from
+        ``<plugin>/i18n.yaml`` and shared ``styles.yaml`` instead of
+        Python dicts.
+
+        Returns:
+            ``(user_prompt, system_prompt, full_prompt)``
+        """
+        from src.plugins.i18n.loader import compose_user_prompt
+
+        user_prompt = compose_user_prompt(
+            plugin_name, language, user_style, **variables,
         )
         system_prompt = self._get_system_prompt(
             system_style, language, custom_system_prompt=custom_system_prompt,

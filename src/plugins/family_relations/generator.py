@@ -18,7 +18,6 @@ import random
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.family_relations.prompts import USER_PROMPT_TEMPLATES
 from src.plugins.family_relations import i18n
 
 
@@ -567,8 +566,8 @@ class FamilyRelationsGenerator(TestCaseGenerator):
         sub_type: str,
         meta: Dict[str, Any],
     ) -> TestCase:
-        user_prompt, system_prompt, full_prompt = self._build_prompts(
-            USER_PROMPT_TEMPLATES, language, user_style, system_style,
+        user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+            "family_relations", language, user_style, system_style,
             puzzle=puzzle_text,
         )
 

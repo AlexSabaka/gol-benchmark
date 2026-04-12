@@ -22,12 +22,16 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { PageHeader } from "@/components/layout/page-header"
+import { TaskBadge } from "@/components/task-badge"
 import { useTestsets } from "@/hooks/use-testsets"
 import { useOllamaModels, useOpenAIModels, useHFModels } from "@/hooks/use-models"
 import { useRunBenchmark } from "@/hooks/use-jobs"
 import { saveCredential, loadCredentials } from "@/lib/credential-store"
 import { favoriteKey, getFavorites, toggleFavorite } from "@/lib/favorite-models"
-import type { RunRequest } from "@/types"
+import { langFlags } from "@/lib/language-flags"
+import { makeStorageKey, useLocalStorageSetState, useLocalStorageState } from "@/lib/local-storage"
+import { formatBytes, formatDate } from "@/lib/utils"
+import type { RunRequest, TestsetSummary } from "@/types"
 
 // ── Types ──
 
@@ -51,6 +55,58 @@ interface OpenAIEndpoint {
 function selectedModelKey(m: SelectedModel): string {
   if (m.provider === "openai_compatible") return `openai_compatible:${m.apiBase}:${m.id}`
   return `${m.provider}:${m.id}`
+}
+
+function ExecuteTestsetGridRow({
+  summary,
+  selected,
+  onToggle,
+}: {
+  summary: TestsetSummary
+  selected: boolean
+  onToggle: () => void
+}) {
+  const title = summary.filename.replace(".json.gz", "")
+  const languages = summary.languages ?? []
+
+  return (
+    <tr className={selected ? "bg-primary/5" : "hover:bg-muted/30"}>
+      <td className="px-3 py-3 align-top">
+        <Checkbox
+          checked={selected}
+          onCheckedChange={() => onToggle()}
+          aria-label={`Select ${title}`}
+        />
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="min-w-0">
+          <p className="truncate text-sm font-medium" title={title}>{title}</p>
+          {summary.matrix_label && (
+            <p className="mt-1 truncate text-[11px] text-muted-foreground" title={summary.matrix_label}>
+              {summary.matrix_label}
+            </p>
+          )}
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top">
+        <div className="flex min-w-40 flex-wrap gap-1">
+          {summary.task_types.map((task) => (
+            <TaskBadge key={task} task={task} />
+          ))}
+        </div>
+      </td>
+      <td className="px-3 py-3 align-top text-sm">
+        {languages.length > 0 ? (
+          <span title={languages.join(", ")}>{langFlags(languages)}</span>
+        ) : (
+          <span className="text-xs text-muted-foreground">-</span>
+        )}
+      </td>
+      <td className="px-3 py-3 align-top text-xs text-muted-foreground">{summary.test_count}</td>
+      <td className="px-3 py-3 align-top text-xs text-muted-foreground">{formatBytes(summary.size_bytes)}</td>
+      <td className="px-3 py-3 align-top text-xs text-muted-foreground whitespace-nowrap">{formatDate(summary.created)}</td>
+    </tr>
+  )
 }
 
 // ── Sub-components for per-provider model discovery ──
@@ -107,7 +163,7 @@ function ModelList({
   }
 
   return (
-    <div className="grid gap-1 sm:grid-cols-2 max-h-[220px] overflow-y-auto">
+    <div className="grid max-h-55 gap-1 overflow-y-auto sm:grid-cols-2">
       {filtered.map((m) => {
         const sm: SelectedModel = { id: m.id, provider, ...extraCtx }
         const key = selectedModelKey(sm)
@@ -256,7 +312,7 @@ function OpenAIEndpointSection({
             const cred = savedCredentials.find((c) => c.apiBase === v)
             if (cred) onChange({ ...endpoint, apiBase: cred.apiBase, apiKey: cred.apiKey })
           }}>
-            <SelectTrigger className="h-6 w-[160px] text-xs">
+            <SelectTrigger className="h-6 w-40 text-xs">
               <SelectValue placeholder="Load saved..." />
             </SelectTrigger>
             <SelectContent>
@@ -351,13 +407,21 @@ function HuggingFaceSection({
 let _endpointCounter = 1
 
 export default function ExecutePage() {
+  const storageScope = "execute-page"
   const nav = useNavigate()
   const [params] = useSearchParams()
   const { data: testsets } = useTestsets()
   const runMutation = useRunBenchmark()
+  const requestedTestset = params.get("testset")
 
   // Form state
-  const [testsetFilename, setTestsetFilename] = useState(() => params.get("testset") ?? "")
+  const [selectedTestsets, setSelectedTestsets] = useLocalStorageSetState<string>(
+    makeStorageKey(storageScope, "selected-testsets"),
+    requestedTestset ? [requestedTestset] : [],
+  )
+  const [testsetSearch, setTestsetSearch] = useLocalStorageState<string>(makeStorageKey(storageScope, "testset-search"), "")
+  const [testsetPage, setTestsetPage] = useLocalStorageState<number>(makeStorageKey(storageScope, "testset-page"), 1)
+  const [testsetPageSize, setTestsetPageSize] = useLocalStorageState<number>(makeStorageKey(storageScope, "testset-page-size"), 9)
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434")
   const [openaiEndpoints, setOpenaiEndpoints] = useState<OpenAIEndpoint[]>([
     { key: "ep_0", apiBase: "", apiKey: "" },
@@ -378,6 +442,25 @@ export default function ExecutePage() {
   useEffect(() => {
     loadCredentials().then(setSavedCredentials)
   }, [])
+
+  useEffect(() => {
+    if (!requestedTestset) return
+    setSelectedTestsets(new Set([requestedTestset]))
+    setTestsetPage(1)
+  }, [requestedTestset, setSelectedTestsets, setTestsetPage])
+
+  useEffect(() => {
+    if (!testsets?.length) return
+
+    const valid = new Set(testsets.map((summary) => summary.filename))
+    setSelectedTestsets((previous) => {
+      const next = new Set([...previous].filter((filename) => valid.has(filename)))
+      if (next.size === previous.size && [...next].every((filename) => previous.has(filename))) {
+        return previous
+      }
+      return next
+    })
+  }, [setSelectedTestsets, testsets])
 
   const toggleModelSelection = useCallback((m: SelectedModel) => {
     setSelected((prev) => {
@@ -423,6 +506,7 @@ export default function ExecutePage() {
 
   const hasFavorites = favorites.size > 0
   const selectedCount = selected.size
+  const selectedTestsetCount = selectedTestsets.size
 
   const providerLabel: Record<string, string> = {
     ollama: "Ollama",
@@ -430,9 +514,53 @@ export default function ExecutePage() {
     huggingface: "HuggingFace",
   }
 
+  const filteredTestsets = useMemo(() => {
+    const query = testsetSearch.trim().toLowerCase()
+    return [...(testsets ?? [])]
+      .filter((summary) => {
+        if (!query) return true
+        const haystack = [
+          summary.filename,
+          summary.matrix_label ?? "",
+          summary.matrix_plugin ?? "",
+          summary.matrix_batch_id ?? "",
+          summary.task_types.join(" "),
+          summary.languages.join(" "),
+        ].join(" ").toLowerCase()
+        return haystack.includes(query)
+      })
+      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+  }, [testsetSearch, testsets])
+
+  const totalTestsetPages = Math.max(1, Math.ceil(filteredTestsets.length / Math.max(testsetPageSize, 1)))
+  const currentTestsetPage = Math.min(Math.max(testsetPage, 1), totalTestsetPages)
+
+  useEffect(() => {
+    if (currentTestsetPage !== testsetPage) {
+      setTestsetPage(currentTestsetPage)
+    }
+  }, [currentTestsetPage, setTestsetPage, testsetPage])
+
+  const paginatedTestsets = useMemo(() => {
+    const start = (currentTestsetPage - 1) * testsetPageSize
+    return filteredTestsets.slice(start, start + testsetPageSize)
+  }, [currentTestsetPage, filteredTestsets, testsetPageSize])
+
+  const visibleTestsetNames = useMemo(
+    () => paginatedTestsets.map((summary) => summary.filename),
+    [paginatedTestsets],
+  )
+
+  const allVisibleTestsetsSelected = visibleTestsetNames.length > 0 && visibleTestsetNames.every((filename) => selectedTestsets.has(filename))
+
   const handleRun = async () => {
-    if (!testsetFilename) { toast.error("Select a test set"); return }
+    if (selectedTestsetCount === 0) { toast.error("Select at least one test set"); return }
     if (selectedCount === 0) { toast.error("Select at least one model"); return }
+
+    const testsetFilenames = Array.from(selectedTestsets).sort()
+    const sharedRunGroupId = typeof crypto !== "undefined" && typeof crypto.randomUUID === "function"
+      ? crypto.randomUUID().slice(0, 8)
+      : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 8)
 
     // Group selected models by provider + endpoint
     const groups = new Map<string, { provider: string; models: string[]; ollamaHost?: string; apiBase?: string; apiKey?: string }>()
@@ -458,9 +586,10 @@ export default function ExecutePage() {
     let totalJobs = 0
     for (const group of groups.values()) {
       const req: RunRequest = {
-        testset_filename: testsetFilename,
+        testset_filenames: testsetFilenames,
         models: group.models,
         provider: group.provider,
+        run_group_id: sharedRunGroupId,
         temperature,
         max_tokens: maxTokens,
         no_think: noThink,
@@ -475,7 +604,7 @@ export default function ExecutePage() {
       }
     }
     if (totalJobs > 0) {
-      toast.success(`Started ${totalJobs} job(s) across ${groups.size} provider(s)`)
+      toast.success(`Started ${totalJobs} job(s) across ${testsetFilenames.length} testset(s)`)
       nav("/jobs")
     }
   }
@@ -566,20 +695,130 @@ export default function ExecutePage() {
         <div className="flex-1 max-w-3xl space-y-6">
           {/* Test set selector */}
           <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Test Set</CardTitle></CardHeader>
-            <CardContent>
-              <Select value={testsetFilename} onValueChange={setTestsetFilename}>
-                <SelectTrigger className="max-w-lg">
-                  <SelectValue placeholder="Select a test set..." />
-                </SelectTrigger>
-                <SelectContent>
-                  {(testsets ?? []).map((ts) => (
-                    <SelectItem key={ts.filename} value={ts.filename}>
-                      {ts.filename.replace(".json.gz", "")} ({ts.test_count} tests)
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
+            <CardHeader className="pb-3">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <CardTitle className="text-sm">Test Sets</CardTitle>
+                <div className="flex items-center gap-2">
+                  <Badge variant="secondary">{selectedTestsetCount} selected</Badge>
+                  <Badge variant="outline">{filteredTestsets.length} visible</Badge>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <div className="relative min-w-60 flex-1 sm:max-w-sm">
+                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+                  <Input
+                    value={testsetSearch}
+                    onChange={(event) => {
+                      setTestsetSearch(event.target.value)
+                      setTestsetPage(1)
+                    }}
+                    placeholder="Filter test sets..."
+                    className="pl-8"
+                  />
+                </div>
+                <Select value={String(testsetPageSize)} onValueChange={(value) => {
+                  setTestsetPageSize(Number(value))
+                  setTestsetPage(1)
+                }}>
+                  <SelectTrigger className="h-9 w-28">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {[6, 9, 12, 18].map((size) => (
+                      <SelectItem key={size} value={String(size)}>{size} / page</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  className="h-9 text-xs"
+                  onClick={() => {
+                    setSelectedTestsets((previous) => {
+                      const next = new Set(previous)
+                      for (const filename of visibleTestsetNames) next.add(filename)
+                      return next
+                    })
+                  }}
+                  disabled={visibleTestsetNames.length === 0 || allVisibleTestsetsSelected}
+                >
+                  Select Page
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-9 text-xs"
+                  onClick={() => setSelectedTestsets(new Set())}
+                  disabled={selectedTestsetCount === 0}
+                >
+                  Clear Selection
+                </Button>
+              </div>
+
+              {paginatedTestsets.length === 0 ? (
+                <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+                  No test sets match the current filter.
+                </div>
+              ) : (
+                <div className="overflow-x-auto rounded-lg border">
+                  <table className="min-w-[940px] w-full text-sm">
+                    <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
+                      <tr>
+                        <th className="w-12 px-3 py-2 font-medium">Pick</th>
+                        <th className="px-3 py-2 font-medium">Test Set</th>
+                        <th className="w-56 px-3 py-2 font-medium">Tasks</th>
+                        <th className="w-24 px-3 py-2 font-medium">Lang</th>
+                        <th className="w-20 px-3 py-2 font-medium">Tests</th>
+                        <th className="w-24 px-3 py-2 font-medium">Size</th>
+                        <th className="w-40 px-3 py-2 font-medium">Created</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {paginatedTestsets.map((summary) => (
+                        <ExecuteTestsetGridRow
+                          key={summary.filename}
+                          summary={summary}
+                          selected={selectedTestsets.has(summary.filename)}
+                          onToggle={() => {
+                            setSelectedTestsets((previous) => {
+                              const next = new Set(previous)
+                              if (next.has(summary.filename)) next.delete(summary.filename)
+                              else next.add(summary.filename)
+                              return next
+                            })
+                          }}
+                        />
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+
+              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
+                <span>Page {currentTestsetPage} of {totalTestsetPages}</span>
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setTestsetPage((page) => Math.max(1, page - 1))}
+                    disabled={currentTestsetPage <= 1}
+                  >
+                    Previous
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-8 text-xs"
+                    onClick={() => setTestsetPage((page) => Math.min(totalTestsetPages, page + 1))}
+                    disabled={currentTestsetPage >= totalTestsetPages}
+                  >
+                    Next
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
 
@@ -721,8 +960,11 @@ export default function ExecutePage() {
           {/* Run button with summary */}
           <div className="flex items-center justify-between">
             <div className="text-xs text-muted-foreground">
-              {selectedCount > 0 && (
+              {(selectedCount > 0 || selectedTestsetCount > 0) && (
                 <span>
+                  <Badge variant="outline" className="mr-1 text-[10px]">
+                    Test Sets: {selectedTestsetCount}
+                  </Badge>
                   {Object.entries(selectionSummary).map(([p, c]) => (
                     <Badge key={p} variant="outline" className="mr-1 text-[10px]">
                       {providerLabel[p] ?? p}: {c}
@@ -731,9 +973,9 @@ export default function ExecutePage() {
                 </span>
               )}
             </div>
-            <Button onClick={handleRun} disabled={runMutation.isPending || !testsetFilename || selectedCount === 0}>
+            <Button onClick={handleRun} disabled={runMutation.isPending || selectedTestsetCount === 0 || selectedCount === 0}>
               {runMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              Run on {selectedCount} Model{selectedCount !== 1 ? "s" : ""}
+              Run {selectedTestsetCount * selectedCount} Job{selectedTestsetCount * selectedCount !== 1 ? "s" : ""}
             </Button>
           </div>
         </div>

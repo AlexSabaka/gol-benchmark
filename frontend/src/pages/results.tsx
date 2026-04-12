@@ -1,11 +1,33 @@
 import { useCallback, useMemo, useState } from "react"
-import type { ColumnDef, Table } from "@tanstack/react-table"
-import { toast } from "sonner"
 import { useNavigate } from "react-router"
-import { Eye, BarChart3, LineChart, FileText, Loader2, MoreHorizontal, RefreshCw, RotateCcw, Trash2, CheckSquare, Square, Scale } from "lucide-react"
+import type { ColumnDef } from "@tanstack/react-table"
+import { toast } from "sonner"
+import {
+  BarChart3,
+  Eye,
+  FileText,
+  LineChart,
+  Loader2,
+  MoreHorizontal,
+  RefreshCw,
+  RotateCcw,
+  Scale,
+  Search,
+  Trash2,
+} from "lucide-react"
 
+import { DataTable } from "@/components/data-table/data-table"
+import { GroupedGridSection } from "@/components/grouped-grid-section"
+import { JudgeSetupSheet } from "@/components/judge-setup-sheet"
+import { PageHeader } from "@/components/layout/page-header"
+import { languageFilterOptions } from "@/components/language-filter-chip"
+import { PageFacetFilter } from "@/components/page-facet-filter"
+import { ParamOverrideModal } from "@/components/param-override-modal"
+import { ResultSummaryCard } from "@/components/result-summary-card"
+import { TaskBadge } from "@/components/task-badge"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { Checkbox } from "@/components/ui/checkbox"
 import {
   Dialog,
   DialogContent,
@@ -21,6 +43,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
+import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
   Sheet,
@@ -30,19 +53,157 @@ import {
 } from "@/components/ui/sheet"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
-import { DataTable } from "@/components/data-table/data-table"
-import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
-import { JudgeSetupSheet } from "@/components/judge-setup-sheet"
-import { PageHeader } from "@/components/layout/page-header"
-import { TaskBadge } from "@/components/task-badge"
-import { formatDuration, formatPercent } from "@/lib/utils"
-import { langFlags } from "@/lib/language-flags"
-import { useResults, useResult, useAnalyzeResults, useGenerateReport, useReanalyzeResult, useDeleteResult } from "@/hooks/use-results"
+import { useAnalyzeResults, useDeleteResult, useGenerateReport, useReanalyzeResult, useResult, useResults } from "@/hooks/use-results"
 import { useTestsets } from "@/hooks/use-testsets"
-import { ParamOverrideModal } from "@/components/param-override-modal"
-import type { ResultSummary, ResultEntry, ModelAnalysis } from "@/types"
+import { langFlags } from "@/lib/language-flags"
+import { makeStorageKey, useLocalStorageState } from "@/lib/local-storage"
+import { formatDate, formatDuration, formatPercent } from "@/lib/utils"
+import type { ModelAnalysis, ResultEntry, ResultSummary, TestsetSummary } from "@/types"
+
+type ViewMode = "table" | "cards"
+type GroupMode = "none" | "model" | "task_type" | "testset" | "matrix_batch" | "run"
+
+interface ResultGroup {
+  key: string
+  title: string
+  subtitle?: string
+  countLabel: string
+  items: ResultSummary[]
+  headerExtras?: React.ReactNode
+}
+
+function matchesAny(values: string[] | undefined, selected: string[]) {
+  if (selected.length === 0) return true
+  return selected.some((value) => (values ?? []).includes(value))
+}
+
+function matchesSearch(summary: ResultSummary, query: string) {
+  if (!query) return true
+
+  const haystack = [
+    summary.filename,
+    summary.model_name,
+    summary.testset_name,
+    summary.task_types.join(" "),
+    summary.languages.join(" "),
+    summary.matrix_label ?? "",
+    summary.matrix_plugin ?? "",
+    summary.matrix_batch_id ?? "",
+    summary.run_group_id ?? "",
+  ].join(" ").toLowerCase()
+
+  return haystack.includes(query)
+}
+
+function normalizeName(value: string | null | undefined) {
+  return (value ?? "").replace(/\.json\.gz$/i, "").trim().toLowerCase()
+}
+
+function buildGroups(results: ResultSummary[], groupBy: GroupMode): ResultGroup[] {
+  if (groupBy === "none") return []
+
+  const grouped = new Map<string, ResultSummary[]>()
+  for (const summary of results) {
+    let key = "all"
+    switch (groupBy) {
+      case "model":
+        key = summary.model_name || "Unknown Model"
+        break
+      case "task_type":
+        key = summary.task_types.length === 1 ? summary.task_types[0] : summary.task_types.join(", ") || "unknown"
+        break
+      case "testset":
+        key = summary.testset_name || "Unknown Test Set"
+        break
+      case "matrix_batch":
+        key = summary.matrix_batch_id ?? "__standalone__"
+        break
+      case "run":
+        key = summary.run_group_id ?? "__ungrouped__"
+        break
+    }
+
+    const items = grouped.get(key) ?? []
+    items.push(summary)
+    grouped.set(key, items)
+  }
+
+  return Array.from(grouped.entries()).map(([key, items]) => {
+    const first = items[0]
+    const distinctModels = new Set(items.map((item) => item.model_name)).size
+
+    if (groupBy === "model") {
+      return {
+        key,
+        title: key,
+        subtitle: `${items.length} result${items.length !== 1 ? "s" : ""}`,
+        countLabel: `${items.length} items`,
+        items,
+      }
+    }
+
+    if (groupBy === "task_type") {
+      return {
+        key,
+        title: key === "unknown" ? "Unknown Task" : key,
+        subtitle: `${items.length} result${items.length !== 1 ? "s" : ""}`,
+        countLabel: `${items.length} items`,
+        items,
+      }
+    }
+
+    if (groupBy === "testset") {
+      return {
+        key,
+        title: key,
+        subtitle: `${distinctModels} model${distinctModels !== 1 ? "s" : ""}`,
+        countLabel: `${items.length} results`,
+        items,
+      }
+    }
+
+    if (groupBy === "matrix_batch") {
+      if (key === "__standalone__") {
+        return {
+          key,
+          title: "Standalone Results",
+          subtitle: "Results without matrix metadata",
+          countLabel: `${items.length} results`,
+          items,
+        }
+      }
+
+      return {
+        key,
+        title: `Matrix Batch ${key}`,
+        subtitle: `${first.matrix_plugin ?? first.testset_name ?? "Matrix"} • ${distinctModels} model${distinctModels !== 1 ? "s" : ""}`,
+        countLabel: `${items.length} results`,
+        items,
+      }
+    }
+
+    if (key === "__ungrouped__") {
+      return {
+        key,
+        title: "Ungrouped Results",
+        subtitle: "Results without run-group metadata",
+        countLabel: `${items.length} results`,
+        items,
+      }
+    }
+
+    return {
+      key,
+      title: `Run ${key.slice(0, 8)}`,
+      subtitle: `${first.testset_name || "Unknown Test Set"} • ${distinctModels} model${distinctModels !== 1 ? "s" : ""}`,
+      countLabel: `${items.length} results`,
+      items,
+    }
+  })
+}
 
 export default function ResultsPage() {
+  const storageScope = "results-page"
   const nav = useNavigate()
   const { data: results, isLoading } = useResults()
   const analyzeMutation = useAnalyzeResults()
@@ -54,66 +215,167 @@ export default function ResultsPage() {
   const [selected, setSelected] = useState<Set<string>>(new Set())
   const [detailTarget, setDetailTarget] = useState<string | null>(null)
   const { data: detail } = useResult(detailTarget)
-  const [groupBy, setGroupBy] = useState<"none" | "task_type" | "model" | "testset">("none")
+  const [storedViewMode, setStoredViewMode] = useLocalStorageState<ViewMode>(makeStorageKey(storageScope, "view-mode"), "table")
+  const [groupBy, setGroupBy] = useLocalStorageState<GroupMode>(makeStorageKey(storageScope, "group-by"), "none")
   const [rerunTarget, setRerunTarget] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [judgeOpen, setJudgeOpen] = useState(false)
+  const [searchTerm, setSearchTerm] = useLocalStorageState<string>(makeStorageKey(storageScope, "search"), "")
+  const [modelFilter, setModelFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "model-filter"), [])
+  const [taskFilter, setTaskFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "task-filter"), [])
+  const [languageFilter, setLanguageFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "language-filter"), [])
+  const [userStyleFilter, setUserStyleFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "user-style-filter"), [])
+  const [systemStyleFilter, setSystemStyleFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "system-style-filter"), [])
+  const viewMode: ViewMode = groupBy === "none" && storedViewMode === "cards" ? "table" : storedViewMode
+
+  const setSelectionFor = useCallback((filenames: string[], nextChecked: boolean) => {
+    setSelected((previous) => {
+      const next = new Set(previous)
+      for (const filename of filenames) {
+        if (nextChecked) next.add(filename)
+        else next.delete(filename)
+      }
+      return next
+    })
+  }, [])
 
   const toggleSelect = useCallback((filename: string) => {
-    setSelected((prev) => {
-      const next = new Set(prev)
+    setSelected((previous) => {
+      const next = new Set(previous)
       if (next.has(filename)) next.delete(filename)
       else next.add(filename)
       return next
     })
   }, [])
 
+  const filteredResults = useMemo(() => {
+    const query = searchTerm.trim().toLowerCase()
+    return [...(results ?? [])]
+      .filter((summary) => matchesSearch(summary, query))
+      .filter((summary) => modelFilter.length === 0 || modelFilter.includes(summary.model_name))
+      .filter((summary) => taskFilter.length === 0 || taskFilter.some((value) => summary.task_types.includes(value)))
+      .filter((summary) => matchesAny(summary.languages, languageFilter))
+      .filter((summary) => matchesAny(summary.user_styles, userStyleFilter))
+      .filter((summary) => matchesAny(summary.system_styles, systemStyleFilter))
+      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
+  }, [languageFilter, modelFilter, results, searchTerm, systemStyleFilter, taskFilter, userStyleFilter])
+
+  const filteredFilenames = useMemo(() => filteredResults.map((summary) => summary.filename), [filteredResults])
+  const allFilteredSelected = filteredFilenames.length > 0 && filteredFilenames.every((filename) => selected.has(filename))
+  const someFilteredSelected = filteredFilenames.some((filename) => selected.has(filename)) && !allFilteredSelected
+  const showFlatOrGroupedTable = viewMode === "table" || groupBy === "none"
+
+  const buildDisplayGroups = useCallback((rows: ResultSummary[]) => {
+    return buildGroups(rows, groupBy).map((group) => {
+      const groupFilenames = group.items.map((item) => item.filename)
+      const allSelectedInGroup = groupFilenames.every((filename) => selected.has(filename))
+      const selectedCount = groupFilenames.filter((filename) => selected.has(filename)).length
+      const matrixPlugin = groupBy === "matrix_batch" ? group.items[0]?.matrix_plugin : null
+
+      return {
+        ...group,
+        headerExtras: (
+          <div className="flex items-center gap-2">
+            {matrixPlugin && <Badge variant="outline">{matrixPlugin}</Badge>}
+            {selectedCount > 0 && <Badge variant="secondary">{selectedCount} selected</Badge>}
+            <Button
+              variant="outline"
+              size="sm"
+              className="h-7 text-xs"
+              onClick={(event) => {
+                event.stopPropagation()
+                setSelectionFor(groupFilenames, !allSelectedInGroup)
+              }}
+            >
+              {allSelectedInGroup ? "Deselect Group" : "Select Group"}
+            </Button>
+          </div>
+        ),
+      }
+    })
+  }, [groupBy, selected, setSelectionFor])
+
+  const groups = useMemo(() => {
+    if (groupBy === "none") return []
+    return buildDisplayGroups(filteredResults)
+  }, [buildDisplayGroups, filteredResults, groupBy])
+
+  const handleSelectAll = useCallback(() => {
+    setSelectionFor(filteredFilenames, true)
+  }, [filteredFilenames, setSelectionFor])
+
+  const handleDeselectAll = useCallback(() => {
+    setSelectionFor(filteredFilenames, false)
+  }, [filteredFilenames, setSelectionFor])
+
+  const resolveTestsetFilename = useCallback((summary: ResultSummary) => {
+    const target = normalizeName(summary.testset_name)
+    const match = testsets?.find((testset: TestsetSummary) => {
+      const filename = normalizeName(testset.filename)
+      const metadataName = normalizeName(String((testset.metadata as Record<string, unknown>)?.name ?? ""))
+      return filename === target || metadataName === target
+    })
+    return match?.filename
+  }, [testsets])
+
+  const openRerun = useCallback((summary: ResultSummary) => {
+    const filename = resolveTestsetFilename(summary)
+    if (filename) {
+      setRerunTarget(filename)
+      return
+    }
+
+    toast.info("Testset not found — redirecting to Execute page")
+    nav("/execute")
+  }, [nav, resolveTestsetFilename])
+
   const handleAnalyze = async () => {
-    if (selected.size === 0) { toast.error("Select result files to analyze"); return }
+    if (selected.size === 0) {
+      toast.error("Select result files to analyze")
+      return
+    }
     try {
-      const res = await analyzeMutation.mutateAsync({ result_filenames: Array.from(selected), comparison: selected.size > 1 })
-      toast.success(`Analysis complete — ${res.model_count} model(s)`)
-    } catch (err) {
-      toast.error(`Analysis failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+      const response = await analyzeMutation.mutateAsync({
+        result_filenames: Array.from(selected),
+        comparison: selected.size > 1,
+      })
+      toast.success(`Analysis complete — ${response.model_count} model(s)`)
+    } catch (error) {
+      toast.error(`Analysis failed: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   const handleReanalyze = async () => {
-    if (selected.size === 0) { toast.error("Select result files to reanalyze"); return }
+    if (selected.size === 0) {
+      toast.error("Select result files to reanalyze")
+      return
+    }
+
     let totalChanges = 0
     for (const filename of selected) {
       try {
-        const res = await reanalyzeMutation.mutateAsync(filename)
-        totalChanges += res.changes
-        if (res.changes > 0) {
+        const response = await reanalyzeMutation.mutateAsync(filename)
+        totalChanges += response.changes
+        if (response.changes > 0) {
           toast.success(
-            `${filename.slice(0, 40)}: ${res.changes} changes, accuracy ${(res.old_accuracy * 100).toFixed(1)}% → ${(res.new_accuracy * 100).toFixed(1)}%`
+            `${filename.slice(0, 40)}: ${response.changes} changes, accuracy ${(response.old_accuracy * 100).toFixed(1)}% → ${(response.new_accuracy * 100).toFixed(1)}%`,
           )
         }
-      } catch (err) {
-        toast.error(`Reanalysis failed for ${filename}: ${err instanceof Error ? err.message : "Unknown error"}`)
+      } catch (error) {
+        toast.error(`Reanalysis failed for ${filename}: ${error instanceof Error ? error.message : "Unknown error"}`)
       }
     }
-    if (totalChanges === 0) toast.info("No evaluation changes detected")
-  }
 
-  // Track filtered rows from DataTable for filter-aware select all
-  const [filteredFilenames, setFilteredFilenames] = useState<string[]>([])
-  const handleFilteredRowsChange = useCallback((rows: ResultSummary[]) => {
-    setFilteredFilenames(rows.map((r) => r.filename))
-  }, [])
-
-  const handleSelectAll = () => {
-    // Select only visible/filtered rows, not all results
-    setSelected(new Set(filteredFilenames.length > 0 ? filteredFilenames : (results ?? []).map((r) => r.filename)))
+    if (totalChanges === 0) {
+      toast.info("No evaluation changes detected")
+    }
   }
-  const handleDeselectAll = () => setSelected(new Set())
 
   const handleDelete = async () => {
     for (const filename of selected) {
       try {
         await deleteMutation.mutateAsync(filename)
-      } catch (err) {
+      } catch {
         toast.error(`Delete failed: ${filename}`)
       }
     }
@@ -123,111 +385,62 @@ export default function ResultsPage() {
   }
 
   const handleGenerateReport = async () => {
-    if (selected.size === 0) { toast.error("Select result files for report"); return }
+    if (selected.size === 0) {
+      toast.error("Select result files for report")
+      return
+    }
     try {
-      const res = await reportMutation.mutateAsync({ result_filenames: Array.from(selected) })
-      toast.success(`Report generated: ${res.filename}`)
+      const response = await reportMutation.mutateAsync({ result_filenames: Array.from(selected) })
+      toast.success(`Report generated: ${response.filename}`)
       nav("/reports")
-    } catch (err) {
-      toast.error(`Report failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+    } catch (error) {
+      toast.error(`Report failed: ${error instanceof Error ? error.message : "Unknown error"}`)
     }
   }
 
   const modelOptions = useMemo(() => {
-    const unique = [...new Set((results ?? []).map((r) => r.model_name))].sort()
-    return unique.map((m) => ({ label: m, value: m }))
+    const unique = [...new Set((results ?? []).map((summary) => summary.model_name))].sort()
+    return unique.map((model) => ({ label: model, value: model }))
   }, [results])
 
   const taskOptions = useMemo(() => {
-    const unique = [...new Set((results ?? []).flatMap((r) => r.task_types))].sort()
-    return unique.map((t) => ({ label: t, value: t }))
+    const unique = [...new Set((results ?? []).flatMap((summary) => summary.task_types))].sort()
+    return unique.map((task) => ({ label: task, value: task }))
   }, [results])
 
-  const langOptions = useMemo(() => {
-    const unique = [...new Set((results ?? []).flatMap((r) => r.languages ?? []))].sort()
-    return unique.map((l) => ({ label: l, value: l }))
+  const languageOptions = useMemo(() => {
+    const unique = [...new Set((results ?? []).flatMap((summary) => summary.languages ?? []))].sort()
+    return languageFilterOptions(unique)
   }, [results])
 
   const userStyleOptions = useMemo(() => {
-    const unique = [...new Set((results ?? []).flatMap((r) => r.user_styles ?? []))].sort()
-    return unique.map((s) => ({ label: s, value: s }))
+    const unique = [...new Set((results ?? []).flatMap((summary) => summary.user_styles ?? []))].sort()
+    return unique.map((style) => ({ label: style, value: style }))
   }, [results])
 
   const systemStyleOptions = useMemo(() => {
-    const unique = [...new Set((results ?? []).flatMap((r) => r.system_styles ?? []))].sort()
-    return unique.map((s) => ({ label: s, value: s }))
+    const unique = [...new Set((results ?? []).flatMap((summary) => summary.system_styles ?? []))].sort()
+    return unique.map((style) => ({ label: style, value: style }))
   }, [results])
-
-  // Group results for display
-  const groupedResults = useMemo(() => {
-    if (groupBy === "none" || !results) return results ?? []
-    const sorted = [...results]
-    if (groupBy === "model") {
-      sorted.sort((a, b) => a.model_name.localeCompare(b.model_name))
-    } else if (groupBy === "task_type") {
-      sorted.sort((a, b) => (a.task_types[0] ?? "").localeCompare(b.task_types[0] ?? ""))
-    } else if (groupBy === "testset") {
-      sorted.sort((a, b) => (a.testset_name ?? "").localeCompare(b.testset_name ?? ""))
-    }
-    return sorted
-  }, [results, groupBy])
-
-  const toolbar = (table: Table<ResultSummary>) => (
-    <>
-      {table.getColumn("model_name") && modelOptions.length > 1 && (
-        <DataTableFacetedFilter column={table.getColumn("model_name")} title="Model" options={modelOptions} />
-      )}
-      {table.getColumn("task_types") && taskOptions.length > 1 && (
-        <DataTableFacetedFilter column={table.getColumn("task_types")} title="Task" options={taskOptions} />
-      )}
-      {table.getColumn("languages") && langOptions.length > 1 && (
-        <DataTableFacetedFilter column={table.getColumn("languages")} title="Lang" options={langOptions} />
-      )}
-      {table.getColumn("user_styles") && userStyleOptions.length > 1 && (
-        <DataTableFacetedFilter column={table.getColumn("user_styles")} title="User Style" options={userStyleOptions} />
-      )}
-      {table.getColumn("system_styles") && systemStyleOptions.length > 1 && (
-        <DataTableFacetedFilter column={table.getColumn("system_styles")} title="Sys Style" options={systemStyleOptions} />
-      )}
-      <div className="flex items-center gap-1 ml-2">
-        <span className="text-xs text-muted-foreground">Group:</span>
-        {(["none", "model", "task_type", "testset"] as const).map((g) => (
-          <Button
-            key={g}
-            variant={groupBy === g ? "secondary" : "ghost"}
-            size="sm"
-            className="h-6 text-xs px-2"
-            onClick={() => setGroupBy(g)}
-          >
-            {g === "none" ? "None" : g === "model" ? "Model" : g === "task_type" ? "Task" : "Test Set"}
-          </Button>
-        ))}
-      </div>
-    </>
-  )
 
   const columns: ColumnDef<ResultSummary>[] = [
     {
       id: "select",
-      header: () => {
-        const allSelected = (results?.length ?? 0) > 0 && selected.size === (results?.length ?? 0)
-        const someSelected = selected.size > 0 && !allSelected
-        return (
-          <button
-            onClick={allSelected ? handleDeselectAll : handleSelectAll}
-            className="flex items-center"
-            title={allSelected ? "Deselect all" : "Select all"}
-          >
-            {allSelected ? <CheckSquare className="h-3.5 w-3.5" /> : someSelected ? <Square className="h-3.5 w-3.5 opacity-60" /> : <Square className="h-3.5 w-3.5 opacity-30" />}
-          </button>
-        )
-      },
+      header: () => (
+        <Checkbox
+          checked={allFilteredSelected ? true : someFilteredSelected ? "indeterminate" : false}
+          onCheckedChange={(checked) => {
+            if (checked) handleSelectAll()
+            else handleDeselectAll()
+          }}
+          aria-label="Select visible results"
+        />
+      ),
       cell: ({ row }) => (
-        <input
-          type="checkbox"
+        <Checkbox
           checked={selected.has(row.original.filename)}
-          onChange={() => toggleSelect(row.original.filename)}
-          className="h-3.5 w-3.5"
+          onCheckedChange={() => toggleSelect(row.original.filename)}
+          aria-label={`Select ${row.original.filename}`}
         />
       ),
       size: 32,
@@ -235,32 +448,27 @@ export default function ResultsPage() {
     {
       accessorKey: "model_name",
       header: "Model",
-      cell: ({ row }) => <span className="font-medium text-xs">{row.original.model_name}</span>,
-      filterFn: (row, _id, value: string[]) => value.includes(row.original.model_name),
+      cell: ({ row }) => <span className="text-xs font-medium">{row.original.model_name}</span>,
     },
     {
       accessorKey: "task_types",
       header: "Tasks",
       cell: ({ row }) => (
         <div className="flex flex-wrap gap-1">
-          {row.original.task_types.map((t) => (
-            <TaskBadge key={t} task={t} />
+          {row.original.task_types.map((task) => (
+            <TaskBadge key={task} task={task} />
           ))}
         </div>
       ),
-      filterFn: (row, _id, value: string[]) =>
-        value.some((v) => row.original.task_types.includes(v)),
     },
     {
       accessorKey: "languages",
       header: "Lang",
       cell: ({ row }) => {
-        const langs = row.original.languages ?? []
-        if (langs.length === 0) return <span className="text-xs text-muted-foreground">-</span>
-        return <span className="text-sm" title={langs.join(", ")}>{langFlags(langs)}</span>
+        const languages = row.original.languages ?? []
+        if (languages.length === 0) return <span className="text-xs text-muted-foreground">-</span>
+        return <span className="text-sm" title={languages.join(", ")}>{langFlags(languages)}</span>
       },
-      filterFn: (row, _id, value: string[]) =>
-        value.some((v) => (row.original.languages ?? []).includes(v)),
     },
     {
       accessorKey: "user_styles",
@@ -271,8 +479,6 @@ export default function ResultsPage() {
         if (styles.length === 1) return <span className="text-xs">{styles[0]}</span>
         return <span className="text-xs" title={styles.join(", ")}>multi</span>
       },
-      filterFn: (row, _id, value: string[]) =>
-        value.some((v) => (row.original.user_styles ?? []).includes(v)),
     },
     {
       accessorKey: "system_styles",
@@ -283,33 +489,25 @@ export default function ResultsPage() {
         if (styles.length === 1) return <span className="text-xs">{styles[0]}</span>
         return <span className="text-xs" title={styles.join(", ")}>multi</span>
       },
-      filterFn: (row, _id, value: string[]) =>
-        value.some((v) => (row.original.system_styles ?? []).includes(v)),
     },
     {
       accessorKey: "accuracy",
       header: "Accuracy",
       cell: ({ row }) => {
-        const acc = row.original.accuracy
-        const color = acc >= 0.7 ? "text-green-600" : acc >= 0.4 ? "text-yellow-600" : "text-red-600"
-        return <span className={`font-mono text-xs font-medium ${color}`}>{formatPercent(acc)}</span>
+        const accuracy = row.original.accuracy
+        const color = accuracy >= 0.7 ? "text-green-600" : accuracy >= 0.4 ? "text-yellow-600" : "text-red-600"
+        return <span className={`font-mono text-xs font-medium ${color}`}>{formatPercent(accuracy)}</span>
       },
     },
     {
       accessorKey: "total_tests",
       header: "Tests",
-      cell: ({ row }) => (
-        <Badge variant="secondary">
-          {row.original.correct}/{row.original.total_tests}
-        </Badge>
-      ),
+      cell: ({ row }) => <Badge variant="secondary">{row.original.correct}/{row.original.total_tests}</Badge>,
     },
     {
       accessorKey: "parse_error_rate",
       header: "Parse Errors",
-      cell: ({ row }) => (
-        <span className="text-xs text-muted-foreground">{formatPercent(row.original.parse_error_rate)}</span>
-      ),
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatPercent(row.original.parse_error_rate)}</span>,
     },
     {
       accessorKey: "total_tokens",
@@ -324,7 +522,7 @@ export default function ResultsPage() {
     {
       accessorKey: "created",
       header: "Created",
-      cell: ({ row }) => <span className="text-xs text-muted-foreground">{new Date(row.original.created).toLocaleString()}</span>,
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.created)}</span>,
     },
     {
       id: "actions",
@@ -339,31 +537,21 @@ export default function ResultsPage() {
             <DropdownMenuItem onClick={() => setDetailTarget(row.original.filename)}>
               <Eye className="mr-2 h-3.5 w-3.5" /> View Details
             </DropdownMenuItem>
-            <DropdownMenuItem onClick={() => {
-              const r = row.original
-              if (!r.testset_name) { toast.error("No testset info"); return }
-              const match = testsets?.find((ts) =>
-                ts.filename.includes(r.testset_name) ||
-                (ts.metadata as Record<string, string>)?.name === r.testset_name
-              )
-              if (match) {
-                setRerunTarget(match.filename)
-              } else {
-                toast.info("Testset not found — redirecting to Execute page")
-                nav("/execute")
-              }
-            }}>
+            <DropdownMenuItem onClick={() => openRerun(row.original)}>
               <RotateCcw className="mr-2 h-3.5 w-3.5" /> Rerun with Params
             </DropdownMenuItem>
             <DropdownMenuSeparator />
-            <DropdownMenuItem variant="destructive" onClick={async () => {
-              try {
-                await deleteMutation.mutateAsync(row.original.filename)
-                toast.success(`Deleted ${row.original.filename.slice(0, 40)}...`)
-              } catch {
-                toast.error(`Delete failed: ${row.original.filename}`)
-              }
-            }}>
+            <DropdownMenuItem
+              variant="destructive"
+              onClick={async () => {
+                try {
+                  await deleteMutation.mutateAsync(row.original.filename)
+                  toast.success(`Deleted ${row.original.filename.slice(0, 40)}...`)
+                } catch {
+                  toast.error(`Delete failed: ${row.original.filename}`)
+                }
+              }}
+            >
               <Trash2 className="mr-2 h-3.5 w-3.5" /> Delete
             </DropdownMenuItem>
           </DropdownMenuContent>
@@ -379,12 +567,11 @@ export default function ResultsPage() {
         description="Browse benchmark results, compare models and generate reports"
         actions={
           <div className="flex items-center gap-1">
-            {/* Analysis group */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={handleReanalyze} disabled={selected.size === 0 || reanalyzeMutation.isPending}>
                   {reanalyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Reanalyze</TooltipContent>
@@ -394,7 +581,7 @@ export default function ResultsPage() {
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={handleAnalyze} disabled={selected.size === 0 || analyzeMutation.isPending}>
                   {analyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Analyze</TooltipContent>
@@ -404,7 +591,7 @@ export default function ResultsPage() {
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => nav(`/charts?files=${Array.from(selected).join(",")}`)} disabled={selected.size === 0}>
                   <LineChart className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Charts</TooltipContent>
@@ -416,7 +603,7 @@ export default function ResultsPage() {
               <TooltipTrigger asChild>
                 <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
                   <Scale className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>LLM Judge</TooltipContent>
@@ -424,18 +611,18 @@ export default function ResultsPage() {
 
             <Separator orientation="vertical" className="mx-1 h-6" />
 
-            {/* Destructive */}
             <Tooltip>
               <TooltipTrigger asChild>
                 <Button variant="destructive" size="icon" className="relative h-8 w-8" onClick={() => setDeleteConfirm(true)} disabled={selected.size === 0}>
                   <Trash2 className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -top-1 -right-1 h-4 min-w-4 rounded-full bg-primary text-[10px] text-primary-foreground flex items-center justify-center px-0.5">{selected.size}</span>}
+                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
                 </Button>
               </TooltipTrigger>
               <TooltipContent>Delete</TooltipContent>
             </Tooltip>
 
-            {/* Generate Report keeps text label */}
+            <Separator orientation="vertical" className="mx-1 h-6" />
+
             <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
               {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
               Generate Report
@@ -444,15 +631,143 @@ export default function ResultsPage() {
         }
       />
 
-      <DataTable columns={columns} data={groupedResults} loading={isLoading} searchKey="model_name" searchPlaceholder="Search results..." toolbar={toolbar} onFilteredRowsChange={handleFilteredRowsChange} />
+      <div className="space-y-3 rounded-lg border bg-card p-4">
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="relative min-w-60 flex-1 sm:max-w-sm">
+            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+            <Input
+              value={searchTerm}
+              onChange={(event) => setSearchTerm(event.target.value)}
+              placeholder="Search results..."
+              className="pl-8"
+            />
+          </div>
+          {modelOptions.length > 1 && (
+            <PageFacetFilter title="Model" options={modelOptions} selectedValues={modelFilter} onChange={setModelFilter} />
+          )}
+          {taskOptions.length > 1 && (
+            <PageFacetFilter title="Task" options={taskOptions} selectedValues={taskFilter} onChange={setTaskFilter} />
+          )}
+          {languageOptions.length > 1 && (
+            <PageFacetFilter title="Lang" options={languageOptions} selectedValues={languageFilter} onChange={setLanguageFilter} />
+          )}
+          {userStyleOptions.length > 1 && (
+            <PageFacetFilter title="User Style" options={userStyleOptions} selectedValues={userStyleFilter} onChange={setUserStyleFilter} />
+          )}
+          {systemStyleOptions.length > 1 && (
+            <PageFacetFilter title="Sys Style" options={systemStyleOptions} selectedValues={systemStyleFilter} onChange={setSystemStyleFilter} />
+          )}
+        </div>
 
-      {/* Analyze results dialog (inline) */}
+        <div className="flex flex-wrap items-center gap-2">
+          <span className="text-xs text-muted-foreground">Format</span>
+          {([
+            ["table", "Table"],
+            ["cards", "Cards"],
+          ] as const).map(([value, label]) => (
+            <Button
+              key={value}
+              variant={viewMode === value ? "secondary" : "outline"}
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => setStoredViewMode(value)}
+              disabled={value === "cards" && groupBy === "none"}
+              title={value === "cards" && groupBy === "none" ? "Choose a grouping to enable cards" : undefined}
+            >
+              {label}
+            </Button>
+          ))}
+          <Separator orientation="vertical" className="h-6" />
+          <span className="text-xs text-muted-foreground">Group By</span>
+          {([
+            ["none", "None"],
+            ["run", "Run"],
+            ["matrix_batch", "Matrix Batch"],
+            ["testset", "Test Set"],
+            ["model", "Model"],
+            ["task_type", "Task"],
+          ] as const).map(([value, label]) => (
+            <Button
+              key={value}
+              variant={groupBy === value ? "secondary" : "outline"}
+              size="sm"
+              className="h-8 text-xs"
+              onClick={() => {
+                if (value === "none" && viewMode === "cards") {
+                  setStoredViewMode("table")
+                }
+                setGroupBy(value)
+              }}
+            >
+              {label}
+            </Button>
+          ))}
+          <Badge variant="secondary">{filteredResults.length} visible</Badge>
+          <Badge variant="secondary">{selected.size} selected</Badge>
+          <Button variant="outline" size="sm" className="ml-auto h-8 text-xs" onClick={handleSelectAll} disabled={filteredFilenames.length === 0}>
+            Select Visible
+          </Button>
+          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSelected(new Set())} disabled={selected.size === 0}>
+            Clear Selection
+          </Button>
+        </div>
+      </div>
+
+      {showFlatOrGroupedTable ? (
+        <DataTable
+          columns={columns}
+          data={filteredResults}
+          loading={isLoading}
+          grouping={groupBy === "none" ? undefined : { buildGroups: buildDisplayGroups }}
+          persistKey="results-table"
+          getRowId={(row) => row.filename}
+        />
+      ) : groups.length === 0 ? (
+        <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
+          No results match the current filters.
+        </div>
+      ) : (
+        <div className="space-y-4">
+          {groups.map((group, index) => (
+            <GroupedGridSection
+              key={group.key}
+              title={group.title}
+              subtitle={group.subtitle}
+              countLabel={group.countLabel}
+              defaultOpen={groups.length === 1 || index === 0}
+              headerExtras={group.headerExtras}
+            >
+              <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-3">
+                {group.items.map((summary) => (
+                  <ResultSummaryCard
+                    key={summary.filename}
+                    summary={summary}
+                    selected={selected.has(summary.filename)}
+                    onToggleSelect={() => toggleSelect(summary.filename)}
+                    onView={() => setDetailTarget(summary.filename)}
+                    onRerun={() => openRerun(summary)}
+                    onDelete={async () => {
+                      try {
+                        await deleteMutation.mutateAsync(summary.filename)
+                        toast.success(`Deleted ${summary.filename.slice(0, 40)}...`)
+                      } catch {
+                        toast.error(`Delete failed: ${summary.filename}`)
+                      }
+                    }}
+                  />
+                ))}
+              </div>
+            </GroupedGridSection>
+          ))}
+        </div>
+      )}
+
       {analyzeMutation.isSuccess && analyzeMutation.data && (
-        <div className="rounded-md border p-4 space-y-3">
+        <div className="space-y-3 rounded-md border p-4">
           <h3 className="text-sm font-medium">Analysis Summary — {analyzeMutation.data.model_count} model(s)</h3>
           <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
             {Object.entries(analyzeMutation.data.models).map(([model, analysis]: [string, ModelAnalysis]) => (
-              <div key={model} className="rounded border p-3 space-y-1.5">
+              <div key={model} className="space-y-1.5 rounded border p-3">
                 <p className="text-xs font-medium">{model}</p>
                 <p className="text-xs">
                   Accuracy: <span className="font-mono">{formatPercent(analysis.accuracy)}</span>
@@ -461,9 +776,9 @@ export default function ResultsPage() {
                 </p>
                 {Object.entries(analysis.task_breakdown).length > 0 && (
                   <div className="text-xs text-muted-foreground">
-                    {Object.entries(analysis.task_breakdown).map(([task, tb]) => (
+                    {Object.entries(analysis.task_breakdown).map(([task, taskBreakdown]) => (
                       <span key={task} className="mr-2">
-                        <TaskBadge task={task} /> {formatPercent(tb.accuracy)} ({tb.total})
+                        <TaskBadge task={task} /> {formatPercent(taskBreakdown.accuracy)} ({taskBreakdown.total})
                       </span>
                     ))}
                   </div>
@@ -474,9 +789,8 @@ export default function ResultsPage() {
         </div>
       )}
 
-      {/* Delete confirmation */}
       <Dialog open={deleteConfirm} onOpenChange={setDeleteConfirm}>
-        <DialogContent className="max-w-sm">
+        <DialogContent className="max-w-lg sm:max-w-lg">
           <DialogHeader>
             <DialogTitle>Delete {selected.size} result(s)?</DialogTitle>
             <DialogDescription>
@@ -493,7 +807,6 @@ export default function ResultsPage() {
         </DialogContent>
       </Dialog>
 
-      {/* Rerun with params modal */}
       {rerunTarget && (
         <ParamOverrideModal
           open={!!rerunTarget}
@@ -503,11 +816,10 @@ export default function ResultsPage() {
         />
       )}
 
-      {/* Detail sheet */}
       <Sheet open={!!detailTarget} onOpenChange={() => setDetailTarget(null)}>
-        <SheetContent className="sm:max-w-2xl overflow-y-auto">
+        <SheetContent className="overflow-y-auto sm:max-w-2xl">
           <SheetHeader>
-            <SheetTitle className="text-sm truncate">{detailTarget}</SheetTitle>
+            <SheetTitle className="truncate text-sm">{detailTarget}</SheetTitle>
           </SheetHeader>
           {detail && (
             <Tabs defaultValue="overview" className="mt-4">
@@ -516,48 +828,48 @@ export default function ResultsPage() {
                 <TabsTrigger value="cases">Cases ({detail.results_count})</TabsTrigger>
               </TabsList>
 
-              <TabsContent value="overview" className="space-y-4 mt-3 text-xs">
+              <TabsContent value="overview" className="mt-3 space-y-4 text-xs">
                 <section>
-                  <h4 className="font-medium mb-1">Model Info</h4>
-                  <pre className="bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(detail.model_info, null, 2)}</pre>
+                  <h4 className="mb-1 font-medium">Model Info</h4>
+                  <pre className="overflow-x-auto rounded bg-muted p-2">{JSON.stringify(detail.model_info, null, 2)}</pre>
                 </section>
                 <section>
-                  <h4 className="font-medium mb-1">Execution</h4>
-                  <pre className="bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(detail.execution_info, null, 2)}</pre>
+                  <h4 className="mb-1 font-medium">Execution</h4>
+                  <pre className="overflow-x-auto rounded bg-muted p-2">{JSON.stringify(detail.execution_info, null, 2)}</pre>
                 </section>
                 <section>
-                  <h4 className="font-medium mb-1">Summary Statistics</h4>
-                  <pre className="bg-muted p-2 rounded overflow-x-auto">{JSON.stringify(detail.summary_statistics, null, 2)}</pre>
+                  <h4 className="mb-1 font-medium">Summary Statistics</h4>
+                  <pre className="overflow-x-auto rounded bg-muted p-2">{JSON.stringify(detail.summary_statistics, null, 2)}</pre>
                 </section>
               </TabsContent>
 
               <TabsContent value="cases" className="mt-3 space-y-2">
-                {detail.results.slice(0, 50).map((r: ResultEntry, i: number) => (
-                  <details key={r.test_id || i} className="rounded border text-xs">
-                    <summary className="p-2 cursor-pointer flex items-center justify-between">
-                      <span className="font-mono">{r.test_id}</span>
-                      <Badge variant={r.status === "correct" ? "default" : "destructive"} className="text-[10px]">
-                        {r.status}
+                {detail.results.slice(0, 50).map((result: ResultEntry, index: number) => (
+                  <details key={result.test_id || index} className="rounded border text-xs">
+                    <summary className="flex cursor-pointer items-center justify-between p-2">
+                      <span className="font-mono">{result.test_id}</span>
+                      <Badge variant={result.status === "correct" ? "default" : "destructive"} className="text-[10px]">
+                        {result.status}
                       </Badge>
                     </summary>
-                    <div className="p-2 space-y-2 bg-muted/50">
+                    <div className="space-y-2 bg-muted/50 p-2">
                       <div>
-                        <h5 className="font-medium mb-0.5">Input</h5>
-                        <pre className="overflow-x-auto">{JSON.stringify(r.input, null, 2)}</pre>
+                        <h5 className="mb-0.5 font-medium">Input</h5>
+                        <pre className="overflow-x-auto">{JSON.stringify(result.input, null, 2)}</pre>
                       </div>
                       <div>
-                        <h5 className="font-medium mb-0.5">Output</h5>
-                        <pre className="overflow-x-auto">{JSON.stringify(r.output, null, 2)}</pre>
+                        <h5 className="mb-0.5 font-medium">Output</h5>
+                        <pre className="overflow-x-auto">{JSON.stringify(result.output, null, 2)}</pre>
                       </div>
                       <div>
-                        <h5 className="font-medium mb-0.5">Evaluation</h5>
-                        <pre className="overflow-x-auto">{JSON.stringify(r.evaluation, null, 2)}</pre>
+                        <h5 className="mb-0.5 font-medium">Evaluation</h5>
+                        <pre className="overflow-x-auto">{JSON.stringify(result.evaluation, null, 2)}</pre>
                       </div>
                     </div>
                   </details>
                 ))}
                 {detail.results_count > 50 && (
-                  <p className="text-xs text-muted-foreground text-center">Showing first 50 of {detail.results_count} results</p>
+                  <p className="text-center text-xs text-muted-foreground">Showing first 50 of {detail.results_count} results</p>
                 )}
               </TabsContent>
             </Tabs>
@@ -565,12 +877,7 @@ export default function ResultsPage() {
         </SheetContent>
       </Sheet>
 
-      {/* Judge setup sheet */}
-      <JudgeSetupSheet
-        open={judgeOpen}
-        onOpenChange={setJudgeOpen}
-        selectedFiles={Array.from(selected)}
-      />
+      <JudgeSetupSheet open={judgeOpen} onOpenChange={setJudgeOpen} selectedFiles={Array.from(selected)} />
     </div>
   )
 }

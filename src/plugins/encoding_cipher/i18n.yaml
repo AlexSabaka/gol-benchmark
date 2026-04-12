@@ -1,0 +1,37 @@
+# Encoding & Cipher Decoding plugin — decode-and-respond across encoding schemes.
+#
+# Variables: {instruction}, {encoded}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific (encoding task framing) and fully overridden.
+
+body:
+  en: "{instruction}\n\n{encoded}"
+  es: "{instruction}\n\n{encoded}"
+  fr: "{instruction}\n\n{encoded}"
+  de: "{instruction}\n\n{encoded}"
+  zh: "{instruction}\n\n{encoded}"
+  ua: "{instruction}\n\n{encoded}"
+
+overrides:
+  minimal:
+    en: "{instruction}\n\n{encoded}\n\nAnswer: "
+    es: "{instruction}\n\n{encoded}\n\nRespuesta: "
+    fr: "{instruction}\n\n{encoded}\n\nRéponse : "
+    de: "{instruction}\n\n{encoded}\n\nAntwort: "
+    zh: "{instruction}\n\n{encoded}\n\n答案："
+    ua: "{instruction}\n\n{encoded}\n\nВідповідь: "
+  casual:
+    en: "Hey, quick one — {instruction}\n\n{encoded}"
+    es: "Oye, una rápida — {instruction}\n\n{encoded}"
+    fr: "Salut, un truc rapide — {instruction}\n\n{encoded}"
+    de: "Hey, kurze Frage — {instruction}\n\n{encoded}"
+    zh: "嘿，快速问一下 — {instruction}\n\n{encoded}"
+    ua: "Гей, швидке питання — {instruction}\n\n{encoded}"
+  linguistic:
+    en: "I have an encoding task for you.\n\n{instruction}\n\nHere is the encoded payload:\n\n{encoded}\n\nPlease provide your answer."
+    es: "Tengo una tarea de codificación para ti.\n\n{instruction}\n\nAquí está el contenido codificado:\n\n{encoded}\n\nPor favor, proporciona tu respuesta."
+    fr: "J'ai une tâche d'encodage pour vous.\n\n{instruction}\n\nVoici le contenu encodé :\n\n{encoded}\n\nVeuillez fournir votre réponse."
+    de: "Ich habe eine Kodierungsaufgabe für dich.\n\n{instruction}\n\nHier ist der kodierte Inhalt:\n\n{encoded}\n\nBitte gib deine Antwort."
+    zh: "我有一个编码任务给你。\n\n{instruction}\n\n以下是编码内容：\n\n{encoded}\n\n请提供你的答案。"
+    ua: "У мене є завдання з кодування для тебе.\n\n{instruction}\n\nОсь закодований вміст:\n\n{encoded}\n\nБудь ласка, надай свою відповідь."

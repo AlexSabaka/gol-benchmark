@@ -1,0 +1,40 @@
+# Grid Tasks plugin — table reasoning (cell lookups, row sums, column counts).
+#
+# Variables: {table_str}, {question}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific and fully overridden:
+#   minimal uses "{table_str}\n\n{question}\nAnswer:" layout (not generic body wrapper)
+#   casual uses "Here is a data table" framing
+#   linguistic uses "analyze the following data table" framing
+
+body:
+  en: "{table_str}\n\n{question}"
+  es: "{table_str}\n\n{question}"
+  fr: "{table_str}\n\n{question}"
+  de: "{table_str}\n\n{question}"
+  zh: "{table_str}\n\n{question}"
+  ua: "{table_str}\n\n{question}"
+
+overrides:
+  minimal:
+    en: "{table_str}\n\n{question}\nAnswer:"
+    es: "{table_str}\n\n{question}\nRespuesta:"
+    fr: "{table_str}\n\n{question}\nRéponse :"
+    de: "{table_str}\n\n{question}\nAntwort:"
+    zh: "{table_str}\n\n{question}\n答案："
+    ua: "{table_str}\n\n{question}\nВідповідь:"
+  casual:
+    en: "Here is a data table:\n\n{table_str}\n\nQuestion: {question}\n\nPlease provide your answer clearly."
+    es: "Aquí tienes una tabla de datos:\n\n{table_str}\n\nPregunta: {question}\n\nPor favor, proporciona tu respuesta con claridad."
+    fr: "Voici un tableau de données :\n\n{table_str}\n\nQuestion : {question}\n\nVeuillez fournir votre réponse clairement."
+    de: "Hier ist eine Datentabelle:\n\n{table_str}\n\nFrage: {question}\n\nBitte geben Sie Ihre Antwort klar an."
+    zh: "这是一张数据表：\n\n{table_str}\n\n问题：{question}\n\n请清楚地给出你的答案。"
+    ua: "Ось таблиця даних:\n\n{table_str}\n\nПитання: {question}\n\nБудь ласка, надайте чітку відповідь."
+  linguistic:
+    en: "Please analyze the following data table carefully and answer the question.\n\n{table_str}\n\nQuestion: {question}\n\nProvide your answer with a brief explanation."
+    es: "Por favor, analiza la siguiente tabla de datos con atención y responde a la pregunta.\n\n{table_str}\n\nPregunta: {question}\n\nProporciona tu respuesta con una breve explicación."
+    fr: "Veuillez analyser attentivement le tableau de données suivant et répondre à la question.\n\n{table_str}\n\nQuestion : {question}\n\nFournissez votre réponse avec une brève explication."
+    de: "Bitte analysieren Sie die folgende Datentabelle sorgfältig und beantworten Sie die Frage.\n\n{table_str}\n\nFrage: {question}\n\nGeben Sie Ihre Antwort mit einer kurzen Erklärung an."
+    zh: "请仔细分析以下数据表并回答问题。\n\n{table_str}\n\n问题：{question}\n\n请给出你的答案并附上简要说明。"
+    ua: "Будь ласка, уважно проаналізуйте наступну таблицю даних і дайте відповідь на питання.\n\n{table_str}\n\nПитання: {question}\n\nНадайте відповідь із коротким поясненням."

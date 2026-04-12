@@ -17,7 +17,15 @@ import random
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.carwash.prompts import USER_PROMPT_TEMPLATES, DISTANCES, FRAMINGS, WEATHER_CONTEXTS, URGENCY_PHRASES, TRANSPORT_DETAILS, QUESTION_VARIANTS
+from src.plugins.i18n.loader import load_plugin_i18n
+
+_i18n = load_plugin_i18n("carwash")
+DISTANCES = _i18n.get("distances", {})
+FRAMINGS = _i18n.get("framings", {})
+WEATHER_CONTEXTS = _i18n.get("weather_contexts", {})
+URGENCY_PHRASES = _i18n.get("urgency_phrases", {})
+TRANSPORT_DETAILS = _i18n.get("transport_details", {})
+QUESTION_VARIANTS = _i18n.get("question_variants", {})
 
 class CarwashGenerator(TestCaseGenerator):
     """Generates Carwash Paradox test cases."""
@@ -109,8 +117,8 @@ class CarwashGenerator(TestCaseGenerator):
         setup = framing
         distance_str = dist["desc"]
 
-        user_prompt, system_prompt, full_prompt = self._build_prompts(
-            USER_PROMPT_TEMPLATES, language, user_style, system_style,
+        user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+            "carwash", language, user_style, system_style,
             setup=setup, distance=distance_str, weather=weather,
             urgency=urgency, transport=transport, question=question,
         )

@@ -1,0 +1,37 @@
+# ASCII Shapes plugin — spatial reasoning on ASCII art.
+#
+# Variables: {shape}, {question}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific (shape analysis framing) and fully overridden.
+
+body:
+  en: "{shape}\n\n{question}"
+  es: "{shape}\n\n{question}"
+  fr: "{shape}\n\n{question}"
+  de: "{shape}\n\n{question}"
+  zh: "{shape}\n\n{question}"
+  ua: "{shape}\n\n{question}"
+
+overrides:
+  minimal:
+    en: "{shape}\n\n{question}"
+    es: "{shape}\n\n{question}"
+    fr: "{shape}\n\n{question}"
+    de: "{shape}\n\n{question}"
+    zh: "{shape}\n\n{question}"
+    ua: "{shape}\n\n{question}"
+  casual:
+    en: "Check out this shape:\n\n{shape}\n\n{question}\n\nAnswer:"
+    es: "Mira esta forma:\n\n{shape}\n\n{question}\n\nRespuesta:"
+    fr: "Regarde cette forme:\n\n{shape}\n\n{question}\n\nRéponse:"
+    de: "Schau dir diese Form an:\n\n{shape}\n\n{question}\n\nAntwort:"
+    zh: "看看这个形状：\n\n{shape}\n\n{question}\n\n答案："
+    ua: "Подивись на цю форму:\n\n{shape}\n\n{question}\n\nВідповідь:"
+  linguistic:
+    en: "Please analyze the following ASCII-rendered shape carefully and answer the question.\n\nShape:\n{shape}\n\n{question}\n\nProvide your answer."
+    es: "Por favor, analice cuidadosamente la siguiente forma renderizada en ASCII y responda la pregunta.\n\nForma:\n{shape}\n\n{question}\n\nProporcione su respuesta."
+    fr: "Veuillez analyser attentivement la forme ASCII suivante et répondre à la question.\n\nForme:\n{shape}\n\n{question}\n\nFournissez votre réponse."
+    de: "Bitte analysieren Sie die folgende ASCII-gerenderte Form sorgfältig und beantworten Sie die Frage.\n\nForm:\n{shape}\n\n{question}\n\nGeben Sie Ihre Antwort."
+    zh: "请仔细分析以下ASCII渲染的形状并回答问题。\n\n形状：\n{shape}\n\n{question}\n\n请提供答案。"
+    ua: "Будь ласка, уважно проаналізуйте наступну ASCII-форму та дайте відповідь на запитання.\n\nФорма:\n{shape}\n\n{question}\n\nНадайте відповідь."

@@ -6,6 +6,7 @@ export interface Job {
   id: string
   model_name: string
   testset_path: string
+  run_group_id?: string | null
   state: JobState
   progress_current: number
   progress_total: number
@@ -18,9 +19,11 @@ export interface Job {
 export interface RunRequest {
   testset_path?: string
   testset_filename?: string
+  testset_filenames?: string[]
   models: string[]
   provider: string
   ollama_host?: string
+  run_group_id?: string
   temperature?: number
   max_tokens?: number
   no_think?: boolean
@@ -30,5 +33,6 @@ export interface RunRequest {
 }
 
 export interface RunResponse {
-  jobs: { job_id: string; model: string }[]
+  run_group_id?: string | null
+  jobs: { job_id: string; model: string; testset_filename?: string }[]
 }

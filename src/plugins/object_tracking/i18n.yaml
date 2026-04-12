@@ -1,0 +1,114 @@
+# Object Tracking plugin — physical state tracking through container inversions.
+#
+# Variables:
+#   {steps_text}   — scenario steps formatted by StepBuilder
+#   {question}     — the final question asking for the object's location
+#   {object}       — the tracked object name (en/zh/ua: bare noun)
+#   {object_de}    — gendered preposition fragment (es: "del/de la", fr: "du/de la", de: "des/der")
+#   {object_loc}   — localized object name for gendered languages (es/fr/de)
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific (step instructions + question layout) and fully overridden.
+
+body:
+  en: "{steps_text}\n\n{question}"
+  es: "{steps_text}\n\n{question}"
+  fr: "{steps_text}\n\n{question}"
+  de: "{steps_text}\n\n{question}"
+  zh: "{steps_text}\n\n{question}"
+  ua: "{steps_text}\n\n{question}"
+
+overrides:
+  minimal:
+    en: "{steps_text}\n\n{question}\nAnswer:"
+    es: "{steps_text}\n\n{question}\nRespuesta:"
+    fr: "{steps_text}\n\n{question}\nRéponse :"
+    de: "{steps_text}\n\n{question}\nAntwort:"
+    zh: "{steps_text}\n\n{question}\n答案："
+    ua: "{steps_text}\n\n{question}\nВідповідь:"
+  casual:
+    en: "{steps_text} {question} Give single word answer."
+    es: "{steps_text} {question} Da una respuesta de una sola palabra."
+    fr: "{steps_text} {question} Donne une réponse en un seul mot."
+    de: "{steps_text} {question} Gib eine Antwort in einem einzigen Wort."
+    zh: "{steps_text} {question} 请用一个词回答。"
+    ua: "{steps_text} {question} Дай відповідь одним словом."
+  linguistic:
+    en: |
+      {steps_text}
+
+      Based on the sequence of actions described above, determine the current location of the {object}.
+
+      Apply logical reasoning to track the object through each step:
+      1. Identify where the object was initially placed
+      2. Track any movements or transfers
+      3. Pay special attention to any inversion or flipping of containers
+      4. Determine the final resting location
+
+      {question}
+      Provide your answer as a single word indicating the location.
+    es: |
+      {steps_text}
+
+      Basándote en la secuencia de acciones descritas anteriormente, determina la ubicación actual {object_de} {object_loc}.
+
+      Aplica razonamiento lógico para seguir el objeto en cada paso:
+      1. Identifica dónde se colocó inicialmente el objeto
+      2. Rastrea cualquier movimiento o transferencia
+      3. Presta especial atención a cualquier inversión o volteo de contenedores
+      4. Determina la ubicación final
+
+      {question}
+      Proporciona tu respuesta como una sola palabra indicando la ubicación.
+    fr: |
+      {steps_text}
+
+      En vous basant sur la séquence d'actions décrites ci-dessus, déterminez l'emplacement actuel {object_de} {object_loc}.
+
+      Appliquez un raisonnement logique pour suivre l'objet à chaque étape :
+      1. Identifiez où l'objet a été placé initialement
+      2. Suivez tous les mouvements ou transferts
+      3. Portez une attention particulière à toute inversion ou retournement de conteneurs
+      4. Déterminez l'emplacement final
+
+      {question}
+      Fournissez votre réponse en un seul mot indiquant l'emplacement.
+    de: |
+      {steps_text}
+
+      Bestimmen Sie anhand der oben beschriebenen Aktionsfolge den aktuellen Standort {object_de} {object_loc}.
+
+      Wenden Sie logisches Denken an, um das Objekt durch jeden Schritt zu verfolgen:
+      1. Identifizieren Sie, wo das Objekt ursprünglich platziert wurde
+      2. Verfolgen Sie alle Bewegungen oder Transfers
+      3. Achten Sie besonders auf jede Umkehrung oder das Umdrehen von Behältern
+      4. Bestimmen Sie den endgültigen Standort
+
+      {question}
+      Geben Sie Ihre Antwort als ein einzelnes Wort an, das den Standort angibt.
+    zh: |
+      {steps_text}
+
+      根据上述描述的一系列操作，确定{object}的当前位置。
+
+      运用逻辑推理追踪物体在每一步中的变化：
+      1. 确定物体最初被放置的位置
+      2. 追踪所有的移动或转移
+      3. 特别注意任何容器的翻转或倒置
+      4. 确定最终的位置
+
+      {question}
+      请用一个词回答，指出物体的位置。
+    ua: |
+      {steps_text}
+
+      На основі послідовності дій, описаних вище, визначте поточне місцезнаходження {object}.
+
+      Застосуйте логічне міркування для відстеження об'єкта на кожному кроці:
+      1. Визначте, де об'єкт був розміщений спочатку
+      2. Відстежте будь-які переміщення або передачі
+      3. Зверніть особливу увагу на будь-яке перевертання або перекидання контейнерів
+      4. Визначте кінцеве місцезнаходження
+
+      {question}
+      Надайте відповідь одним словом, що вказує на місцезнаходження.

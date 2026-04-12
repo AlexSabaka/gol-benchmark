@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchResults, fetchResult, analyzeResults, generateReport, fetchReports, reanalyzeResult, deleteResult, submitJudge, fetchJudgeResults } from "@/api/results"
+import { fetchResults, fetchResult, analyzeResults, generateReport, fetchReports, reanalyzeResult, deleteResult, submitJudge, fetchJudgeResults, fetchJudgeResult } from "@/api/results"
 import type { AnalyzeRequest, JudgeRequest } from "@/types"
 
 export function useResults() {
@@ -67,5 +67,13 @@ export function useJudgeResults() {
     queryKey: ["judge-results"],
     queryFn: fetchJudgeResults,
     refetchOnWindowFocus: true,
+  })
+}
+
+export function useJudgeResult(filename: string | null) {
+  return useQuery({
+    queryKey: ["judge-result", filename],
+    queryFn: () => fetchJudgeResult(filename!),
+    enabled: !!filename,
   })
 }

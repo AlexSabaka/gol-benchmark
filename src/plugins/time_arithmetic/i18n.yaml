@@ -1,0 +1,31 @@
+# Time Arithmetic plugin — temporal reasoning problems.
+#
+# Variables: {question}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# minimal matches the shared wrapper exactly (body -> "Answer:").
+# casual and linguistic are domain-specific and fully overridden.
+
+body:
+  en: "{question}"
+  es: "{question}"
+  fr: "{question}"
+  de: "{question}"
+  zh: "{question}"
+  ua: "{question}"
+
+overrides:
+  casual:
+    en: "Hey, quick time question for you:\n\n{question}\n\nWhat's the answer?"
+    es: "Oye, una pregunta rápida sobre el tiempo:\n\n{question}\n\n¿Cuál es la respuesta?"
+    fr: "Hé, une petite question sur le temps :\n\n{question}\n\nQuelle est la réponse ?"
+    de: "Hey, eine kurze Zeitfrage:\n\n{question}\n\nWas ist die Antwort?"
+    zh: "{question}\n\n答案是什么？"
+    ua: "Привіт, швидке запитання про час:\n\n{question}\n\nЯка відповідь?"
+  linguistic:
+    en: "Solve the following temporal reasoning problem. Show your reasoning step by step, then provide the final answer.\n\n{question}\n\nProvide your answer in the exact format requested (a specific time, a day of the week, a number of minutes, or state that the date is impossible if applicable)."
+    es: "Resuelve el siguiente problema de razonamiento temporal. Muestra tu razonamiento paso a paso y luego da la respuesta final.\n\n{question}\n\nProporciona tu respuesta en el formato exacto solicitado."
+    fr: "Résolvez le problème de raisonnement temporel suivant. Montrez votre raisonnement étape par étape, puis donnez la réponse finale.\n\n{question}\n\nFournissez votre réponse dans le format exact demandé."
+    de: "Lösen Sie das folgende zeitliche Denkproblem. Zeigen Sie Ihre Überlegungen Schritt für Schritt und geben Sie dann die endgültige Antwort.\n\n{question}\n\nGeben Sie Ihre Antwort im genau angeforderten Format an."
+    zh: "请解决以下时间推理问题。逐步展示你的推理过程，然后给出最终答案。\n\n{question}\n\n请以要求的格式提供答案。"
+    ua: "Розв'яжіть наступну задачу на часове міркування. Покажіть своє міркування крок за кроком, а потім дайте остаточну відповідь.\n\n{question}\n\nНадайте відповідь у точному запитуваному форматі."

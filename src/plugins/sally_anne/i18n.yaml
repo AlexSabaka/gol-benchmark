@@ -1,0 +1,335 @@
+# Sally-Anne plugin — false belief test (Theory of Mind).
+#
+# Variables: {narrative}, {question}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific (scenario + belief question framing) and fully overridden.
+
+body:
+  en: "{narrative}\n\n{question}"
+  es: "{narrative}\n\n{question}"
+  fr: "{narrative}\n\n{question}"
+  de: "{narrative}\n\n{question}"
+  zh: "{narrative}\n\n{question}"
+  ua: "{narrative}\n\n{question}"
+
+overrides:
+  minimal:
+    en: "{narrative}\n\n{question}\nAnswer:"
+    es: "{narrative}\n\n{question}\nRespuesta:"
+    fr: "{narrative}\n\n{question}\nRéponse :"
+    de: "{narrative}\n\n{question}\nAntwort:"
+    zh: "{narrative}\n\n{question}\n答案："
+    ua: "{narrative}\n\n{question}\nВідповідь:"
+  casual:
+    en: "Here's a little scenario for you:\n\n{narrative}\n\n{question} Just give me the answer in one word."
+    es: "Aquí tienes un pequeño escenario:\n\n{narrative}\n\n{question} Solo dame la respuesta en una palabra."
+    fr: "Voici un petit scénario pour toi :\n\n{narrative}\n\n{question} Donne-moi la réponse en un seul mot."
+    de: "Hier ist ein kleines Szenario für dich:\n\n{narrative}\n\n{question} Gib mir die Antwort in einem einzigen Wort."
+    zh: "这里有一个小场景：\n\n{narrative}\n\n{question} 请用一个词回答。"
+    ua: "Ось невеличкий сценарій для тебе:\n\n{narrative}\n\n{question} Дай відповідь одним словом."
+  linguistic:
+    en: "Please read the following scenario carefully and answer the question about what the character believes.\n\n{narrative}\n\n{question}\nProvide your answer as a single word."
+    es: "Lee atentamente el siguiente escenario y responde a la pregunta sobre lo que el personaje cree.\n\n{narrative}\n\n{question}\nProporciona tu respuesta en una sola palabra."
+    fr: "Veuillez lire attentivement le scénario suivant et répondre à la question sur ce que le personnage croit.\n\n{narrative}\n\n{question}\nFournissez votre réponse en un seul mot."
+    de: "Bitte lesen Sie das folgende Szenario sorgfältig und beantworten Sie die Frage darüber, was die Person glaubt.\n\n{narrative}\n\n{question}\nGeben Sie Ihre Antwort als ein einzelnes Wort an."
+    zh: "请仔细阅读以下场景，并回答关于角色所相信的内容的问题。\n\n{narrative}\n\n{question}\n请用一个词作答。"
+    ua: "Будь ласка, уважно прочитайте наступний сценарій та дайте відповідь на запитання про те, у що вірить персонаж.\n\n{narrative}\n\n{question}\nНадайте відповідь одним словом."
+
+# ══════════════════════════════════════════════════════════════════════
+# Scenario data (migrated from scenario_i18n.py)
+# ══════════════════════════════════════════════════════════════════════
+
+# ── Narrative sentence templates ─────────────────────────────────────
+# Keys: place, leave, move, witness, witness_move, return
+# UA: gender-split (m/f sub-dicts) for past-tense verb inflection
+# Placeholders: {name}, {poss}, {obj}, {container}, {leave_activity},
+#   {name_a}, {name_b}, {container_a}, {container_b}
+# Language-specific: {obj_acc}, {container_acc}, {art_def}, {prep_from}, etc.
+
+narrative_templates:
+  en:
+    place: "{name} puts {poss} {obj} in the {container}."
+    leave: "{name} {leave_activity}."
+    move: "While {name_a} is away, {name_b} takes the {obj} from the {container_a} and puts it in the {container_b}."
+    witness: "{name} watches {name_a} put the {obj} in the {container}."
+    witness_move: "{name} sees {name_b} move the {obj} to the {container_b}."
+    return: "{name} returns."
+  es:
+    place: "{name} pone {poss} {obj} en {art_def_cont} {container}."
+    leave: "{name} {leave_activity}."
+    move: "Mientras {name_a} está fuera, {name_b} saca {art_def_obj} {obj} {prep_from} {container_a} y {pron_obj} pone en {art_def_cont_b} {container_b}."
+    witness: "{name} observa cómo {name_a} pone {art_def_obj} {obj} en {art_def_cont} {container}."
+    witness_move: "{name} ve a {name_b} mover {art_def_obj} {obj} a {art_def_cont_b} {container_b}."
+    return: "{name} regresa."
+  fr:
+    place: "{name} met {poss} {obj} dans {art_def} {container}."
+    leave: "{name} {leave_activity}."
+    move: "Pendant que {name_a} est {absent}, {name_b} prend {art_def_obj} {obj} {prep_from} {container_a} et {pron_obj} met dans {art_def_cont_b} {container_b}."
+    witness: "{name} regarde {name_a} mettre {art_def_obj} {obj} dans {art_def} {container}."
+    witness_move: "{name} voit {name_b} déplacer {art_def_obj} {obj} vers {art_def_cont_b} {container_b}."
+    return: "{name} revient."
+  de:
+    place: "{name} legt {poss_acc} {obj} in {art_acc_cont} {container}."
+    leave: "{name} {leave_activity}."
+    move: "Während {name_a} weg ist, nimmt {name_b} {art_acc_obj} {obj} aus {art_dat_cont_a} {container_a} und legt {pron_obj} in {art_acc_cont_b} {container_b}."
+    witness: "{name} beobachtet, wie {name_a} {art_acc_obj} {obj} in {art_acc_cont} {container} legt."
+    witness_move: "{name} sieht, wie {name_b} {art_acc_obj} {obj} in {art_acc_cont_b} {container_b} legt."
+    return: "{name} kommt zurück."
+  zh:
+    place: "{name}把{poss}{obj}放在{container}里。"
+    leave: "{name}{leave_activity}。"
+    move: "趁{name_a}不在的时候，{name_b}把{obj}从{container_a}里拿出来，放进了{container_b}里。"
+    witness: "{name}看到{name_a}把{obj}放在{container}里。"
+    witness_move: "{name}看到{name_b}把{obj}移到了{container_b}里。"
+    return: "{name}回来了。"
+  ua:
+    m:
+      place: "{name} поклав {poss} {obj_acc} у {container_acc}."
+      leave: "{name} {leave_activity}."
+      move: "Поки {name_a} немає, {name_b} {took} {obj_acc} з {container_a_gen} і {put} у {container_b_acc}."
+      witness: "{name} спостерігав за всім."
+      witness_move: "{name} бачив, як {name_b} {moved} {obj_acc} до {container_b_gen}."
+      return: "{name} повернувся."
+    f:
+      place: "{name} поклала {poss} {obj_acc} у {container_acc}."
+      leave: "{name} {leave_activity}."
+      move: "Поки {name_a} немає, {name_b} {took} {obj_acc} з {container_a_gen} і {put} у {container_b_acc}."
+      witness: "{name} спостерігала за всім."
+      witness_move: "{name} бачила, як {name_b} {moved} {obj_acc} до {container_b_gen}."
+      return: "{name} повернулася."
+
+# ── Question templates ───────────────────────────────────────────────
+# FR: gender-split for subject verb inversion (cherchera-t-il / cherchera-t-elle)
+
+question_templates:
+  en: "Where will {name} look for {poss} {obj}?"
+  es: "¿Dónde buscará {name} {poss} {obj}?"
+  fr:
+    m: "Où {name} cherchera-t-il {poss} {obj} ?"
+    f: "Où {name} cherchera-t-elle {poss} {obj} ?"
+  de: "Wo wird {name} nach {poss_dat} {obj} suchen?"
+  zh: "{name}会去哪里找{poss}{obj}？"
+  ua: "De {name} шукатиме {poss} {obj_acc}?"
+
+# ── Object translations ─────────────────────────────────────────────
+# en/zh: plain strings; es/fr: {word, gender}; de: {word, gender} with n;
+# ua: {nom, acc, loc, gen, gender}
+
+objects:
+  en:
+    marble: marble
+    ball: ball
+    toy: toy
+    book: book
+    doll: doll
+    keys: keys
+  es:
+    marble: {word: canica, gender: f}
+    ball: {word: pelota, gender: f}
+    toy: {word: juguete, gender: m}
+    book: {word: libro, gender: m}
+    doll: {word: muñeca, gender: f}
+    keys: {word: llaves, gender: f}
+  fr:
+    marble: {word: bille, gender: f}
+    ball: {word: balle, gender: f}
+    toy: {word: jouet, gender: m}
+    book: {word: livre, gender: m}
+    doll: {word: poupée, gender: f}
+    keys: {word: clés, gender: f}
+  de:
+    marble: {word: Murmel, gender: f}
+    ball: {word: Ball, gender: m}
+    toy: {word: Spielzeug, gender: n}
+    book: {word: Buch, gender: n}
+    doll: {word: Puppe, gender: f}
+    keys: {word: Schlüssel, gender: m}
+  zh:
+    marble: 弹珠
+    ball: 球
+    toy: 玩具
+    book: 书
+    doll: 娃娃
+    keys: 钥匙
+  ua:
+    marble: {nom: кулька, acc: кульку, loc: кульці, gen: кульки, gender: f}
+    ball: {nom: м'яч, acc: м'яч, loc: м'ячі, gen: м'яча, gender: m}
+    toy: {nom: іграшка, acc: іграшку, loc: іграшці, gen: іграшки, gender: f}
+    book: {nom: книга, acc: книгу, loc: книзі, gen: книги, gender: f}
+    doll: {nom: лялька, acc: ляльку, loc: ляльці, gen: ляльки, gender: f}
+    keys: {nom: ключі, acc: ключі, loc: ключах, gen: ключів, gender: m}
+
+# ── Container translations ───────────────────────────────────────────
+
+containers:
+  en:
+    basket: basket
+    box: box
+    bag: bag
+    drawer: drawer
+    cupboard: cupboard
+    pocket: pocket
+  es:
+    basket: {word: cesta, gender: f}
+    box: {word: caja, gender: f}
+    bag: {word: bolsa, gender: f}
+    drawer: {word: cajón, gender: m}
+    cupboard: {word: armario, gender: m}
+    pocket: {word: bolsillo, gender: m}
+  fr:
+    basket: {word: panier, gender: m}
+    box: {word: boîte, gender: f}
+    bag: {word: sac, gender: m}
+    drawer: {word: tiroir, gender: m}
+    cupboard: {word: placard, gender: m}
+    pocket: {word: poche, gender: f}
+  de:
+    basket: {word: Korb, gender: m}
+    box: {word: Kiste, gender: f}
+    bag: {word: Tasche, gender: f}
+    drawer: {word: Schublade, gender: f}
+    cupboard: {word: Schrank, gender: m}
+    pocket: {word: Tasche, gender: f}
+  zh:
+    basket: 篮子
+    box: 盒子
+    bag: 袋子
+    drawer: 抽屉
+    cupboard: 柜子
+    pocket: 口袋
+  ua:
+    basket: {nom: кошик, acc: кошик, loc: кошику, gen: кошика, gender: m}
+    box: {nom: коробка, acc: коробку, loc: коробці, gen: коробки, gender: f}
+    bag: {nom: сумка, acc: сумку, loc: сумці, gen: сумки, gender: f}
+    drawer: {nom: шухляда, acc: шухляду, loc: шухляді, gen: шухляди, gender: f}
+    cupboard: {nom: шафа, acc: шафу, loc: шафі, gen: шафи, gender: f}
+    pocket: {nom: кишеня, acc: кишеню, loc: кишені, gen: кишені, gender: f}
+
+# ── Pronouns ─────────────────────────────────────────────────────────
+# FR/UA possessives depend on OBJECT gender (resolved at build time).
+# Subject-gender-based possessives stored here; object-gender-aware
+# resolution happens in scenario_builder.py.
+
+pronouns:
+  en:
+    male: {subject: he, object: him, possessive: his}
+    female: {subject: she, object: her, possessive: her}
+  es:
+    male: {subject: él, object: lo, possessive: su}
+    female: {subject: ella, object: la, possessive: su}
+  fr:
+    male: {subject: il, object: le, possessive: son}
+    female: {subject: elle, object: la, possessive: sa}
+  de:
+    male: {subject: er, object: ihn, possessive: sein}
+    female: {subject: sie, object: sie, possessive: ihr}
+  zh:
+    male: {subject: 他, object: 他, possessive: 他的}
+    female: {subject: 她, object: 她, possessive: 她的}
+  ua:
+    male: {subject: він, object: його, possessive: свій}
+    female: {subject: вона, object: її, possessive: свою}
+
+# ── Culturally appropriate names ─────────────────────────────────────
+
+names:
+  en:
+    male: [Alex, Ben, Charlie, David, Ethan, Frank, George, Henry]
+    female: [Alice, Beth, Clara, Diana, Emma, Fiona, Grace, Hannah]
+  es:
+    male: [Carlos, Miguel, Pedro, Juan, Diego, Pablo, Luis, Andrés]
+    female: [María, Ana, Lucía, Carmen, Elena, Sofía, Paula, Laura]
+  fr:
+    male: [Pierre, Jean, Louis, Paul, Marc, André, Henri, Claude]
+    female: [Marie, Claire, Sophie, Julie, Emma, Léa, Camille, Louise]
+  de:
+    male: [Hans, Karl, Thomas, Max, Felix, Paul, Leon, Lukas]
+    female: [Anna, Klara, Sophie, Marie, Lena, Hannah, Mia, Emma]
+  zh:
+    male: [小明, 小刚, 小强, 小华, 小亮, 小军, 小伟, 小杰]
+    female: [小红, 小丽, 小芳, 小雪, 小云, 小月, 小玲, 小慧]
+  ua:
+    male: [Іван, Андрій, Олег, Петро, Микола, Тарас, Дмитро, Богдан]
+    female: [Олена, Марія, Наталія, Оксана, Ірина, Тетяна, Юлія, Катерина]
+
+# ── Leave activities ─────────────────────────────────────────────────
+# UA: gender-split (past-tense verb forms differ for m/f)
+
+leave_activities:
+  en: [goes for a walk, goes outside, leaves the room, goes to the kitchen]
+  es: [sale a dar un paseo, sale afuera, sale de la habitación, va a la cocina]
+  fr: [part se promener, sort dehors, quitte la pièce, va à la cuisine]
+  de: [geht spazieren, geht nach draußen, verlässt den Raum, geht in die Küche]
+  zh: [出去散步了, 出去了, 离开了房间, 去了厨房]
+  ua:
+    m: [пішов на прогулянку, вийшов надвір, вийшов з кімнати, пішов на кухню]
+    f: [пішла на прогулянку, вийшла надвір, вийшла з кімнати, пішла на кухню]
+
+# ── Distractor templates ─────────────────────────────────────────────
+
+distractor_template:
+  en: "There is a {d_obj} on the {d_loc}."
+  es: "Hay {d_art} {d_obj} en {d_loc_art} {d_loc}."
+  fr: "Il y a {d_art} {d_obj} sur {d_loc_art} {d_loc}."
+  de: "Es gibt {d_art} {d_obj} auf {d_loc_art} {d_loc}."
+  zh: "{d_loc}上有一个{d_obj}。"
+  ua: "На {d_loc} є {d_obj}."
+
+distractor_objects:
+  en: [book, cup, pencil, paper, phone, wallet, keys, hat]
+  es:
+    - {word: libro, gender: m}
+    - {word: taza, gender: f}
+    - {word: lápiz, gender: m}
+    - {word: papel, gender: m}
+    - {word: teléfono, gender: m}
+    - {word: cartera, gender: f}
+    - {word: llaves, gender: f}
+    - {word: sombrero, gender: m}
+  fr:
+    - {word: livre, gender: m}
+    - {word: tasse, gender: f}
+    - {word: crayon, gender: m}
+    - {word: papier, gender: m}
+    - {word: téléphone, gender: m}
+    - {word: portefeuille, gender: m}
+    - {word: clés, gender: f}
+    - {word: chapeau, gender: m}
+  de:
+    - {word: Buch, gender: n}
+    - {word: Tasse, gender: f}
+    - {word: Bleistift, gender: m}
+    - {word: Papier, gender: n}
+    - {word: Telefon, gender: n}
+    - {word: Geldbörse, gender: f}
+    - {word: Schlüssel, gender: m}
+    - {word: Hut, gender: m}
+  zh: [书, 杯子, 铅笔, 纸, 手机, 钱包, 钥匙, 帽子]
+  ua: [книга, чашка, олівець, папір, телефон, гаманець, ключі, капелюх]
+
+distractor_locations:
+  en: [table, shelf, chair, counter, desk, window]
+  es:
+    - {word: mesa, gender: f}
+    - {word: estante, gender: m}
+    - {word: silla, gender: f}
+    - {word: mostrador, gender: m}
+    - {word: escritorio, gender: m}
+    - {word: ventana, gender: f}
+  fr:
+    - {word: table, gender: f}
+    - {word: étagère, gender: f}
+    - {word: chaise, gender: f}
+    - {word: comptoir, gender: m}
+    - {word: bureau, gender: m}
+    - {word: fenêtre, gender: f}
+  de:
+    - {word: Tisch, gender: m}
+    - {word: Regal, gender: n}
+    - {word: Stuhl, gender: m}
+    - {word: Theke, gender: f}
+    - {word: Schreibtisch, gender: m}
+    - {word: Fenster, gender: n}
+  zh: [桌子, 架子, 椅子, 柜台, 书桌, 窗台]
+  ua: [столі, полиці, стільці, стійці, письмовому столі, вікні]

@@ -205,6 +205,7 @@ _KNOWN_TASK_TYPES = [
     "measure_comparison",
     "family_relations",
     "encoding_cipher",
+    "fancy_unicode",
     "object_tracking",
     "false_premise",
     "inverted_cup",

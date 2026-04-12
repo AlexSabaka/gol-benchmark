@@ -107,13 +107,28 @@ def run_judge_worker(
     output_dir: str,
     job_id: str,
     progress_dict: dict,
-) -> str:
+) -> Dict[str, Optional[str]]:
     """Judge model results using an LLM. Runs in a subprocess.
 
     Returns the path to the judge output file.
     """
     import time as _time
     from src.models import create_model_interface
+
+    def _read_progress() -> Dict[str, Any]:
+        return dict(progress_dict.get(job_id, {}))
+
+    def _set_progress(**updates: Any) -> None:
+        current = _read_progress()
+        cancel_requested = bool(current.get("cancel_requested")) or bool(updates.get("cancel_requested"))
+        merged = {**current, **updates, "cancel_requested": cancel_requested}
+        if cancel_requested and merged.get("state") in (None, "pending", "running"):
+            merged["state"] = "cancelled"
+        progress_dict[job_id] = merged
+
+    def _cancel_requested() -> bool:
+        current = _read_progress()
+        return bool(current.get("cancel_requested")) or current.get("state") == "cancelled"
 
     start_time = _time.time()
 
@@ -179,7 +194,7 @@ def run_judge_worker(
             })
 
     total = len(items)
-    progress_dict[job_id] = {"current": 0, "total": total, "state": "running"}
+    _set_progress(current=0, total=total, state="running")
 
     # Judge each item
     judgments: List[Dict[str, Any]] = []
@@ -187,6 +202,10 @@ def run_judge_worker(
     parser_issues = defaultdict(int)
 
     for idx, item in enumerate(items):
+        if _cancel_requested():
+            _set_progress(current=idx, total=total, state="cancelled")
+            return {"status": "cancelled", "result_path": None}
+
         prompt = user_prompt_template.format(
             user_prompt=item["user_prompt"],
             raw_response=item["raw_response"],
@@ -223,7 +242,11 @@ def run_judge_worker(
         if v == "parser_failure" and verdict.get("parser_issue"):
             parser_issues[verdict["parser_issue"]] += 1
 
-        progress_dict[job_id] = {"current": idx + 1, "total": total, "state": "running"}
+        _set_progress(current=idx + 1, total=total, state="running")
+
+    if _cancel_requested():
+        _set_progress(current=total, total=total, state="cancelled")
+        return {"status": "cancelled", "result_path": None}
 
     duration = _time.time() - start_time
 
@@ -253,6 +276,10 @@ def run_judge_worker(
     out_path = os.path.join(output_dir, out_filename)
     os.makedirs(output_dir, exist_ok=True)
 
+    if _cancel_requested():
+        _set_progress(current=total, total=total, state="cancelled")
+        return {"status": "cancelled", "result_path": None}
+
     fd, tmp_path = tempfile.mkstemp(suffix=".json.gz", dir=output_dir)
     try:
         os.close(fd)
@@ -264,4 +291,5 @@ def run_judge_worker(
             os.unlink(tmp_path)
         raise
 
-    return out_path
+    _set_progress(current=total, total=total, state="completed", result_path=out_path)
+    return {"status": "completed", "result_path": out_path}

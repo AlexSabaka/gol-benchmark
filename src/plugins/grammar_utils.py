@@ -37,6 +37,10 @@ _ARTICLES = {
 def article(lang: str, gender: str, definite: bool = True, case: str = "nom") -> str:
     """Return the correct article for *lang*, *gender*, *case*.
 
+    Checks the built-in ``_ARTICLES`` table first, then falls back to the
+    ``LanguageSpec.articles`` entry in the language registry so new languages
+    only need to be registered in ``src/plugins/languages.py``.
+
     >>> article("es", "f", definite=True)
     'la'
     >>> article("de", "m", definite=False, case="acc")
@@ -45,9 +49,15 @@ def article(lang: str, gender: str, definite: bool = True, case: str = "nom") ->
     kind = "def" if definite else "indef"
     lang_arts = _ARTICLES.get(lang)
     if lang_arts is None:
-        return ""
-    art = lang_arts[kind]
+        from src.plugins import languages as _langs  # late import avoids circular
+        spec = _langs.get(lang)
+        if spec is None or spec.articles is None:
+            return ""
+        lang_arts = spec.articles
+    art = lang_arts.get(kind, {})
     entry = art.get(gender, art.get("m"))
+    if entry is None:
+        return ""
     if isinstance(entry, dict):
         return entry.get(case, entry.get("nom", ""))
     return entry

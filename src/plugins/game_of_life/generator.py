@@ -11,7 +11,6 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.game_of_life.prompts import USER_PROMPT_TEMPLATES
 from src.core.types import DifficultyLevel
 from src.engine.GameOfLifeEngine import GameOfLifeEngine
 
@@ -159,8 +158,8 @@ class GoLTestCaseGenerator(TestCaseGenerator):
 
                 # Generate prompts
                 grid_str = format_grid(initial_grid, live_cell, dead_cell)
-                user_prompt, system_prompt, full_prompt = self._build_prompts(
-                    USER_PROMPT_TEMPLATES,
+                user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+                    "game_of_life",
                     language=language_str,
                     user_style=user_style_str,
                     system_style=system_style_str,
@@ -232,7 +231,7 @@ class GoLTestCaseGenerator(TestCaseGenerator):
             ConfigField(name='cell_markers', label='Cell markers', field_type='text',
                         default='1,0', group='advanced',
                         help='Live,dead cell markers (comma-separated)'),
-            ConfigField(name='exclude_empty', label='Exclude empty grids', field_type='checkbox',
+            ConfigField(name='exclude_empty', label='Exclude empty grids', field_type='boolean',
                         default=False, group='advanced',
                         help='Re-generate if initial grid is all dead cells'),
         ]

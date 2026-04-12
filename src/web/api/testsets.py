@@ -7,7 +7,7 @@ import os
 import tempfile
 import time
 from pathlib import Path
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 
 import yaml
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
@@ -43,6 +43,7 @@ class GenerateRequest(BaseModel):
     cell_markers: List[str] = Field(default_factory=lambda: ["1", "0"])
     seed: int = 42
     custom_system_prompt: Optional[str] = None
+    metadata_extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------- Helpers -----------------------------------------------------------
@@ -59,11 +60,12 @@ def _peek_testset(filepath: Path) -> dict:
         with gzip.open(str(filepath), "rt", encoding="utf-8") as f:
             data = json.load(f)
         cases = data.get("test_cases", [])
+        metadata = data.get("metadata", {})
         return {
             "filename": filepath.name,
             "path": str(filepath),
             "size_bytes": filepath.stat().st_size,
-            "metadata": data.get("metadata", {}),
+            "metadata": metadata,
             "generation_params": data.get("generation_params", {}),
             "statistics": data.get("statistics", {}),
             "test_count": len(cases),
@@ -71,6 +73,11 @@ def _peek_testset(filepath: Path) -> dict:
             "languages": list({tc.get("prompt_metadata", {}).get("language", "en") for tc in cases}),
             "user_styles": list({tc.get("prompt_metadata", {}).get("user_style", "") for tc in cases} - {""}),
             "system_styles": list({tc.get("prompt_metadata", {}).get("system_style", "") for tc in cases} - {""}),
+            "matrix_batch_id": metadata.get("matrix_batch_id"),
+            "matrix_cell_id": metadata.get("matrix_cell_id"),
+            "matrix_label": metadata.get("matrix_label"),
+            "matrix_plugin": metadata.get("matrix_plugin"),
+            "matrix_axes": metadata.get("matrix_axes"),
             "created": time.ctime(filepath.stat().st_mtime),
         }
     except Exception as exc:
@@ -134,14 +141,17 @@ async def generate_testset(req: GenerateRequest):
     """Generate a test set from configuration (wraps Stage 1)."""
     # Build YAML config dict
     ts = time.strftime("%Y%m%d_%H%M%S")
+    metadata = dict(req.metadata_extra)
+    metadata.update({
+        "name": f"{req.name}_{ts}",
+        "version": "1.0",
+        "schema_version": "1.0.0",
+        "description": req.description or f"Web-generated: {req.name}",
+        "task_type": "multi-task" if len(req.tasks) > 1 else req.tasks[0].type,
+    })
+
     config = {
-        "metadata": {
-            "name": f"{req.name}_{ts}",
-            "version": "1.0",
-            "schema_version": "1.0.0",
-            "description": req.description or f"Web-generated: {req.name}",
-            "task_type": "multi-task" if len(req.tasks) > 1 else req.tasks[0].type,
-        },
+        "metadata": metadata,
         "sampling": {
             "temperature": req.temperature,
             "max_tokens": req.max_tokens,

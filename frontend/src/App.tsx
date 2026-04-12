@@ -14,6 +14,7 @@ import DashboardPage from "@/pages/dashboard"
 const ConfigurePage = lazy(() => import("@/pages/configure"))
 const TestSetsPage = lazy(() => import("@/pages/testsets"))
 const ExecutePage = lazy(() => import("@/pages/execute"))
+const MatrixExecutionPage = lazy(() => import("@/pages/matrix-execution"))
 const JobsPage = lazy(() => import("@/pages/jobs"))
 const ResultsPage = lazy(() => import("@/pages/results"))
 const ChartsPage = lazy(() => import("@/pages/charts"))
@@ -49,6 +50,7 @@ export default function App() {
                 <Route path="configure" element={<Suspense fallback={<PageLoader />}><ConfigurePage /></Suspense>} />
                 <Route path="testsets" element={<Suspense fallback={<PageLoader />}><TestSetsPage /></Suspense>} />
                 <Route path="execute" element={<Suspense fallback={<PageLoader />}><ExecutePage /></Suspense>} />
+                <Route path="matrix-execution" element={<Suspense fallback={<PageLoader />}><MatrixExecutionPage /></Suspense>} />
                 <Route path="jobs" element={<Suspense fallback={<PageLoader />}><JobsPage /></Suspense>} />
                 <Route path="results" element={<Suspense fallback={<PageLoader />}><ResultsPage /></Suspense>} />
                 <Route path="charts" element={<Suspense fallback={<PageLoader />}><ChartsPage /></Suspense>} />

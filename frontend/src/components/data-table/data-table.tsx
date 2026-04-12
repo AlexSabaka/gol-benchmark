@@ -1,6 +1,8 @@
 import {
   type ColumnDef,
   type ColumnFiltersState,
+  type PaginationState,
+  type Row,
   type SortingState,
   type VisibilityState,
   flexRender,
@@ -12,9 +14,10 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { useEffect, useState } from "react"
-import { ChevronDown, ChevronsUpDown, ChevronUp, Search, SlidersHorizontal } from "lucide-react"
+import { Fragment, useEffect, useMemo, useState } from "react"
+import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronUp, Search, SlidersHorizontal } from "lucide-react"
 
+import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   DropdownMenu,
@@ -38,6 +41,67 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table"
+import { makeStorageKey, useLocalStorageState } from "@/lib/local-storage"
+
+export interface DataTableGroup<TData> {
+  key: string
+  title: string
+  subtitle?: string
+  countLabel?: string
+  items: TData[]
+  headerExtras?: React.ReactNode
+}
+
+interface DataTableGrouping<TData> {
+  buildGroups: (rows: TData[]) => DataTableGroup<TData>[]
+}
+
+interface DataTableExpansion<TData> {
+  expandedRowIds: Set<string>
+  onToggleRow: (rowId: string) => void
+  renderContent: (row: Row<TData>) => React.ReactNode
+}
+
+function sanitizeSortingState(value: unknown): SortingState {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is { id: string; desc?: boolean } => (
+      typeof item === "object" && item !== null && typeof (item as { id?: unknown }).id === "string"
+    ))
+    .map((item) => ({ id: item.id, desc: Boolean(item.desc) }))
+}
+
+function sanitizeColumnFiltersState(value: unknown): ColumnFiltersState {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter((item): item is { id: string; value: unknown } => (
+      typeof item === "object" && item !== null && typeof (item as { id?: unknown }).id === "string" && "value" in item
+    ))
+    .map((item) => ({ id: item.id, value: item.value }))
+}
+
+function sanitizeColumnVisibilityState(value: unknown): VisibilityState {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value).filter(([, visible]) => typeof visible === "boolean"),
+  ) as VisibilityState
+}
+
+function sanitizePaginationState(defaultPageSize: number) {
+  return (value: unknown): PaginationState => {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) {
+      return { pageIndex: 0, pageSize: defaultPageSize }
+    }
+
+    const pageIndex = Number((value as { pageIndex?: unknown }).pageIndex)
+    const pageSize = Number((value as { pageSize?: unknown }).pageSize)
+
+    return {
+      pageIndex: Number.isFinite(pageIndex) && pageIndex >= 0 ? pageIndex : 0,
+      pageSize: Number.isFinite(pageSize) && pageSize > 0 ? pageSize : defaultPageSize,
+    }
+  }
+}
 
 interface DataTableProps<TData, TValue> {
   columns: ColumnDef<TData, TValue>[]
@@ -48,6 +112,11 @@ interface DataTableProps<TData, TValue> {
   loading?: boolean
   /** Called when filtered row set changes — receives the filtered data array */
   onFilteredRowsChange?: (rows: TData[]) => void
+  grouping?: DataTableGrouping<TData>
+  persistKey?: string
+  getRowId?: (row: TData, index: number) => string
+  rowExpansion?: DataTableExpansion<TData>
+  initialPageSize?: number
 }
 
 export function DataTable<TData, TValue>({
@@ -58,15 +127,39 @@ export function DataTable<TData, TValue>({
   toolbar,
   loading,
   onFilteredRowsChange,
+  grouping,
+  persistKey,
+  getRowId,
+  rowExpansion,
+  initialPageSize = 20,
 }: DataTableProps<TData, TValue>) {
-  const [sorting, setSorting] = useState<SortingState>([])
-  const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
-  const [columnVisibility, setColumnVisibility] = useState<VisibilityState>({})
+  const [sorting, setSorting] = useLocalStorageState<SortingState>(
+    persistKey ? makeStorageKey(persistKey, "sorting") : null,
+    [],
+    { sanitize: sanitizeSortingState },
+  )
+  const [columnFilters, setColumnFilters] = useLocalStorageState<ColumnFiltersState>(
+    persistKey ? makeStorageKey(persistKey, "filters") : null,
+    [],
+    { sanitize: sanitizeColumnFiltersState },
+  )
+  const [columnVisibility, setColumnVisibility] = useLocalStorageState<VisibilityState>(
+    persistKey ? makeStorageKey(persistKey, "columns") : null,
+    {},
+    { sanitize: sanitizeColumnVisibilityState },
+  )
+  const [pagination, setPagination] = useLocalStorageState<PaginationState>(
+    persistKey ? makeStorageKey(persistKey, "pagination") : null,
+    { pageIndex: 0, pageSize: initialPageSize },
+    { sanitize: sanitizePaginationState(initialPageSize) },
+  )
   const [rowSelection, setRowSelection] = useState({})
+  const [expandedGroups, setExpandedGroups] = useState<Record<string, boolean>>({})
 
   const table = useReactTable({
     data,
     columns,
+    getRowId,
     getCoreRowModel: getCoreRowModel(),
     getPaginationRowModel: getPaginationRowModel(),
     getSortedRowModel: getSortedRowModel(),
@@ -76,9 +169,10 @@ export function DataTable<TData, TValue>({
     onSortingChange: setSorting,
     onColumnFiltersChange: setColumnFilters,
     onColumnVisibilityChange: setColumnVisibility,
+    onPaginationChange: setPagination,
     onRowSelectionChange: setRowSelection,
-    state: { sorting, columnFilters, columnVisibility, rowSelection },
-    initialState: { pagination: { pageSize: 20 } },
+    state: { sorting, columnFilters, columnVisibility, rowSelection, pagination },
+    autoResetPageIndex: false,
   })
 
   // Expose filtered rows to parent
@@ -88,6 +182,76 @@ export function DataTable<TData, TValue>({
       onFilteredRowsChange(filteredRows.map((r) => r.original))
     }
   }, [filteredRows, onFilteredRowsChange])
+
+  const sortedRows = table.getSortedRowModel().rows
+  const filteredRowCount = table.getFilteredRowModel().rows.length
+
+  const groupedRows = useMemo(() => {
+    if (!grouping) return []
+    return grouping.buildGroups(sortedRows.map((row) => row.original))
+  }, [grouping, sortedRows])
+
+  useEffect(() => {
+    if (grouping) return
+
+    const pageCount = Math.max(1, Math.ceil(filteredRowCount / Math.max(pagination.pageSize, 1)))
+    if (pagination.pageIndex < pageCount) return
+
+    setPagination((previous) => ({
+      ...previous,
+      pageIndex: Math.max(pageCount - 1, 0),
+    }))
+  }, [filteredRowCount, grouping, pagination.pageIndex, pagination.pageSize, setPagination])
+
+  useEffect(() => {
+    if (!grouping) return
+
+    setExpandedGroups((previous) => {
+      const next: Record<string, boolean> = {}
+      let changed = false
+
+      for (const group of groupedRows) {
+        if (!(group.key in previous)) changed = true
+        next[group.key] = previous[group.key] ?? true
+      }
+
+      for (const key of Object.keys(previous)) {
+        if (!(key in next)) changed = true
+      }
+
+      return changed ? next : previous
+    })
+  }, [grouping, groupedRows])
+
+  const rowLookup = useMemo(() => {
+    const lookup = new Map<TData, Row<TData>>()
+    for (const row of sortedRows) {
+      lookup.set(row.original, row)
+    }
+    return lookup
+  }, [sortedRows])
+
+  const visibleColumnCount = Math.max(table.getVisibleLeafColumns().length, 1)
+  const showGroupedRows = !!grouping
+
+  const renderDataRow = (row: Row<TData>) => (
+    <Fragment key={row.id}>
+      <TableRow data-state={row.getIsSelected() && "selected"}>
+        {row.getVisibleCells().map((cell) => (
+          <TableCell key={cell.id} className="px-3 py-2 text-sm">
+            {flexRender(cell.column.columnDef.cell, cell.getContext())}
+          </TableCell>
+        ))}
+      </TableRow>
+      {rowExpansion && rowExpansion.expandedRowIds.has(row.id) && (
+        <TableRow className="bg-muted/20 hover:bg-muted/20">
+          <TableCell colSpan={visibleColumnCount} className="px-3 py-0">
+            <div className="py-3">{rowExpansion.renderContent(row)}</div>
+          </TableCell>
+        </TableRow>
+      )}
+    </Fragment>
+  )
 
   return (
     <div className="space-y-3">
@@ -171,19 +335,54 @@ export function DataTable<TData, TValue>({
                   ))}
                 </TableRow>
               ))
+            ) : showGroupedRows && groupedRows.length ? (
+              groupedRows.map((group) => {
+                const isExpanded = expandedGroups[group.key] ?? true
+                const rows = group.items
+                  .map((item) => rowLookup.get(item))
+                  .filter((row): row is Row<TData> => row !== undefined)
+
+                return (
+                  <Fragment key={group.key}>
+                    <TableRow className="bg-muted/20 hover:bg-muted/30">
+                      <TableCell colSpan={visibleColumnCount} className="p-0">
+                        <button
+                          type="button"
+                          className="flex w-full items-center justify-between gap-3 px-3 py-3 text-left"
+                          onClick={() => setExpandedGroups((previous) => ({
+                            ...previous,
+                            [group.key]: !(previous[group.key] ?? true),
+                          }))}
+                        >
+                          <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2">
+                              {isExpanded ? (
+                                <ChevronDown className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              ) : (
+                                <ChevronRight className="h-4 w-4 shrink-0 text-muted-foreground" />
+                              )}
+                              <span className="text-sm font-medium">{group.title}</span>
+                              {group.countLabel && <Badge variant="secondary">{group.countLabel}</Badge>}
+                            </div>
+                            {group.subtitle && <p className="pl-6 pt-1 text-xs text-muted-foreground">{group.subtitle}</p>}
+                          </div>
+                          {group.headerExtras && (
+                            <div className="flex items-center gap-2 pl-4" onClick={(event) => event.stopPropagation()}>
+                              {group.headerExtras}
+                            </div>
+                          )}
+                        </button>
+                      </TableCell>
+                    </TableRow>
+                    {isExpanded && rows.map(renderDataRow)}
+                  </Fragment>
+                )
+              })
             ) : table.getRowModel().rows.length ? (
-              table.getRowModel().rows.map((row) => (
-                <TableRow key={row.id} data-state={row.getIsSelected() && "selected"}>
-                  {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="px-3 py-2 text-sm">
-                      {flexRender(cell.column.columnDef.cell, cell.getContext())}
-                    </TableCell>
-                  ))}
-                </TableRow>
-              ))
+              table.getRowModel().rows.map(renderDataRow)
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-muted-foreground">
+                <TableCell colSpan={visibleColumnCount} className="h-24 text-center text-muted-foreground">
                   No results.
                 </TableCell>
               </TableRow>
@@ -193,50 +392,59 @@ export function DataTable<TData, TValue>({
       </div>
 
       {/* Pagination */}
-      <div className="flex items-center justify-between gap-4 text-sm">
-        <div className="text-muted-foreground">
-          {table.getFilteredSelectedRowModel().rows.length > 0 && (
-            <span>{table.getFilteredSelectedRowModel().rows.length} of{" "}</span>
-          )}
-          {table.getFilteredRowModel().rows.length} row(s)
+      {showGroupedRows ? (
+        <div className="flex items-center justify-between gap-4 text-sm">
+          <div className="text-muted-foreground">
+            {sortedRows.length} row(s)
+            {groupedRows.length > 0 && <span>{" "}• {groupedRows.length} group(s)</span>}
+          </div>
         </div>
-        <div className="flex items-center gap-2">
-          <Select
-            value={String(table.getState().pagination.pageSize)}
-            onValueChange={(v: string) => table.setPageSize(Number(v))}
-          >
-            <SelectTrigger className="h-8 w-[70px]">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {[10, 20, 50, 100].map((size) => (
-                <SelectItem key={size} value={String(size)}>
-                  {size}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-          <span className="text-muted-foreground whitespace-nowrap">
-            Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
-          </span>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.previousPage()}
-            disabled={!table.getCanPreviousPage()}
-          >
-            Previous
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={() => table.nextPage()}
-            disabled={!table.getCanNextPage()}
-          >
-            Next
-          </Button>
+      ) : (
+        <div className="flex items-center justify-between gap-4 text-sm">
+          <div className="text-muted-foreground">
+            {table.getFilteredSelectedRowModel().rows.length > 0 && (
+              <span>{table.getFilteredSelectedRowModel().rows.length} of{" "}</span>
+            )}
+            {table.getFilteredRowModel().rows.length} row(s)
+          </div>
+          <div className="flex items-center gap-2">
+            <Select
+              value={String(table.getState().pagination.pageSize)}
+              onValueChange={(v: string) => table.setPageSize(Number(v))}
+            >
+              <SelectTrigger className="h-8 w-17.5">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {[10, 20, 50, 100].map((size) => (
+                  <SelectItem key={size} value={String(size)}>
+                    {size}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <span className="text-muted-foreground whitespace-nowrap">
+              Page {table.getState().pagination.pageIndex + 1} of {table.getPageCount()}
+            </span>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.previousPage()}
+              disabled={!table.getCanPreviousPage()}
+            >
+              Previous
+            </Button>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => table.nextPage()}
+              disabled={!table.getCanNextPage()}
+            >
+              Next
+            </Button>
+          </div>
         </div>
-      </div>
+      )}
     </div>
   )
 }

@@ -319,7 +319,9 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Full multilingual support: all 19 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
 - [x] UI & Workflow improvements: reanalysis endpoint, custom system prompts, chart filtering (task/language/log scale), Param Override Modal, favorites sidebar, encrypted credential storage (v2.14.0)
 - [x] Deep multilingual content localization: all 19 plugins generate test content in 6 languages, not just prompt wrappers (v2.15.0)
-- [x] LLM-as-a-Judge: audit incorrect model responses via judge LLM with web UI setup and background job execution (v2.16.0)
+- [x] LLM-as-a-Judge: audit incorrect model responses via judge LLM with web UI setup and background job execution
+- [x] Test Sets and Results browsing upgrade: independent `Table/Cards` format toggle plus collapsible Airtable-style grouped rows in table mode (v2.17.0)
+- [x] Web UI workflow polish: Execute now uses a paginated checkbox grid for test set multi-select, Results language filters match Test Sets with flag + full-name labels, long filenames no longer break dialog CTA layouts, and Jobs can cancel already-running inference/judge work cooperatively (v2.17.1)
 
 ### 🔄 In Progress
 

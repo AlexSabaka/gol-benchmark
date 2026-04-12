@@ -14,7 +14,6 @@ from itertools import product
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import ConfigField, TestCase, TestCaseGenerator
-from src.plugins.symbol_arithmetic.prompts import USER_PROMPT_TEMPLATES
 
 # ── symbol pools ────────────────────────────────────────────────────────
 ALPHA_SYMBOLS = ["A", "B", "C", "D", "E", "F", "G", "H", "I", "J", "K", "L", "M", "N", "O", "P", "Q", "R", "S", "T", "U", "V", "W", "X", "Y", "Z"]
@@ -388,8 +387,8 @@ class SymbolArithmeticGenerator(TestCaseGenerator):
             regrouped_answers = sorted(set(regrouped_answers))
 
             # ── prompts ─────────────────────────────────────────────
-            user_prompt, system_prompt, full_prompt = self._build_prompts(
-                USER_PROMPT_TEMPLATES, language, user_style, system_style,
+            user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+                "symbol_arithmetic", language, user_style, system_style,
                 symbol_set=symbol_set_str,
                 operation_table=table_str,
                 expression=expr_str,

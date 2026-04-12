@@ -22,11 +22,19 @@ class JobState(str, Enum):
     CANCELLED = "cancelled"
 
 
+TERMINAL_JOB_STATES = {
+    JobState.COMPLETED,
+    JobState.FAILED,
+    JobState.CANCELLED,
+}
+
+
 @dataclass
 class Job:
     id: str
     model_name: str
     testset_path: str
+    run_group_id: Optional[str] = None
     state: JobState = JobState.PENDING
     progress_current: int = 0
     progress_total: int = 0
@@ -45,6 +53,7 @@ class Job:
             "id": self.id,
             "model_name": self.model_name,
             "testset_path": self.testset_path,
+            "run_group_id": self.run_group_id,
             "state": self.state.value,
             "progress_current": self.progress_current,
             "progress_total": self.progress_total,
@@ -55,9 +64,28 @@ class Job:
         }
 
 
+def _read_progress(progress_dict: dict, job_id: str) -> Dict[str, Any]:
+    return dict(progress_dict.get(job_id, {}))
+
+
+def _write_progress(progress_dict: dict, job_id: str, **updates: Any) -> None:
+    current = _read_progress(progress_dict, job_id)
+    cancel_requested = bool(current.get("cancel_requested")) or bool(updates.get("cancel_requested"))
+    merged = {**current, **updates, "cancel_requested": cancel_requested}
+    if cancel_requested and merged.get("state") in (None, "pending", "running"):
+        merged["state"] = "cancelled"
+    progress_dict[job_id] = merged
+
+
+def _cancel_requested(progress_dict: dict, job_id: str) -> bool:
+    current = _read_progress(progress_dict, job_id)
+    return bool(current.get("cancel_requested")) or current.get("state") == "cancelled"
+
+
 def _run_testset_worker(
     testset_path: str,
     model_name: str,
+    run_group_id: Optional[str],
     provider: str,
     ollama_host: str,
     output_dir: str,
@@ -68,10 +96,13 @@ def _run_testset_worker(
     job_id: str,
     api_key: str = "",
     api_base: str = "",
-) -> str:
-    """Worker function executed in a subprocess. Returns result file path."""
-    import json, gzip, time as _time, os, traceback
-    from pathlib import Path
+) -> Dict[str, Optional[str]]:
+    """Worker function executed in a subprocess.
+
+    Returns a status payload so the parent can distinguish normal completion
+    from cooperative cancellation.
+    """
+    import json, gzip, time as _time, os
 
     # Load test set
     with gzip.open(testset_path, "rt", encoding="utf-8") as f:
@@ -79,7 +110,7 @@ def _run_testset_worker(
 
     test_cases = testset.get("test_cases", [])
     total = len(test_cases)
-    progress_dict[job_id] = {"current": 0, "total": total, "state": "running"}
+    _write_progress(progress_dict, job_id, current=0, total=total, state="running")
 
     # Build model interface — canonical implementations in src.models
     from src.models import OllamaInterface, HuggingFaceInterface, OpenAICompatibleInterface
@@ -104,6 +135,10 @@ def _run_testset_worker(
     start_time = _time.time()
 
     for i, tc in enumerate(test_cases):
+        if _cancel_requested(progress_dict, job_id):
+            _write_progress(progress_dict, job_id, current=i, total=total, state="cancelled")
+            return {"status": "cancelled", "result_path": None}
+
         try:
             prompts = tc.get("prompts", {})
             params = {
@@ -115,6 +150,10 @@ def _run_testset_worker(
                 params["no_think"] = True
 
             resp = model.query(prompts.get("full", prompts.get("user", "")), params)
+
+            if _cancel_requested(progress_dict, job_id):
+                _write_progress(progress_dict, job_id, current=i, total=total, state="cancelled")
+                return {"status": "cancelled", "result_path": None}
 
             raw_response = resp.get("response", resp.get("error", ""))
             task_type = tc.get("task_type", "")
@@ -162,7 +201,11 @@ def _run_testset_worker(
                 "error": str(exc),
             })
 
-        progress_dict[job_id] = {"current": i + 1, "total": total, "state": "running"}
+        _write_progress(progress_dict, job_id, current=i + 1, total=total, state="running")
+
+    if _cancel_requested(progress_dict, job_id):
+        _write_progress(progress_dict, job_id, current=total, total=total, state="cancelled")
+        return {"status": "cancelled", "result_path": None}
 
     duration = _time.time() - start_time
 
@@ -172,6 +215,7 @@ def _run_testset_worker(
         "metadata": {
             "result_id": job_id,
             "timestamp": _time.strftime("%Y%m%d_%H%M%S"),
+            "run_group_id": run_group_id,
         },
         "model_info": {"model_name": model_name, "provider": provider},
         "testset_metadata": testset.get("metadata", {}),
@@ -194,11 +238,16 @@ def _run_testset_worker(
     safe_model = model_name.replace("/", "_").replace(":", "_")
     ts = _time.strftime("%Y%m%d_%H%M%S")
     out_path = os.path.join(output_dir, f"results_{safe_model}_{ts}.json.gz")
+
+    if _cancel_requested(progress_dict, job_id):
+        _write_progress(progress_dict, job_id, current=total, total=total, state="cancelled")
+        return {"status": "cancelled", "result_path": None}
+
     with gzip.open(out_path, "wt", encoding="utf-8") as f:
         json.dump(result_data, f, indent=2, default=str)
 
-    progress_dict[job_id] = {"current": total, "total": total, "state": "completed", "result_path": out_path}
-    return out_path
+    _write_progress(progress_dict, job_id, current=total, total=total, state="completed", result_path=out_path)
+    return {"status": "completed", "result_path": out_path}
 
 
 class JobManager:
@@ -215,6 +264,7 @@ class JobManager:
         self,
         testset_path: str,
         model_name: str,
+        run_group_id: Optional[str] = None,
         provider: str = "ollama",
         ollama_host: str = "http://localhost:11434",
         output_dir: str = "results",
@@ -225,13 +275,13 @@ class JobManager:
         api_base: str = "",
     ) -> str:
         job_id = uuid.uuid4().hex[:12]
-        job = Job(id=job_id, model_name=model_name, testset_path=testset_path)
+        job = Job(id=job_id, model_name=model_name, testset_path=testset_path, run_group_id=run_group_id)
         self._jobs[job_id] = job
-        self._progress[job_id] = {"current": 0, "total": 0, "state": "pending"}
+        _write_progress(self._progress, job_id, current=0, total=0, state="pending", cancel_requested=False)
 
         future = self._pool.submit(
             _run_testset_worker,
-            testset_path, model_name, provider, ollama_host,
+            testset_path, model_name, run_group_id, provider, ollama_host,
             output_dir, temperature, max_tokens, no_think,
             self._progress, job_id,
             api_key, api_base,
@@ -244,14 +294,28 @@ class JobManager:
         job = self._jobs.get(job_id)
         if not job:
             return
-        job.finished_at = time.time()
         try:
-            result_path = future.result()
-            job.state = JobState.COMPLETED
-            job.result_path = result_path
+            worker_result = future.result()
         except Exception as exc:
+            if job.state == JobState.CANCELLED:
+                job.finished_at = job.finished_at or time.time()
+                return
             job.state = JobState.FAILED
             job.error = str(exc)
+            job.finished_at = time.time()
+            return
+
+        status = worker_result.get("status") if isinstance(worker_result, dict) else "completed"
+        result_path = worker_result.get("result_path") if isinstance(worker_result, dict) else worker_result
+
+        if status == "cancelled" or job.state == JobState.CANCELLED:
+            job.state = JobState.CANCELLED
+            job.finished_at = job.finished_at or time.time()
+            return
+
+        job.state = JobState.COMPLETED
+        job.result_path = result_path
+        job.finished_at = time.time()
 
     def get_status(self, job_id: str) -> Optional[Dict[str, Any]]:
         job = self._jobs.get(job_id)
@@ -261,10 +325,14 @@ class JobManager:
         prog = self._progress.get(job_id, {})
         job.progress_current = prog.get("current", job.progress_current)
         job.progress_total = prog.get("total", job.progress_total)
-        if prog.get("state") == "running" and job.state == JobState.PENDING:
+        progress_state = prog.get("state")
+        if progress_state == "cancelled":
+            job.state = JobState.CANCELLED
+            job.finished_at = job.finished_at or time.time()
+        elif progress_state == "running" and job.state == JobState.PENDING:
             job.state = JobState.RUNNING
             job.started_at = job.started_at or time.time()
-        if prog.get("result_path") and job.state != JobState.COMPLETED:
+        if prog.get("result_path") and job.state not in TERMINAL_JOB_STATES:
             job.state = JobState.COMPLETED
             job.result_path = prog["result_path"]
             job.finished_at = job.finished_at or time.time()
@@ -297,7 +365,7 @@ class JobManager:
             testset_path=",".join(result_paths),
         )
         self._jobs[job_id] = job
-        self._progress[job_id] = {"current": 0, "total": 0, "state": "pending"}
+        _write_progress(self._progress, job_id, current=0, total=0, state="pending", cancel_requested=False)
 
         future = self._pool.submit(
             run_judge_worker,
@@ -315,25 +383,48 @@ class JobManager:
             if not j:
                 return
             try:
-                j.result_path = fut.result()
-                j.state = JobState.COMPLETED
+                worker_result = fut.result()
             except Exception as exc:
+                if j.state == JobState.CANCELLED:
+                    j.finished_at = j.finished_at or time.time()
+                    return
                 j.state = JobState.FAILED
                 j.error = str(exc)
+                j.finished_at = time.time()
+                return
+
+            status = worker_result.get("status") if isinstance(worker_result, dict) else "completed"
+            result_path = worker_result.get("result_path") if isinstance(worker_result, dict) else worker_result
+
+            if status == "cancelled" or j.state == JobState.CANCELLED:
+                j.state = JobState.CANCELLED
+            else:
+                j.result_path = result_path
+                j.state = JobState.COMPLETED
             j.finished_at = time.time()
 
         future.add_done_callback(_done)
         return job_id
 
     def cancel(self, job_id: str) -> bool:
+        job = self._jobs.get(job_id)
         future = self._futures.get(job_id)
-        if future and future.cancel():
-            job = self._jobs.get(job_id)
-            if job:
-                job.state = JobState.CANCELLED
-                job.finished_at = time.time()
+        if not job or not future:
+            return False
+        if job.state in TERMINAL_JOB_STATES or future.done():
+            return False
+
+        if future.cancel():
+            job.state = JobState.CANCELLED
+            job.finished_at = time.time()
+            _write_progress(self._progress, job_id, state="cancelled", cancel_requested=True)
             return True
-        return False
+
+        job.state = JobState.CANCELLED
+        job.finished_at = time.time()
+        _write_progress(self._progress, job_id, state="cancelled", cancel_requested=True)
+        job.started_at = job.started_at or time.time()
+        return True
 
     def shutdown(self):
         self._pool.shutdown(wait=False)

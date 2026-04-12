@@ -12,7 +12,6 @@ from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ConfigField, TestCase, TestCaseGenerator
 from src.plugins.picross.grid_gen import difficulty_to_size, generate_puzzle
-from src.plugins.picross.prompts import USER_PROMPT_TEMPLATES
 
 
 # ── Clue formatting helpers ──────────────────────────────────────────────
@@ -222,8 +221,8 @@ class PicrossGenerator(TestCaseGenerator):
                     "e": empty_cell,
                 }
 
-                user_prompt, system_prompt, full_prompt = self._build_prompts(
-                    USER_PROMPT_TEMPLATES,
+                user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+                    "picross",
                     language=language,
                     user_style=user_style,
                     system_style=system_style,

@@ -2,7 +2,46 @@
 
 All notable changes to the GoL Benchmark project.
 
-## [2.17.0] - April 8, 2026
+## [2.17.1] - April 12, 2026
+
+### Web UI Workflow Fixes
+
+#### Execute Page
+
+- **Simplified test set selection** — replaced the Execute page card picker with a compact paginated checkbox grid for multi-selecting test sets while preserving persisted search, selection, and paging state
+
+#### Results and Dialog UX
+
+- **Results language filter parity** — Results now uses the same shared flag + full-language labels as Test Sets (for example `🇬🇧 English`)
+- **Overflow-safe modal actions** — widened delete/param-override dialogs and allowed dialog footers to wrap so very long test set names no longer push CTA buttons out of view
+
+#### Jobs and Judge Cancellation
+
+- **Running-job cancellation** — `JobManager.cancel()` now supports cooperative cancellation for already-running inference jobs instead of failing when `Future.cancel()` cannot stop an active worker
+- **Judge worker parity** — judge jobs now honor the same shared cancellation flag and preserve `cancelled` as a terminal state
+- **Cancel endpoint semantics** — `POST /api/jobs/{job_id}/cancel` now returns `404` for unknown jobs and no longer lets status sync overwrite cancelled jobs as completed
+
+### Tests
+
+- **`tests/test_job_manager_cancel.py`** — added regression coverage for cancelling running jobs and preserving completed vs cancelled terminal states in `JobManager` done callbacks
+
+## [2.17.0] - April 11, 2026
+
+### Web UI Browsing Improvements
+
+#### Test Sets and Results: Table/Cards Split + Airtable-Style Grouping
+
+- **Independent `Format` and `Group By` controls** — Test Sets and Results no longer conflate grouping with cards; both pages now default to `Format: Table` and `Group By: None`
+- **Collapsible grouped rows in table mode** — `DataTable` now supports Airtable-style foldable group headers inside the table body, so grouped browsing works without switching away from tabular scanning
+- **Grouped cards retained as an alternate format** — grouped card sections remain available behind the `Cards` format toggle when grouping is active
+- **Grouped mode footer behavior** — grouped tables suppress page-based pagination in favor of per-view row/group counts so groups are not split across pages
+- **Results group actions** — grouped result headers preserve matrix/task/run context and expose group-level select/deselect actions for bulk workflows
+
+#### Shared Frontend Infrastructure
+
+- **`frontend/src/components/data-table/data-table.tsx`** — added optional page-driven grouping metadata, collapsible group expansion state, grouped row rendering, and grouped footer summaries
+- **`frontend/src/pages/testsets.tsx`** — added independent `viewMode` state, `Format` toggle, grouped table rendering path, and grouping defaults that preserve flat table browsing on first load
+- **`frontend/src/pages/results.tsx`** — mirrored the Test Sets UX split and layered dynamic group header extras for grouped selection state and matrix badges
 
 ### New Benchmark Plugin: Picross (Nonogram)
 

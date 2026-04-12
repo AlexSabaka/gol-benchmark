@@ -13,8 +13,9 @@ from src.plugins import PluginRegistry
 from src.plugins.base import TestCase
 
 
-# ── 6 supported languages ───────────────────────────────────────────────────
-LANGUAGES = ["en", "es", "fr", "de", "zh", "ua"]
+# All registered languages — auto-discovers new languages from the registry.
+from src.plugins.languages import all_codes as _all_language_codes
+LANGUAGES = _all_language_codes()
 
 # ── smallest valid config per plugin (1 test case, deterministic) ────────────
 MINIMAL_CONFIGS = {

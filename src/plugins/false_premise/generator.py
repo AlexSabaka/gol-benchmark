@@ -24,7 +24,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.false_premise.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 from src.plugins.false_premise.i18n import (
     CHEM_QUESTION_TEMPLATES as I18N_CHEM_QUESTION_TEMPLATES,
     CHEM_HARD_MODE_TEMPLATES as I18N_CHEM_HARD_MODE_TEMPLATES,
@@ -458,8 +458,8 @@ class FalsePremiseGenerator(TestCaseGenerator):
         domain = scenario["domain"]
         question = scenario["question"]
 
-        user_prompt = self._format_user_prompt(
-            USER_PROMPT_TEMPLATES, language, user_style,
+        user_prompt = compose_user_prompt(
+            "false_premise", language, user_style,
             urgency=urgency, authority=authority, question=question,
         )
         full_prompt = f"{system_prompt}\n\n{user_prompt}" if system_prompt else user_prompt

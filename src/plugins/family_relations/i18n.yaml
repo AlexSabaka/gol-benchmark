@@ -1,0 +1,40 @@
+# Family Relations plugin — perspective-aware family counting puzzles.
+#
+# Variables: {puzzle}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific and fully overridden:
+#   minimal adds "Answer with a single integer" instead of generic "Answer:"
+#   casual uses family-puzzle framing
+#   linguistic uses family-relations reasoning framing
+
+body:
+  en: "{puzzle}"
+  es: "{puzzle}"
+  fr: "{puzzle}"
+  de: "{puzzle}"
+  zh: "{puzzle}"
+  ua: "{puzzle}"
+
+overrides:
+  minimal:
+    en: "{puzzle}\n\nAnswer with a single integer."
+    es: "{puzzle}\n\nResponde con un solo número entero."
+    fr: "{puzzle}\n\nRépondez avec un seul nombre entier."
+    de: "{puzzle}\n\nAntworten Sie mit einer einzelnen ganzen Zahl."
+    zh: "{puzzle}\n\n请用一个整数作答。"
+    ua: "{puzzle}\n\nВідповідайте одним цілим числом."
+  casual:
+    en: "Hey, here's a quick family puzzle:\n\n{puzzle}\n\nWhat's the answer?  Just give me the number."
+    es: "Oye, aquí tienes un acertijo familiar rápido:\n\n{puzzle}\n\n¿Cuál es la respuesta? Solo dame el número."
+    fr: "Salut, voici une petite énigme familiale :\n\n{puzzle}\n\nQuelle est la réponse ? Donne-moi juste le nombre."
+    de: "Hey, hier ist ein schnelles Familienrätsel:\n\n{puzzle}\n\nWas ist die Antwort? Gib mir einfach die Zahl."
+    zh: "嘿，这里有一个简单的家庭关系谜题：\n\n{puzzle}\n\n答案是什么？只给我数字就好。"
+    ua: "Привіт, ось швидка сімейна загадка:\n\n{puzzle}\n\nЯка відповідь? Просто дай мені число."
+  linguistic:
+    en: "Please solve the following family-relations reasoning problem. Think carefully about who is counted and from whose perspective.\n\n{puzzle}\n\nProvide your final answer as a single integer."
+    es: "Por favor, resuelve el siguiente problema de razonamiento sobre relaciones familiares. Piensa cuidadosamente en quién se cuenta y desde la perspectiva de quién.\n\n{puzzle}\n\nProporciona tu respuesta final como un solo número entero."
+    fr: "Veuillez résoudre le problème de raisonnement suivant portant sur les relations familiales. Réfléchissez bien à qui est compté et du point de vue de qui.\n\n{puzzle}\n\nFournissez votre réponse finale sous la forme d'un seul nombre entier."
+    de: "Bitte lösen Sie die folgende Aufgabe zum logischen Denken über Familienbeziehungen. Überlegen Sie genau, wer gezählt wird und aus wessen Perspektive.\n\n{puzzle}\n\nGeben Sie Ihre endgültige Antwort als einzelne ganze Zahl an."
+    zh: "请解决以下关于家庭关系的推理问题。请仔细思考统计的是谁，以及从谁的视角出发。\n\n{puzzle}\n\n请以一个整数作为你的最终答案。"
+    ua: "Будь ласка, розв'яжіть наступну задачу на логічне мислення щодо сімейних відносин. Ретельно подумайте, хто рахується і з чиєї перспективи.\n\n{puzzle}\n\nНадайте вашу остаточну відповідь у вигляді одного цілого числа."

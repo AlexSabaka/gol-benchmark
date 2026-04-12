@@ -23,6 +23,11 @@ import re
 
 # ==================== ENUMS ====================
 
+# To add a language:
+#   1. Register a LanguageSpec in src/plugins/languages.py  ← start here
+#   2. Add an entry to this enum (one line)
+#   3. Add system prompts to src/core/PROMPT_STYLES.py
+#   4. Add plugin prompt templates incrementally — missing languages fall back to English
 class Language(str, Enum):
     """Supported languages for prompts."""
     EN = "en"  # English

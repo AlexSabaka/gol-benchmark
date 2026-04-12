@@ -19,6 +19,8 @@ const TASK_COLORS: Record<string, string> = {
   family_relations: "bg-lime-100 text-lime-800 dark:bg-lime-900 dark:text-lime-200",
   encoding_cipher: "bg-stone-100 text-stone-800 dark:bg-stone-900 dark:text-stone-200",
   symbol_arithmetic: "bg-zinc-100 text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
+  picross: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200",
+  fancy_unicode: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
 }
 
 export function TaskBadge({ task }: { task: string }) {

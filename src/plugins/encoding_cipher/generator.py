@@ -15,7 +15,6 @@ from src.plugins.parse_utils import safe_enum
 from src.core.PromptEngine import Language, SystemPromptStyle
 
 from .encoding import encode_base64, encode_caesar, encode_morse
-from .prompts import TEMPLATES
 
 # ---------------------------------------------------------------------------
 # Paths
@@ -409,8 +408,8 @@ class EncodingCipherGenerator(TestCaseGenerator):
             instruction = lang_instructions[mode].format(encoding_name=enc_display)
 
             # Build prompts
-            user_prompt, system_prompt, full_prompt = self._build_prompts(
-                TEMPLATES, language_str, user_style, system_style,
+            user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+                "encoding_cipher", language_str, user_style, system_style,
                 instruction=instruction, encoded=encoded_text,
             )
 

@@ -1,0 +1,37 @@
+# Arithmetic plugin — math expression parsing and evaluation.
+#
+# Variables: {expression}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific (step-by-step math framing) and fully overridden.
+
+body:
+  en: "{expression}"
+  es: "{expression}"
+  fr: "{expression}"
+  de: "{expression}"
+  zh: "{expression}"
+  ua: "{expression}"
+
+overrides:
+  minimal:
+    en: "{expression}\n\nAnswer: "
+    es: "{expression}\n\nRespuesta: "
+    fr: "{expression}\n\nReponse : "
+    de: "{expression}\n\nAntwort: "
+    zh: "{expression}\n\n答案: "
+    ua: "{expression}\n\nВідповідь: "
+  casual:
+    en: "Hey! Can you solve this math expression for me? Just work through it step by step.\n{expression}\n\nShow me how you get to the answer:\n[Your work here]\n\nFinal answer: [just the number]"
+    es: "Hola! Puedes resolver esta expresion matematica por mi? Solo resuelvela paso a paso.\n{expression}\n\nMuestrame como llegas a la respuesta:\n[Tu trabajo aqui]\n\nRespuesta final: [solo el numero]"
+    fr: "Salut ! Tu peux resoudre cette expression mathematique pour moi ? Travaille dessus etape par etape.\n{expression}\n\nMontre-moi comment tu arrives a la reponse :\n[Ton travail ici]\n\nReponse finale : [juste le nombre]"
+    de: "Hey! Kannst du diesen mathematischen Ausdruck fuer mich loesen? Arbeite ihn einfach Schritt fuer Schritt durch.\n{expression}\n\nZeig mir, wie du zur Antwort kommst:\n[Deine Arbeit hier]\n\nEndgueltige Antwort: [nur die Zahl]"
+    zh: "嗨! 你能帮我解这道数学题吗? 请一步一步地算出来。\n{expression}\n\n给我看看你是怎么算出答案的:\n[你的计算过程]\n\n最终答案: [只写数字]"
+    ua: "Привіт! Можеш розв'язати цей математичний вираз для мене? Просто розв'яжи його крок за кроком.\n{expression}\n\nПокажи мені, як ти отримав відповідь:\n[Твоя робота тут]\n\nОстаточна відповідь: [лише число]"
+  linguistic:
+    en: "Given the mathematical expression: {expression}\n\nFollow these EXACT steps:\n1. Identify all operations in the expression following order of operations (PEMDAS/BODMAS)\n2. Calculate each sub-expression step by step\n3. Show your work for every intermediate calculation\n4. Provide the final numerical result\n\nExpression: {expression}\nStep-by-step solution:\n[Show your work here]\n\nFinal answer: [number only]"
+    es: "Dada la expresion matematica: {expression}\n\nSigue estos pasos EXACTOS:\n1. Identifica todas las operaciones en la expresion siguiendo el orden de operaciones (PEMDAS/BODMAS)\n2. Calcula cada subexpresion paso a paso\n3. Muestra tu trabajo para cada calculo intermedio\n4. Proporciona el resultado numerico final\n\nExpresion: {expression}\nSolucion paso a paso:\n[Muestra tu trabajo aqui]\n\nRespuesta final: [solo el numero]"
+    fr: "Etant donnee l'expression mathematique : {expression}\n\nSuivez ces etapes EXACTES :\n1. Identifiez toutes les operations dans l'expression en suivant l'ordre des operations (PEMDAS/BODMAS)\n2. Calculez chaque sous-expression etape par etape\n3. Montrez votre travail pour chaque calcul intermediaire\n4. Fournissez le resultat numerique final\n\nExpression : {expression}\nSolution etape par etape :\n[Montrez votre travail ici]\n\nReponse finale : [nombre uniquement]"
+    de: "Gegeben der mathematische Ausdruck: {expression}\n\nBefolge diese EXAKTEN Schritte:\n1. Identifiziere alle Operationen im Ausdruck gemaess der Operationsreihenfolge (PEMDAS/BODMAS)\n2. Berechne jeden Teilausdruck Schritt fuer Schritt\n3. Zeige deine Arbeit fuer jede Zwischenberechnung\n4. Gib das endgueltige numerische Ergebnis an\n\nAusdruck: {expression}\nSchritt-fuer-Schritt-Loesung:\n[Zeige deine Arbeit hier]\n\nEndgueltige Antwort: [nur die Zahl]"
+    zh: "给定数学表达式: {expression}\n\n请按照以下确切步骤操作:\n1. 按照运算顺序(PEMDAS/BODMAS)识别表达式中的所有运算\n2. 逐步计算每个子表达式\n3. 展示每个中间计算的过程\n4. 提供最终的数值结果\n\n表达式: {expression}\n逐步解答:\n[在此展示你的计算过程]\n\n最终答案: [仅填写数字]"
+    ua: "Дано математичний вираз: {expression}\n\nВиконай ці ТОЧНІ кроки:\n1. Визнач усі операції у виразі, дотримуючись порядку операцій (PEMDAS/BODMAS)\n2. Обчисли кожен підвираз крок за кроком\n3. Покажи свою роботу для кожного проміжного обчислення\n4. Надай остаточний числовий результат\n\nВираз: {expression}\nПокрокове розв'язання:\n[Покажи свою роботу тут]\n\nОстаточна відповідь: [лише число]"

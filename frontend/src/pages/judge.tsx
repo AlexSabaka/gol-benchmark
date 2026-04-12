@@ -17,11 +17,6 @@ import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import {
-  Collapsible,
-  CollapsibleContent,
-  CollapsibleTrigger,
-} from "@/components/ui/collapsible"
-import {
   Select,
   SelectContent,
   SelectItem,
@@ -31,9 +26,13 @@ import {
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { DataTable } from "@/components/data-table/data-table"
 import { PageHeader } from "@/components/layout/page-header"
-import { useJudgeResults, useDeleteResult } from "@/hooks/use-results"
-import { fetchJudgeResult } from "@/api/results"
+import { useJudgeResult, useJudgeResults, useDeleteResult } from "@/hooks/use-results"
+import { makeStorageKey, useLocalStorageState } from "@/lib/local-storage"
 import type { JudgeSummary, JudgeResult, JudgmentEntry } from "@/types"
+
+interface JudgeTableRow extends JudgmentEntry {
+  rowId: string
+}
 
 // ── Verdict styling ──
 
@@ -66,6 +65,33 @@ function ConfidenceBadge({ confidence }: { confidence: string }) {
     <Badge variant="outline" className={`text-[10px] ${colors[confidence] ?? ""}`}>
       {confidence}
     </Badge>
+  )
+}
+
+function buildJudgmentRowId(judgment: JudgmentEntry, index: number) {
+  return `${judgment.source_file}:${judgment.test_id}:${judgment.model}:${index}`
+}
+
+function JudgmentDetailContent({ judgment }: { judgment: JudgmentEntry }) {
+  return (
+    <div className="space-y-3 text-xs">
+      <div>
+        <h5 className="mb-1 font-medium text-muted-foreground">Expected Answer</h5>
+        <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2">{judgment.expected_answer}</pre>
+      </div>
+      <div>
+        <h5 className="mb-1 font-medium text-muted-foreground">Parsed Answer</h5>
+        <pre className="overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2">{judgment.parsed_answer}</pre>
+      </div>
+      <div>
+        <h5 className="mb-1 font-medium text-muted-foreground">Model Response</h5>
+        <pre className="max-h-50 overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2">{judgment.raw_response}</pre>
+      </div>
+      <div>
+        <h5 className="mb-1 font-medium text-muted-foreground">Question</h5>
+        <pre className="max-h-50 overflow-x-auto whitespace-pre-wrap rounded bg-muted p-2">{judgment.user_prompt}</pre>
+      </div>
+    </div>
   )
 }
 
@@ -308,13 +334,23 @@ function exportMarkdown(result: JudgeResult, filename: string) {
 // ── Main page ──
 
 export default function JudgePage() {
+  const storageScope = "judge-page"
   const { data: judgeFiles, isLoading: filesLoading, refetch: refetchJudgeFiles } = useJudgeResults()
   const deleteMutation = useDeleteResult()
-  const [selectedFile, setSelectedFile] = useState<string | null>(null)
-  const [judgeResult, setJudgeResult] = useState<JudgeResult | null>(null)
-  const [resultLoading, setResultLoading] = useState(false)
-  const [verdictFilter, setVerdictFilter] = useState<string>("__all__")
-  const [confidenceFilter, setConfidenceFilter] = useState<string>("__all__")
+  const [selectedFile, setSelectedFile] = useLocalStorageState<string | null>(makeStorageKey(storageScope, "selected-file"), null)
+  const [verdictFilter, setVerdictFilter] = useLocalStorageState<string>(makeStorageKey(storageScope, "verdict-filter"), "__all__")
+  const [confidenceFilter, setConfidenceFilter] = useLocalStorageState<string>(makeStorageKey(storageScope, "confidence-filter"), "__all__")
+  const [expandedRows, setExpandedRows] = useState<Set<string>>(new Set())
+  const { data: judgeResult, isLoading: resultLoading } = useJudgeResult(selectedFile)
+
+  const toggleExpandedRow = (rowId: string) => {
+    setExpandedRows((previous) => {
+      const next = new Set(previous)
+      if (next.has(rowId)) next.delete(rowId)
+      else next.add(rowId)
+      return next
+    })
+  }
 
   const handleDeleteJudge = async (filename: string) => {
     try {
@@ -322,7 +358,6 @@ export default function JudgePage() {
       toast.success("Judge result deleted")
       if (selectedFile === filename) {
         setSelectedFile(null)
-        setJudgeResult(null)
       }
       refetchJudgeFiles()
     } catch {
@@ -330,22 +365,17 @@ export default function JudgePage() {
     }
   }
 
-  const handleSelectFile = async (filename: string) => {
-    setSelectedFile(filename)
-    setResultLoading(true)
-    try {
-      const data = await fetchJudgeResult(filename)
-      setJudgeResult(data)
-    } catch {
-      setJudgeResult(null)
-    } finally {
-      setResultLoading(false)
-    }
-  }
+  const judgmentRows = useMemo<JudgeTableRow[]>(() => (
+    judgeResult
+      ? judgeResult.judgments.map((judgment, index) => ({
+          ...judgment,
+          rowId: buildJudgmentRowId(judgment, index),
+        }))
+      : []
+  ), [judgeResult])
 
   const filteredJudgments = useMemo(() => {
-    if (!judgeResult) return []
-    let items = judgeResult.judgments
+    let items = judgmentRows
     if (verdictFilter !== "__all__") {
       items = items.filter((j) => j.verdict === verdictFilter)
     }
@@ -353,7 +383,12 @@ export default function JudgePage() {
       items = items.filter((j) => j.confidence === confidenceFilter)
     }
     return items
-  }, [judgeResult, verdictFilter, confidenceFilter])
+  }, [confidenceFilter, judgmentRows, verdictFilter])
+
+  const visibleExpandedRows = useMemo(() => {
+    const visibleIds = new Set(filteredJudgments.map((judgment) => judgment.rowId))
+    return new Set([...expandedRows].filter((rowId) => visibleIds.has(rowId)))
+  }, [expandedRows, filteredJudgments])
 
   // Available verdicts and confidences for filters
   const verdictOptions = useMemo(() => {
@@ -367,12 +402,31 @@ export default function JudgePage() {
   }, [judgeResult])
 
   // Table columns
-  const columns: ColumnDef<JudgmentEntry>[] = [
+  const columns: ColumnDef<JudgeTableRow>[] = [
+    {
+      id: "expand",
+      header: "",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => {
+        const expanded = expandedRows.has(row.id)
+        return (
+          <Button
+            variant="ghost"
+            size="icon"
+            className="h-7 w-7"
+            onClick={() => toggleExpandedRow(row.id)}
+          >
+            <ChevronDown className={`h-3.5 w-3.5 transition-transform ${expanded ? "rotate-180" : ""}`} />
+          </Button>
+        )
+      },
+    },
     {
       accessorKey: "test_id",
       header: "Test ID",
       cell: ({ row }) => (
-        <span className="font-mono text-xs truncate max-w-[140px] block" title={row.original.test_id}>
+        <span className="block max-w-35 truncate font-mono text-xs" title={row.original.test_id}>
           {row.original.test_id}
         </span>
       ),
@@ -380,7 +434,7 @@ export default function JudgePage() {
     {
       accessorKey: "model",
       header: "Model",
-      cell: ({ row }) => <span className="text-xs truncate max-w-[120px] block">{row.original.model}</span>,
+      cell: ({ row }) => <span className="block max-w-30 truncate text-xs">{row.original.model}</span>,
     },
     {
       accessorKey: "verdict",
@@ -408,7 +462,7 @@ export default function JudgePage() {
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="text-xs text-muted-foreground truncate max-w-[200px] block cursor-help">
+              <span className="block max-w-50 cursor-help truncate text-xs text-muted-foreground">
                 {notes}
               </span>
             </TooltipTrigger>
@@ -423,7 +477,7 @@ export default function JudgePage() {
   const toolbar = () => (
     <div className="flex items-center gap-2">
       <Select value={verdictFilter} onValueChange={setVerdictFilter}>
-        <SelectTrigger className="h-7 w-[160px] text-xs">
+        <SelectTrigger className="h-7 w-40 text-xs">
           <SelectValue placeholder="All verdicts" />
         </SelectTrigger>
         <SelectContent>
@@ -436,7 +490,7 @@ export default function JudgePage() {
         </SelectContent>
       </Select>
       <Select value={confidenceFilter} onValueChange={setConfidenceFilter}>
-        <SelectTrigger className="h-7 w-[130px] text-xs">
+        <SelectTrigger className="h-7 w-32.5 text-xs">
           <SelectValue placeholder="All confidence" />
         </SelectTrigger>
         <SelectContent>
@@ -495,7 +549,7 @@ export default function JudgePage() {
               {judgeFiles.map((f: JudgeSummary) => (
                 <button
                   key={f.filename}
-                  onClick={() => handleSelectFile(f.filename)}
+                  onClick={() => setSelectedFile(f.filename)}
                   className={`flex w-full items-center justify-between rounded px-3 py-2 text-xs transition-colors ${
                     selectedFile === f.filename
                       ? "bg-primary/10 text-primary border border-primary/20"
@@ -503,7 +557,7 @@ export default function JudgePage() {
                   }`}
                 >
                   <div className="flex flex-col items-start gap-0.5 min-w-0">
-                    <span className="font-medium truncate max-w-[300px]">{f.judge_model}</span>
+                    <span className="max-w-75 truncate font-medium">{f.judge_model}</span>
                     <span className="text-muted-foreground">
                       {f.total_judged} judged | {f.source_results.length} source file{f.source_results.length !== 1 ? "s" : ""}
                     </span>
@@ -564,58 +618,16 @@ export default function JudgePage() {
                 searchKey="test_id"
                 searchPlaceholder="Search by test ID..."
                 toolbar={toolbar}
+                persistKey="judge-table"
+                getRowId={(row) => row.rowId}
+                rowExpansion={{
+                  expandedRowIds: visibleExpandedRows,
+                  onToggleRow: toggleExpandedRow,
+                  renderContent: (row) => <JudgmentDetailContent judgment={row.original} />,
+                }}
               />
             </CardContent>
           </Card>
-
-          {/* Expandable judgment details (below table) */}
-          {filteredJudgments.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm">Judgment Details</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-2">
-                {filteredJudgments.slice(0, 20).map((j, i) => (
-                  <Collapsible key={`${j.test_id}-${i}`}>
-                    <CollapsibleTrigger className="flex w-full items-center justify-between rounded border px-3 py-2 text-xs hover:bg-accent transition-colors">
-                      <div className="flex items-center gap-2">
-                        <VerdictBadge verdict={j.verdict} />
-                        <span className="font-mono">{j.test_id}</span>
-                        <span className="text-muted-foreground">{j.model}</span>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-muted-foreground truncate max-w-[200px]">{j.notes}</span>
-                        <ChevronDown className="h-3 w-3 text-muted-foreground shrink-0" />
-                      </div>
-                    </CollapsibleTrigger>
-                    <CollapsibleContent className="rounded-b border border-t-0 bg-muted/30 px-3 py-3 space-y-3 text-xs">
-                      <div>
-                        <h5 className="font-medium mb-1 text-muted-foreground">Expected Answer</h5>
-                        <pre className="bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap">{j.expected_answer}</pre>
-                      </div>
-                      <div>
-                        <h5 className="font-medium mb-1 text-muted-foreground">Parsed Answer</h5>
-                        <pre className="bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap">{j.parsed_answer}</pre>
-                      </div>
-                      <div>
-                        <h5 className="font-medium mb-1 text-muted-foreground">Model Response</h5>
-                        <pre className="bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-[200px]">{j.raw_response}</pre>
-                      </div>
-                      <div>
-                        <h5 className="font-medium mb-1 text-muted-foreground">Question</h5>
-                        <pre className="bg-muted rounded p-2 overflow-x-auto whitespace-pre-wrap max-h-[200px]">{j.user_prompt}</pre>
-                      </div>
-                    </CollapsibleContent>
-                  </Collapsible>
-                ))}
-                {filteredJudgments.length > 20 && (
-                  <p className="text-xs text-muted-foreground text-center pt-2">
-                    Showing first 20 of {filteredJudgments.length} judgments
-                  </p>
-                )}
-              </CardContent>
-            </Card>
-          )}
         </>
       )}
     </div>

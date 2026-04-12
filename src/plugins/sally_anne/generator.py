@@ -10,7 +10,6 @@ from typing import Dict, List, Any, Optional
 from datetime import datetime
 from ..base import TestCaseGenerator, TestCase, ConfigField
 from .scenario_builder import SallyAnneScenarioBuilder, _gender_code
-from .prompts import USER_PROMPT_TEMPLATES
 
 
 class SallyAnneTestCaseGenerator(TestCaseGenerator):
@@ -152,8 +151,8 @@ class SallyAnneTestCaseGenerator(TestCaseGenerator):
         system_style_str = prompt_config.get('system_style', 'analytical')
         language_str = prompt_config.get('language', 'en')
 
-        user_prompt, system_prompt, full_prompt = self._build_prompts(
-            USER_PROMPT_TEMPLATES,
+        user_prompt, system_prompt, full_prompt = self._build_prompts_yaml(
+            "sally_anne",
             language=language_str,
             user_style=user_style_str,
             system_style=system_style_str,

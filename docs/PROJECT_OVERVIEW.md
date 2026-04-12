@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.17.0** | Last updated: 2026-04-08
+> **Version 2.17.1** | Last updated: 2026-04-12
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -345,10 +345,10 @@ cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → 
 |-------|------|---------|
 | `/` | Dashboard | Summary of available plugins, models, recent runs |
 | `/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix, custom system prompt (text/file/URL) |
-| `/testsets` | Test Sets | Create, list, inspect (tabbed detail with paginated cases), regenerate with param overrides, group by task type |
-| `/execute` | Execute | Submit jobs; model search/filter, favorite models sidebar grouped by provider, encrypted credential storage for OpenAI-compatible endpoints |
-| `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions |
-| `/results` | Results | Browse results with sortable DataTable, model/task faceted filters; reanalyze, rerun with params, group by task/model |
+| `/testsets` | Test Sets | Create, list, inspect (tabbed detail with paginated cases), regenerate with param overrides, switch between `Table` and grouped `Cards`, and use collapsible grouped rows in table mode |
+| `/execute` | Execute | Submit jobs; paginated checkbox-grid test set multi-select, model search/filter, favorite models sidebar grouped by provider, encrypted credential storage for OpenAI-compatible endpoints |
+| `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions, and cooperative cancellation for already-running inference or judge work |
+| `/results` | Results | Browse results with sortable DataTable, model/task/language faceted filters (language chips show flag + full name); reanalyze, rerun with params, switch between `Table` and grouped `Cards`, and use collapsible grouped rows for task/model/run grouping |
 | `/charts` | Charts | Heatmap, bar comparison, scaling scatter; task type + language filtering, log/linear scale toggle |
 | `/reports` | Reports | View generated HTML reports in iframe |
 
@@ -365,7 +365,7 @@ frontend/src/
 │   ├── layout/       # AppLayout, Sidebar, Header
 │   ├── plugin-config/ # Dynamic ConfigField renderer (number, select, multi-select, boolean, range, weight_map)
 │   ├── charts/       # AccuracyHeatmap, ModelBarChart, ScalingScatter, ChartFilters, ChartCard
-│   ├── data-table/   # Generic sortable/filterable DataTable
+│   ├── data-table/   # Generic sortable/filterable DataTable with optional collapsible grouping
 │   └── param-override-modal.tsx  # Shared modal for rerun/regenerate with param overrides
 └── App.tsx       # BrowserRouter + QueryClientProvider + ThemeProvider
 ```
@@ -382,7 +382,7 @@ frontend/src/
 
 ### Background Jobs
 
-The `JobManager` (`src/web/jobs.py`) uses `ProcessPoolExecutor` for concurrent model execution. Jobs track state through `PENDING → RUNNING → COMPLETED/FAILED` with progress counters for real-time UI updates.
+The `JobManager` (`src/web/jobs.py`) uses `ProcessPoolExecutor` for concurrent model execution. Jobs track state through `PENDING → RUNNING → COMPLETED/FAILED/CANCELLED` with progress counters for real-time UI updates. Queued jobs cancel immediately; already-running inference and judge workers use a shared cancellation flag so the Jobs page can stop active work cooperatively without losing terminal-state correctness.
 
 ---
 

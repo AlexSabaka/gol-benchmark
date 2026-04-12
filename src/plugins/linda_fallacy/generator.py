@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.linda_fallacy.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 from src.plugins.linda_fallacy.i18n import (
     PERSONA_TEMPLATES,
     ACTIVITIES_CONNECTORS,
@@ -142,8 +142,8 @@ class LindaTestCaseGenerator(TestCaseGenerator):
             )
 
             # Generate prompts
-            user_prompt = self._format_user_prompt(
-                USER_PROMPT_TEMPLATES, language_str, user_style_str,
+            user_prompt = compose_user_prompt(
+                "linda_fallacy", language_str, user_style_str,
                 persona_description=persona_description,
                 ranked_items=ranked_items,
                 num_options=len(test_item.all_items),

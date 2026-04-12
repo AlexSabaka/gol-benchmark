@@ -50,6 +50,7 @@ def _summarize_result(filepath: Path) -> dict:
     try:
         data = _load_result(filepath)
         stats = data.get("summary_statistics", {})
+        metadata = data.get("metadata", {})
         model_info = data.get("model_info", {})
         exec_info = data.get("execution_info", {})
         ts_meta = data.get("testset_metadata", {})
@@ -79,6 +80,12 @@ def _summarize_result(filepath: Path) -> dict:
             "duration_seconds": exec_info.get("duration_seconds", 0),
             "total_tokens": stats.get("total_input_tokens", 0) + stats.get("total_output_tokens", 0),
             "testset_name": ts_meta.get("name", ts_meta.get("testset_name", "")),
+            "run_group_id": metadata.get("run_group_id"),
+            "matrix_batch_id": ts_meta.get("matrix_batch_id"),
+            "matrix_cell_id": ts_meta.get("matrix_cell_id"),
+            "matrix_label": ts_meta.get("matrix_label"),
+            "matrix_plugin": ts_meta.get("matrix_plugin"),
+            "matrix_axes": ts_meta.get("matrix_axes"),
             "task_types": task_types,
             "languages": languages,
             "user_styles": user_styles,

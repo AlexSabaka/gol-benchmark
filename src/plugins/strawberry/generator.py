@@ -30,12 +30,16 @@ from __future__ import annotations
 import random
 import string
 from pathlib import Path
-from typing import Any, Dict, List, Tuple
+from typing import Any, Callable, Dict, List, Tuple
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.strawberry.prompts import (
-    MINIMAL_TEMPLATE, CASUAL_TEMPLATE, LINGUISTIC_INTROS, ANSWER_CUES,
-)
+from src.plugins.i18n.loader import load_plugin_i18n
+
+_i18n = load_plugin_i18n("strawberry")
+MINIMAL_TEMPLATE = _i18n.get("minimal_template", {})
+CASUAL_TEMPLATE = _i18n.get("casual_template", {})
+LINGUISTIC_INTROS = _i18n.get("linguistic_intros", {})
+ANSWER_CUES = _i18n.get("answer_cues", {})
 
 # ---------------------------------------------------------------------------
 # Data directory
@@ -481,23 +485,23 @@ QUESTION_TEMPLATES_LIPOGRAM: Dict[str, List[str]] = {
 # Ordinal helper for nth_letter templates
 # ===================================================================
 
-_ORDINALS_EN = {
-    1: "1st", 2: "2nd", 3: "3rd",
+# Data-driven ordinal formatters — add one entry per language here.
+# Languages not listed fall through to the English irregular-suffix logic.
+_ORDINAL_FMT: Dict[str, Callable[[int], str]] = {
+    "es": lambda n: f"{n}.º",
+    "fr": lambda n: "1er" if n == 1 else f"{n}e",
+    "de": lambda n: f"{n}.",
+    "zh": lambda n: f"第{n}",
+    "ua": lambda n: f"{n}-й",
 }
+
 
 def _ordinal(n: int, language: str = "en") -> str:
     """Return ordinal string for position *n* (1-based)."""
-    if language == "es":
-        return f"{n}.º"
-    elif language == "fr":
-        return "1er" if n == 1 else f"{n}e"
-    elif language == "de":
-        return f"{n}."
-    elif language == "zh":
-        return f"第{n}"
-    elif language == "ua":
-        return f"{n}-й"
-    # English (default)
+    fmt = _ORDINAL_FMT.get(language)
+    if fmt is not None:
+        return fmt(n)
+    # English default (irregular suffixes)
     if 11 <= (n % 100) <= 13:
         return f"{n}th"
     return f"{n}{['th','st','nd','rd'][min(n%10,4) if n%10<4 else 0]}"

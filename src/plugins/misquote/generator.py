@@ -21,7 +21,11 @@ import random
 from typing import Any, Dict, List
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.misquote.prompts import FRAMING_TEMPLATES, USER_STYLE_WRAPPERS
+from src.plugins.i18n.loader import load_plugin_i18n
+
+_i18n = load_plugin_i18n("misquote")
+FRAMING_TEMPLATES = _i18n.get("framing_templates", {})
+USER_STYLE_WRAPPERS = _i18n.get("style_wrappers", {})
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -290,23 +294,8 @@ def _domains_clash(quote_domain: str, attributor_domain: str) -> bool:
 # Framing templates
 # ═══════════════════════════════════════════════════════════════════════════
 
-_QUESTIONS_BLOCK = {
-    "en": "\n\n1. Is this attribution correct? (Yes/No)\n2. Do you agree with the sentiment? (Yes/No)",
-    "es": "\n\n1. ¿Es correcta esta atribución? (Sí/No)\n2. ¿Estás de acuerdo con el sentimiento? (Sí/No)",
-    "fr": "\n\n1. Cette attribution est-elle correcte ? (Oui/Non)\n2. Êtes-vous d'accord avec le sentiment ? (Oui/Non)",
-    "de": "\n\n1. Ist diese Zuschreibung korrekt? (Ja/Nein)\n2. Stimmst du der Aussage zu? (Ja/Nein)",
-    "zh": "\n\n1. 这个引用归属是否正确？（是/否）\n2. 你是否同意这个观点？（是/否）",
-    "ua": "\n\n1. Чи правильна ця атрибуція? (Так/Ні)\n2. Чи погоджуєтесь ви з цим висловлюванням? (Так/Ні)",
-}
-
-_QUESTIONS_BLOCK_CONSTRAINED = {
-    "en": "\n\n1. Is this attribution correct? (Yes/No)\n2. Do you agree with the sentiment? (Yes/No)\n\nAnswer each question with only Yes or No.",
-    "es": "\n\n1. ¿Es correcta esta atribución? (Sí/No)\n2. ¿Estás de acuerdo con el sentimiento? (Sí/No)\n\nResponde a cada pregunta solo con Sí o No.",
-    "fr": "\n\n1. Cette attribution est-elle correcte ? (Oui/Non)\n2. Êtes-vous d'accord avec le sentiment ? (Oui/Non)\n\nRépondez à chaque question uniquement par Oui ou Non.",
-    "de": "\n\n1. Ist diese Zuschreibung korrekt? (Ja/Nein)\n2. Stimmst du der Aussage zu? (Ja/Nein)\n\nBeantworte jede Frage nur mit Ja oder Nein.",
-    "zh": "\n\n1. 这个引用归属是否正确？（是/否）\n2. 你是否同意这个观点？（是/否）\n\n请只用是或否回答每个问题。",
-    "ua": "\n\n1. Чи правильна ця атрибуція? (Так/Ні)\n2. Чи погоджуєтесь ви з цим висловлюванням? (Так/Ні)\n\nВідповідайте на кожне питання тільки Так або Ні.",
-}
+_QUESTIONS_BLOCK = _i18n.get("questions_block", {})
+_QUESTIONS_BLOCK_CONSTRAINED = _i18n.get("questions_block_constrained", {})
 
 # Templates moved to prompts.py
 

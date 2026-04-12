@@ -20,7 +20,7 @@ except ImportError:
     names = None
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.grid_tasks.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 from src.plugins.grid_tasks.data.grid_i18n import (
     translate_header, get_list, get_question_template, FALLBACK_NAMES,
 )
@@ -461,8 +461,8 @@ class GridTasksTestCaseGenerator(TestCaseGenerator):
             user_style_str = prompt_config.get('user_style', 'casual')
             system_style_str = prompt_config.get('system_style', 'analytical')
             language_str = prompt_config.get('language', 'en')
-            user_prompt = self._format_user_prompt(
-                USER_PROMPT_TEMPLATES, language_str, user_style_str,
+            user_prompt = compose_user_prompt(
+                "grid_tasks", language_str, user_style_str,
                 table_str=table_str, question=question,
             )
             system_prompt = self._get_system_prompt(system_style_str, language_str)

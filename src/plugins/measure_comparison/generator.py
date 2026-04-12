@@ -38,7 +38,7 @@ from fractions import Fraction
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-from src.plugins.measure_comparison.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 
 # =========================================================================
 # Unit System
@@ -1173,8 +1173,8 @@ class MeasureComparisonGenerator(TestCaseGenerator):
             unit2=u2_sym,
         )
 
-        user_prompt = self._format_user_prompt(
-            USER_PROMPT_TEMPLATES, language, user_style, question=question,
+        user_prompt = compose_user_prompt(
+            "measure_comparison", language, user_style, question=question,
         )
 
         system_prompt = self._get_system_prompt(system_style, language)
@@ -1265,8 +1265,8 @@ class MeasureComparisonGenerator(TestCaseGenerator):
 
         question = template.format(val1=case["val1_str"], val2=case["val2_str"])
 
-        user_prompt = self._format_user_prompt(
-            USER_PROMPT_TEMPLATES, language, user_style, question=question,
+        user_prompt = compose_user_prompt(
+            "measure_comparison", language, user_style, question=question,
         )
 
         system_prompt = self._get_system_prompt(system_style, language)

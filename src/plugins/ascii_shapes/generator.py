@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.ascii_shapes.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 
 
 class AsciiShapesTestCaseGenerator(TestCaseGenerator):
@@ -155,8 +155,8 @@ class AsciiShapesTestCaseGenerator(TestCaseGenerator):
             else:
                 rendered = shape.get('rendered', '')
                 question = shape.get('question', '')
-            user_prompt = self._format_user_prompt(
-                USER_PROMPT_TEMPLATES, language_str, user_style_str,
+            user_prompt = compose_user_prompt(
+                "ascii_shapes", language_str, user_style_str,
                 shape=rendered,
                 question=question,
             )

@@ -12,6 +12,11 @@ export interface TestsetSummary {
   languages: string[]
   user_styles: string[]
   system_styles: string[]
+  matrix_batch_id?: string | null
+  matrix_cell_id?: string | null
+  matrix_label?: string | null
+  matrix_plugin?: string | null
+  matrix_axes?: Record<string, unknown> | null
   created: string
   error?: string
 }

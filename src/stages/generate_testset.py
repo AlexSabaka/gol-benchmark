@@ -932,20 +932,23 @@ def _finalize_testset(config: Dict, config_path: str, output_dir: str, test_case
     else:
         metadata_task_type = task_type  # Fallback to derived task type
     
+    metadata = dict(config['metadata'])
+    metadata.update({
+        "name": config['metadata']['name'],
+        "version": config['metadata'].get('version', '1.0'),
+        "schema_version": config['metadata'].get('schema_version', '1.0.0'),
+        "description": config['metadata'].get('description', ''),
+        "created_by": config['metadata'].get('created_by', 'web_ui'),
+        "task_type": metadata_task_type,
+        "created_at": datetime.now().isoformat(),
+        "config_file": os.path.basename(config_path),
+        "config_hash": config_hash,
+        "generator_version": "1.0.0"
+    })
+
     testset = {
         "format_version": TESTSET_FORMAT_VERSION,
-        "metadata": {
-            "name": config['metadata']['name'],
-            "version": config['metadata'].get('version', '1.0'),
-            "schema_version": config['metadata'].get('schema_version', '1.0.0'),
-            "description": config['metadata'].get('description', ''),
-            "created_by": config['metadata'].get('created_by', 'web_ui'),
-            "task_type": metadata_task_type,
-            "created_at": datetime.now().isoformat(),
-            "config_file": os.path.basename(config_path),
-            "config_hash": config_hash,
-            "generator_version": "1.0.0"
-        },
+        "metadata": metadata,
         
         "generation_params": config.get('tasks', [config.get('task', {})]),  # Support both formats
         "sampling_params": config['sampling'],

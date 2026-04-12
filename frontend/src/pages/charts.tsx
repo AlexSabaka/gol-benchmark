@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback, useDeferredValue } from "react"
+import { useMemo, useCallback, useDeferredValue, useEffect } from "react"
 import { useSearchParams } from "react-router"
 import { PageHeader } from "@/components/layout/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -26,6 +26,7 @@ import { ScalingScatter } from "@/components/charts/scaling-scatter"
 import { DimensionBarChart } from "@/components/charts/dimension-bar-chart"
 import { useResults } from "@/hooks/use-results"
 import { useChartData } from "@/hooks/use-chart-data"
+import { makeStorageKey, useLocalStorageSetState, useLocalStorageState } from "@/lib/local-storage"
 import { formatPercent } from "@/lib/utils"
 import { getModelSize } from "@/lib/model-sizes"
 import {
@@ -41,6 +42,8 @@ import {
 import type { ResultSummary } from "@/types"
 
 type HeatmapAxis = "model" | "task"
+type DimensionTab = "language" | "user_style" | "system_style"
+type ChartTab = "heatmap" | "bars" | "scatter" | "dimensions"
 
 /** Group results by model name */
 function groupByModel(results: ResultSummary[]): Record<string, ResultSummary[]> {
@@ -56,6 +59,7 @@ function groupByModel(results: ResultSummary[]): Record<string, ResultSummary[]>
 }
 
 export default function ChartsPage() {
+  const storageScope = "charts-page"
   const [searchParams] = useSearchParams()
   const { data: results, isLoading: resultsLoading } = useResults()
 
@@ -65,17 +69,36 @@ export default function ChartsPage() {
     return param ? param.split(",").filter(Boolean) : []
   }, [searchParams])
 
-  const [selectedFiles, setSelectedFiles] = useState<Set<string>>(() => new Set(initialFiles))
-  const [heatmapX, setHeatmapX] = useState<HeatmapAxis>("task")
-  const [heatmapY, setHeatmapY] = useState<HeatmapAxis>("model")
-  const [barTask, setBarTask] = useState<string | null>(null)
-  const [search, setSearch] = useState("")
+  const [selectedFiles, setSelectedFiles] = useLocalStorageSetState<string>(makeStorageKey(storageScope, "selected-files"), initialFiles)
+  const [heatmapX, setHeatmapX] = useLocalStorageState<HeatmapAxis>(makeStorageKey(storageScope, "heatmap-x"), "task")
+  const [heatmapY, setHeatmapY] = useLocalStorageState<HeatmapAxis>(makeStorageKey(storageScope, "heatmap-y"), "model")
+  const [barTask, setBarTask] = useLocalStorageState<string | null>(makeStorageKey(storageScope, "bar-task"), null)
+  const [search, setSearch] = useLocalStorageState<string>(makeStorageKey(storageScope, "search"), "")
   const deferredSearch = useDeferredValue(search)
-  const [selectorOpen, setSelectorOpen] = useState(true)
-  const [taskTypeFilter, setTaskTypeFilter] = useState<Set<string>>(new Set())
-  const [languageFilter, setLanguageFilter] = useState<Set<string>>(new Set())
-  const [logScale, setLogScale] = useState(true)
-  const [dimTab, setDimTab] = useState<"language" | "user_style" | "system_style">("language")
+  const [selectorOpen, setSelectorOpen] = useLocalStorageState<boolean>(makeStorageKey(storageScope, "selector-open"), true)
+  const [taskTypeFilter, setTaskTypeFilter] = useLocalStorageSetState<string>(makeStorageKey(storageScope, "task-filter"))
+  const [languageFilter, setLanguageFilter] = useLocalStorageSetState<string>(makeStorageKey(storageScope, "language-filter"))
+  const [logScale, setLogScale] = useLocalStorageState<boolean>(makeStorageKey(storageScope, "log-scale"), true)
+  const [dimTab, setDimTab] = useLocalStorageState<DimensionTab>(makeStorageKey(storageScope, "dimension-tab"), "language")
+  const [activeTab, setActiveTab] = useLocalStorageState<ChartTab>(makeStorageKey(storageScope, "active-tab"), "heatmap")
+
+  useEffect(() => {
+    if (initialFiles.length === 0) return
+    setSelectedFiles(new Set(initialFiles))
+  }, [initialFiles, setSelectedFiles])
+
+  useEffect(() => {
+    if (!results?.length) return
+
+    const valid = new Set(results.map((result) => result.filename))
+    setSelectedFiles((previous) => {
+      const next = new Set([...previous].filter((filename) => valid.has(filename)))
+      if (next.size === previous.size && [...next].every((filename) => previous.has(filename))) {
+        return previous
+      }
+      return next
+    })
+  }, [results, setSelectedFiles])
 
   // Apply language filter at file-selection level
   const filenames = useMemo(() => {
@@ -166,7 +189,7 @@ export default function ChartsPage() {
       else next.add(filename)
       return next
     })
-  }, [])
+  }, [setSelectedFiles])
 
   const toggleModel = useCallback(
     (model: string) => {
@@ -181,7 +204,7 @@ export default function ChartsPage() {
         return next
       })
     },
-    [grouped]
+    [grouped, setSelectedFiles]
   )
 
   const selectAll = () => {
@@ -353,7 +376,7 @@ export default function ChartsPage() {
           </CardContent>
         </Card>
       ) : chartData ? (
-        <Tabs defaultValue="heatmap">
+        <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as ChartTab)}>
           <TabsList>
             <TabsTrigger value="heatmap">
               <Grid3X3 className="mr-1.5 h-4 w-4" />
@@ -417,7 +440,7 @@ export default function ChartsPage() {
                     value={barTask ?? "__all__"}
                     onValueChange={(v) => setBarTask(v === "__all__" ? null : v)}
                   >
-                    <SelectTrigger className="w-[200px]">
+                    <SelectTrigger className="w-50">
                       <SelectValue placeholder="All tasks" />
                     </SelectTrigger>
                     <SelectContent>

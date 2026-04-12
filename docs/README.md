@@ -11,6 +11,12 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) | Project mission, architecture, all 19 tasks, research findings, quick start |
 | [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) | Plugin system reference, per-plugin docs, adding new plugins |
 
+## Recent Updates
+
+- Execute now uses a paginated checkbox grid for multi-selecting test sets.
+- Results language filters now match Test Sets with shared flag + full-language labels, and long filenames no longer break dialog CTA layouts.
+- Jobs can cancel already-running inference and judge work cooperatively.
+
 ---
 
 ## Architecture
@@ -104,5 +110,5 @@ docs/
 
 ---
 
-**Version:** 2.16.1
-**Last Updated:** April 2026
+**Version:** 2.17.1
+**Last Updated:** April 12, 2026

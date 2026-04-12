@@ -1,0 +1,45 @@
+# Picross (Nonogram) plugin — grid-based deductive reasoning.
+#
+# Variables: {rows}, {cols}, {row_clues}, {col_clues}, {f}, {e}
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific (puzzle rules + clue layout) and fully overridden.
+
+clue_labels:
+  en: {rows: Rows, row: Row, columns: Columns, col: Col, json_header: "Row clues (JSON)"}
+  es: {rows: Filas, row: Fila, columns: Columnas, col: Col, json_header: "Pistas (JSON)"}
+  fr: {rows: Lignes, row: Ligne, columns: Colonnes, col: Col, json_header: "Indices (JSON)"}
+  de: {rows: Zeilen, row: Zeile, columns: Spalten, col: Sp, json_header: "Hinweise (JSON)"}
+  zh: {rows: 行, row: 行, columns: 列, col: 列, json_header: "提示 (JSON)"}
+  ua: {rows: Рядки, row: Рядок, columns: Стовпці, col: Стовп, json_header: "Підказки (JSON)"}
+
+body:
+  en: "{row_clues}\n{col_clues}"
+  es: "{row_clues}\n{col_clues}"
+  fr: "{row_clues}\n{col_clues}"
+  de: "{row_clues}\n{col_clues}"
+  zh: "{row_clues}\n{col_clues}"
+  ua: "{row_clues}\n{col_clues}"
+
+overrides:
+  minimal:
+    en: "Nonogram, {rows}×{cols}.\n\n{row_clues}\n{col_clues}\n\nGrid ({f}=filled, {e}=empty):"
+    es: "Nonograma, {rows}×{cols}.\n\n{row_clues}\n{col_clues}\n\nCuadrícula ({f}=rellena, {e}=vacía):"
+    fr: "Nonogramme, {rows}×{cols}.\n\n{row_clues}\n{col_clues}\n\nGrille ({f}=remplie, {e}=vide) :"
+    de: "Nonogramm, {rows}×{cols}.\n\n{row_clues}\n{col_clues}\n\nRaster ({f}=gefüllt, {e}=leer):"
+    zh: "数织，{rows}×{cols}。\n\n{row_clues}\n{col_clues}\n\n网格（{f}=填充，{e}=空）："
+    ua: "Нонограма, {rows}×{cols}.\n\n{row_clues}\n{col_clues}\n\nСітка ({f}=заповнена, {e}=порожня):"
+  casual:
+    en: "Nonogram time! {rows}×{cols} grid.\n\nThe clue numbers tell you how many consecutive filled cells ({f}) are in each row/column, in order. Groups are separated by at least one empty cell ({e}).\n\n{row_clues}\n{col_clues}\n\nShow me the solved grid using {f} and {e}:"
+    es: "¡Hora del Nonograma! Cuadrícula de {rows}×{cols}.\n\nLos números indican cuántas celdas rellenas ({f}) consecutivas hay en cada fila/columna. Los grupos se separan por al menos una celda vacía ({e}).\n\n{row_clues}\n{col_clues}\n\nMuéstrame la cuadrícula resuelta usando {f} y {e}:"
+    fr: "C'est l'heure du Nonogramme ! Grille {rows}×{cols}.\n\nLes nombres indiquent combien de cases remplies ({f}) consécutives il y a dans chaque ligne/colonne. Les groupes sont séparés par au moins une case vide ({e}).\n\n{row_clues}\n{col_clues}\n\nMontrez-moi la grille résolue avec {f} et {e} :"
+    de: "Nonogramm-Zeit! {rows}×{cols}-Raster.\n\nDie Zahlen geben an, wie viele aufeinanderfolgende gefüllte Zellen ({f}) in jeder Zeile/Spalte sind. Gruppen sind durch mindestens eine leere Zelle ({e}) getrennt.\n\n{row_clues}\n{col_clues}\n\nZeigen Sie mir das gelöste Raster mit {f} und {e}:"
+    zh: "数织时间！{rows}×{cols} 网格。\n\n提示数字表示每行/列中有多少连续的填充单元格（{f}），各组之间至少有一个空单元格（{e}）。\n\n{row_clues}\n{col_clues}\n\n请用 {f} 和 {e} 展示解答："
+    ua: "Час нонограми! Сітка {rows}×{cols}.\n\nЧисла показують, скільки послідовних заповнених клітинок ({f}) є в кожному рядку/стовпці. Групи розділені щонайменше однією порожньою клітинкою ({e}).\n\n{row_clues}\n{col_clues}\n\nПокажіть мені розв'язану сітку з {f} та {e}:"
+  linguistic:
+    en: "This is a Nonogram (Picross) puzzle on a {rows}×{cols} grid.\n\nRULES:\n1. Each row and column has a list of clue numbers.\n2. Each number tells you the length of a consecutive group of filled cells ({f}) in that line.\n3. Groups appear in the given order, left-to-right for rows and top-to-bottom for columns.\n4. There must be at least one empty cell ({e}) between consecutive groups.\n5. All remaining cells are empty ({e}).\n\nCLUES:\n{row_clues}\n{col_clues}\n\nSolve the puzzle. Respond with ONLY the {rows}×{cols} grid, one row per line, cells separated by spaces, using {f} for filled and {e} for empty.\nSolution:"
+    es: "Este es un Nonograma (Picross) en una cuadrícula de {rows}×{cols}.\n\nREGLAS:\n1. Cada fila y columna tiene una lista de números pista.\n2. Cada número indica la longitud de un grupo consecutivo de celdas rellenas ({f}).\n3. Los grupos aparecen en el orden dado (izquierda a derecha / arriba a abajo).\n4. Debe haber al menos una celda vacía ({e}) entre grupos consecutivos.\n5. Las celdas restantes están vacías ({e}).\n\nPISTAS:\n{row_clues}\n{col_clues}\n\nResuelve el rompecabezas. Responde SOLO con la cuadrícula de {rows}×{cols}, una fila por línea, celdas separadas por espacios, usando {f} para rellena y {e} para vacía.\nSolución:"
+    fr: "Voici un Nonogramme (Picross) sur une grille de {rows}×{cols}.\n\nRÈGLES :\n1. Chaque ligne et colonne a une liste d'indices numériques.\n2. Chaque nombre indique la longueur d'un groupe consécutif de cases remplies ({f}).\n3. Les groupes apparaissent dans l'ordre donné (gauche à droite / haut en bas).\n4. Il doit y avoir au moins une case vide ({e}) entre les groupes consécutifs.\n5. Les cases restantes sont vides ({e}).\n\nINDICES :\n{row_clues}\n{col_clues}\n\nRésolvez le puzzle. Répondez UNIQUEMENT avec la grille {rows}×{cols}, une ligne par ligne, cases séparées par des espaces, {f} pour remplie et {e} pour vide.\nSolution :"
+    de: "Dies ist ein Nonogramm (Picross) auf einem {rows}×{cols}-Raster.\n\nREGELN:\n1. Jede Zeile und Spalte hat eine Liste von Hinweiszahlen.\n2. Jede Zahl gibt die Länge einer aufeinanderfolgenden Gruppe gefüllter Zellen ({f}) an.\n3. Die Gruppen erscheinen in der angegebenen Reihenfolge (links nach rechts / oben nach unten).\n4. Zwischen aufeinanderfolgenden Gruppen muss mindestens eine leere Zelle ({e}) sein.\n5. Alle übrigen Zellen sind leer ({e}).\n\nHINWEISE:\n{row_clues}\n{col_clues}\n\nLösen Sie das Rätsel. Antworten Sie NUR mit dem {rows}×{cols}-Raster, eine Zeile pro Zeile, Zellen durch Leerzeichen getrennt, {f} für gefüllt und {e} für leer.\nLösung:"
+    zh: "这是一道 {rows}×{cols} 的数织（Nonogram/Picross）谜题。\n\n规则：\n1. 每行和每列都有一组提示数字。\n2. 每个数字表示该行/列中一组连续填充单元格（{f}）的长度。\n3. 各组按给定顺序排列（行从左到右，列从上到下）。\n4. 连续的组之间必须至少有一个空单元格（{e}）。\n5. 其余所有单元格为空（{e}）。\n\n提示：\n{row_clues}\n{col_clues}\n\n请解决这道谜题。仅回复 {rows}×{cols} 的网格，每行一行，单元格用空格分隔，{f} 表示填充，{e} 表示空。\n答案："
+    ua: "Це нонограма (Picross) на сітці {rows}×{cols}.\n\nПРАВИЛА:\n1. Кожен рядок і стовпець має список чисел-підказок.\n2. Кожне число вказує довжину групи послідовних заповнених клітинок ({f}).\n3. Групи з'являються у заданому порядку (зліва направо / зверху вниз).\n4. Між послідовними групами має бути щонайменше одна порожня клітинка ({e}).\n5. Усі інші клітинки порожні ({e}).\n\nПІДКАЗКИ:\n{row_clues}\n{col_clues}\n\nРозв'яжіть головоломку. Відповідайте ЛИШЕ сіткою {rows}×{cols}, один рядок на лінію, клітинки через пробіли, {f} — заповнена, {e} — порожня.\nРозв'язок:"

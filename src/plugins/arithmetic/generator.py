@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import TestCase, TestCaseGenerator, ConfigField
-from src.plugins.arithmetic.prompts import USER_PROMPT_TEMPLATES
+from src.plugins.i18n.loader import compose_user_prompt
 from src.engine.MathExpressionGenerator import MathExpressionGenerator
 
 
@@ -99,8 +99,8 @@ class ArithmeticTestCaseGenerator(TestCaseGenerator):
                         break
 
                     # Generate prompts
-                    user_prompt = self._format_user_prompt(
-                        USER_PROMPT_TEMPLATES, language_str, user_style_str,
+                    user_prompt = compose_user_prompt(
+                        "arithmetic", language_str, user_style_str,
                         expression=expression,
                     )
                     system_prompt = self._get_system_prompt(system_style_str, language_str)

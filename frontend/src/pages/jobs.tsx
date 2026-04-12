@@ -52,13 +52,13 @@ export default function JobsPage() {
       header: "Model",
       cell: ({ row }) => {
         const name = row.original.model_name.replace(/^judge:/, "")
-        return <span className="font-medium truncate max-w-[200px] block">{name}</span>
+        return <span className="block max-w-50 truncate font-medium">{name}</span>
       },
     },
     {
       accessorKey: "testset_path",
       header: "Test Set",
-      cell: ({ row }) => <span className="text-muted-foreground truncate max-w-[200px] block">{basename(row.original.testset_path)}</span>,
+      cell: ({ row }) => <span className="block max-w-50 truncate text-muted-foreground">{basename(row.original.testset_path)}</span>,
       enableSorting: false,
     },
     {
@@ -84,7 +84,7 @@ export default function JobsPage() {
         if (state !== "running" && state !== "pending") return <span className="text-muted-foreground">-</span>
         const pct = progress_total > 0 ? (progress_current / progress_total) * 100 : 0
         return (
-          <div className="flex items-center gap-2 min-w-[120px]">
+          <div className="flex min-w-30 items-center gap-2">
             <Progress value={pct} className="h-2 flex-1" />
             <span className="text-xs text-muted-foreground whitespace-nowrap">{progress_current}/{progress_total}</span>
           </div>
@@ -119,9 +119,14 @@ export default function JobsPage() {
                   onSuccess: () => toast.success(`Cancelled job for ${job.model_name}`),
                   onError: (err) => toast.error(`Cancel failed: ${err instanceof Error ? err.message : "Unknown error"}`),
                 })}
-                disabled={cancelMut.isPending}
+                disabled={cancelMut.isPending && cancelMut.variables === job.id}
+                title="Cancel Job"
               >
-                <Ban className="h-3.5 w-3.5" />
+                {cancelMut.isPending && cancelMut.variables === job.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Ban className="h-3.5 w-3.5" />
+                )}
               </Button>
             )}
             {job.state === "completed" && job.result_path && (
@@ -161,6 +166,8 @@ export default function JobsPage() {
         searchPlaceholder="Search by model..."
         toolbar={toolbar}
         loading={isLoading}
+        persistKey="jobs-table"
+        getRowId={(row) => row.id}
       />
     </div>
   )

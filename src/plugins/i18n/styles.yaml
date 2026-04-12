@@ -1,0 +1,31 @@
+# Shared style wrappers for user prompts.
+#
+# Each wrapper uses {body} as a placeholder for the plugin's domain content.
+# Plugins that need domain-specific wrappers override individual styles in
+# their own i18n.yaml under the "overrides:" key.
+#
+# To add a new language: add one line per style below.
+
+casual:
+  en: "Hey, quick question — {body}"
+  es: "Oye, pregunta rápida — {body}"
+  fr: "Salut, petite question — {body}"
+  de: "Hey, kurze Frage — {body}"
+  zh: "嘿，快问一下——{body}"
+  ua: "Привіт, швидке питання — {body}"
+
+minimal:
+  en: "{body}\n\nAnswer:"
+  es: "{body}\n\nRespuesta:"
+  fr: "{body}\n\nRéponse :"
+  de: "{body}\n\nAntwort:"
+  zh: "{body}\n\n答案："
+  ua: "{body}\n\nВідповідь:"
+
+linguistic:
+  en: "I have a question that requires careful analysis.\n\n{body}"
+  es: "Tengo una pregunta que requiere un análisis cuidadoso.\n\n{body}"
+  fr: "J'ai une question qui nécessite une analyse approfondie.\n\n{body}"
+  de: "Ich habe eine Frage, die eine sorgfältige Analyse erfordert.\n\n{body}"
+  zh: "我有一个需要仔细分析的问题。\n\n{body}"
+  ua: "У мене є питання, яке потребує ретельного аналізу.\n\n{body}"

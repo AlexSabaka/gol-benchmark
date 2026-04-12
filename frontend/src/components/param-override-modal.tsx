@@ -128,14 +128,14 @@ export function ParamOverrideModal({
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="max-w-md">
+      <DialogContent className="sm:max-w-xl">
         <DialogHeader>
-          <DialogTitle>
+          <DialogTitle className="pr-8">
             {mode === "rerun" ? "Rerun with Different Params" : "Regenerate with Different Params"}
           </DialogTitle>
           <DialogDescription>
             Override prompt parameters for{" "}
-            <span className="font-mono text-xs truncate block max-w-full" title={testsetFilename}>
+            <span className="block max-w-full truncate font-mono text-xs" title={testsetFilename}>
               {testsetFilename.replace(".json.gz", "")}
             </span>
           </DialogDescription>
@@ -214,7 +214,7 @@ export function ParamOverrideModal({
                   value={customPrompt}
                   onChange={(e) => setCustomPrompt(e.target.value)}
                   placeholder="Enter a custom system prompt..."
-                  className="min-h-[80px] text-xs"
+                  className="min-h-20 text-xs"
                 />
                 <p className="text-[10px] text-muted-foreground">
                   {customPrompt.length} characters
