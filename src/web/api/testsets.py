@@ -11,6 +11,7 @@ from typing import Any, Dict, List, Optional
 
 import yaml
 from fastapi import APIRouter, HTTPException, Query, UploadFile, File
+from fastapi.responses import PlainTextResponse
 from pydantic import BaseModel, Field
 
 from src.web.config import web_config
@@ -209,6 +210,59 @@ async def generate_testset(req: GenerateRequest):
         raise HTTPException(500, f"Generation failed: {exc}")
     finally:
         os.unlink(tmp_path)
+
+
+@router.post("/config-to-yaml", response_class=PlainTextResponse)
+async def config_to_yaml(req: GenerateRequest):
+    """Convert a GenerateRequest to a YAML config string (without generating a test set)."""
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    metadata = dict(req.metadata_extra)
+    metadata.update({
+        "name": f"{req.name}_{ts}",
+        "version": "1.0",
+        "schema_version": "1.0.0",
+        "description": req.description or f"Web-generated: {req.name}",
+        "task_type": "multi-task" if len(req.tasks) > 1 else req.tasks[0].type,
+    })
+
+    config = {
+        "metadata": metadata,
+        "sampling": {
+            "temperature": req.temperature,
+            "max_tokens": req.max_tokens,
+        },
+        "execution": {
+            "no_thinking": req.no_thinking,
+            "cell_markers": req.cell_markers,
+        },
+    }
+
+    if req.custom_system_prompt:
+        config["custom_system_prompt"] = req.custom_system_prompt
+
+    tasks_yaml = []
+    for t in req.tasks:
+        gen = dict(t.generation)
+        gen.setdefault("seed", req.seed)
+        for key in ("target_values", "complexity", "difficulties"):
+            if key in gen and isinstance(gen[key], str):
+                gen[key] = [int(x.strip()) for x in gen[key].split(",") if x.strip()]
+        task_entry = {
+            "type": t.type,
+            "generation": gen,
+            "prompt_configs": [
+                {"name": f"{pc.user_style}_{pc.system_style}", "user_style": pc.user_style, "system_style": pc.system_style, "language": pc.language}
+                for pc in t.prompt_configs
+            ],
+        }
+        tasks_yaml.append(task_entry)
+
+    if len(tasks_yaml) == 1:
+        config["task"] = tasks_yaml[0]
+    else:
+        config["tasks"] = tasks_yaml
+
+    return yaml.dump(config, default_flow_style=False, allow_unicode=True)
 
 
 @router.post("/upload-yaml")

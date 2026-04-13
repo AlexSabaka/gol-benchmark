@@ -43,3 +43,16 @@ export function postFormData<T>(path: string, formData: FormData): Promise<T> {
 export function del<T>(path: string): Promise<T> {
   return fetch(`${BASE}${path}`, { method: "DELETE" }).then(r => handleResponse<T>(r))
 }
+
+export async function postText(path: string, body?: unknown): Promise<string> {
+  const res = await fetch(`${BASE}${path}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  })
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText)
+    throw new ApiError(res.status, text)
+  }
+  return res.text()
+}

@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
-import { ArrowLeft, ArrowRight, Check, Loader2, Play, Plus, Save, Search, Star, Trash2, X } from "lucide-react"
+import { AlertTriangle, ArrowLeft, ArrowRight, Check, Loader2, Play, Plus, Save, Search, Star, Trash2, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -825,12 +825,6 @@ export default function ExecutePage() {
       <PageHeader
         title="Execute"
         description="Step through test set selection, model selection, overrides, and a final review before launching jobs."
-        actions={activeStep === "review" ? (
-          <Button onClick={handleRun} disabled={runDisabled}>
-            {runMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-            {runButtonLabel}
-          </Button>
-        ) : undefined}
       />
 
       <div className="grid gap-3 xl:grid-cols-4">
@@ -1247,21 +1241,31 @@ export default function ExecutePage() {
               </div>
             </div>
 
-            <div className="rounded-lg border bg-muted/20 p-4">
-              <p className="text-sm font-medium">
-                {runDisabled ? "Selections incomplete" : `${projectedJobCount} job${projectedJobCount !== 1 ? "s" : ""} ready to launch`}
-              </p>
-              <p className="mt-1 text-sm text-muted-foreground">
-                {runDisabled
-                  ? "Pick at least one test set and one model before launching the batch."
-                  : "Use the Run button in the header to queue the full batch."}
-              </p>
-            </div>
+            {runDisabled && (
+              <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-700 dark:text-amber-400">
+                <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
+                <p className="text-sm">
+                  {selectedTestsetCount === 0 && selectedCount === 0
+                    ? "No test sets or models selected — go back and pick at least one of each before launching."
+                    : selectedTestsetCount === 0
+                      ? "No test sets selected — go back to Test Sets and choose at least one."
+                      : "No models selected — go back to Models and pick at least one."}
+                </p>
+              </div>
+            )}
 
-            <StepFooter
-              previousLabel={previousStep ? `Back to ${previousStep.label}` : undefined}
-              onPrevious={previousStep ? goToPreviousStep : undefined}
-            />
+            <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+              <Button variant="outline" onClick={goToPreviousStep}>
+                <ArrowLeft className="mr-2 h-4 w-4" />
+                {previousStep ? `Back to ${previousStep.label}` : "Back"}
+              </Button>
+              <Button onClick={handleRun} disabled={runDisabled} size="lg">
+                {runMutation.isPending
+                  ? <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                  : <Play className="mr-2 h-4 w-4" />}
+                {runButtonLabel}
+              </Button>
+            </div>
           </CardContent>
         </Card>
       )}

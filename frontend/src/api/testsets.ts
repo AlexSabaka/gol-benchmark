@@ -1,4 +1,4 @@
-import { get, post, postFormData, del } from "./client"
+import { get, post, postFormData, postText, del } from "./client"
 import type { TestsetSummary, TestsetDetail, GenerateRequest, GenerateResponse } from "@/types"
 
 export function fetchTestsets(): Promise<TestsetSummary[]> {
@@ -31,4 +31,8 @@ export function uploadGz(file: File): Promise<{ status: string; filename: string
   const fd = new FormData()
   fd.append("file", file)
   return postFormData("/api/testsets/upload-gz", fd)
+}
+
+export function configToYaml(req: GenerateRequest): Promise<string> {
+  return postText("/api/testsets/config-to-yaml", req)
 }

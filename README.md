@@ -323,6 +323,7 @@ This is a **personal experiment**, but if you're curious and want to:
 - [x] Test Sets and Results browsing upgrade: independent `Table/Cards` format toggle plus collapsible Airtable-style grouped rows in table mode (v2.17.0)
 - [x] Web UI workflow polish: Execute now uses a paginated checkbox grid for test set multi-select, Results language filters match Test Sets with flag + full-name labels, long filenames no longer break dialog CTA layouts, and Jobs can cancel already-running inference/judge work cooperatively (v2.17.1)
 - [x] Web UI refinement pass: persistent table/view state, stable Jobs pagination during polling, Judge expandable review rows, suffix-biased identifiers, Execute wizard setup with review step, and chart readability/accessibility upgrades (v2.17.2)
+- [x] Configure page wizard redesign: 4-step flow (Setup → Plugins → Prompts → Review), import via URL/paste, expandable plugin table rows, custom system prompt hidden behind toggle, YAML copy/download from review step (v2.18.0)
 
 ### 🔄 In Progress
 

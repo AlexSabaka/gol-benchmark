@@ -2,6 +2,61 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.18.0] - April 14, 2026
+
+### Configure Page — Wizard Redesign
+
+#### Wizard Flow
+
+- **4-step wizard** — Configure is now a sequential `Setup` → `Plugins` → `Prompts` → `Review` flow matching the Execute page's wizard pattern, with the same `StepButton` / `StepFooter` navigation components (step jumping, completion indicators, per-step summary text)
+- **Step state persisted** — active step survives navigation away and back via `localStorage` (`configure-page-active-step`)
+
+#### Step 1 — Setup
+
+- **Three-way mode toggle** — segmented control with `Build from scratch | Import config | Upload test set`; each mode is fully isolated with no card duplication
+- **Build mode** — global settings (name, seed, description) only; StepFooter advances to Plugins
+- **Import mode** — shadcn `Tabs` (File Upload | Fetch from URL | Paste YAML) matching the Prompts step's tab style; all three flows call the existing `/api/testsets/upload-yaml` endpoint and navigate to Test Sets on success
+- **Upload mode** — dedicated `.json.gz` upload card; navigates to Test Sets on success; the pre-generated test set upload no longer appears in Build or Import modes
+
+#### Step 2 — Plugins
+
+- **Expandable table rows** — replaced the checkbox grid with a linear list; each plugin row has a checkbox (left) and a chevron expand/collapse button
+- **Auto-expand on select** — checking a plugin's checkbox automatically expands the row and shows its `ConfigForm`; unchecking collapses and dims it
+- **Independent expand** — the chevron can expand any row without selecting it (e.g. to preview options before committing); unselected-but-expanded rows show `ConfigForm` at `opacity-50 pointer-events-none`
+- **Selection accent** — selected rows get `bg-primary/5 border-primary/20` background; "active" badge appears in the row header
+- **Plugin name + description in row header** — description wraps onto a second line instead of truncating; `ConfigForm` no longer repeats the description inside the expanded panel
+
+#### Step 3 — Prompts
+
+- **All prompt options off by default** — `userStyles`, `systemStyles`, and `languages` all start as empty sets; `combos` returns `0` when any set is empty
+- **Custom System Prompt now hidden by default** — the custom prompt section is completely unmounted until the user checks the new "custom" toggle at the bottom of the System Styles column; the toggle uses the same `Separator`-delimited style as the standard system style options
+- **Import config tabs use shadcn `Tabs`** — replaced the custom border-button row with `TabsList`/`TabsTrigger` at the same `h-7`/`h-6` density as the Prompts step's custom prompt tabs
+- **Incomplete-selection warning** — amber `AlertTriangle` callout shown when `combos === 0`; "Continue to Review" disabled until all three columns have at least one selection
+
+#### Step 4 — Review & Generate
+
+- **3-column summary** — Testset (name, seed, description), Plugins (list, est. cases/plugin, total est. cases), Prompts (user/system style badges, language flags, combo count, custom prompt indicator)
+- **Warnings before action area** — amber callouts for missing plugins and/or missing prompt combinations are stacked between the summary grid and the action footer; Generate, Copy YAML, and Download YAML are all disabled when either condition is unmet
+- **"Copy YAML Config" split button** — calls the new `POST /api/testsets/config-to-yaml` endpoint and writes the YAML string to the clipboard
+- **"Download YAML Config" dropdown** — same endpoint call; saves the result as `{name}_config.yaml` via a transient `<a download>` element
+- **"Generate Test Set"** primary CTA unchanged in behavior
+
+#### Execute Page — Review Step Fixes
+
+- **Run button moved to Review footer** — removed from `PageHeader`; now appears on the right side of the Review step's footer row (`border-t pt-4`), mirroring the placement of all other step CTAs
+- **Incomplete-selection warning** — the muted `bg-muted/20` status box ("Selections incomplete") is replaced with an amber `AlertTriangle` callout; message is context-aware (no test sets / no models / both missing); placed between the summary grid and the footer row
+
+#### New Backend Endpoint
+
+- **`POST /api/testsets/config-to-yaml`** — accepts a `GenerateRequest` JSON body; runs the same config-dict construction logic as `/generate` but returns the YAML string as `text/plain` without generating a test set or touching the filesystem; returns `PlainTextResponse`
+
+#### Frontend Infrastructure
+
+- **`postText()` in `frontend/src/api/client.ts`** — new HTTP helper for endpoints that return `text/plain` instead of JSON
+- **`configToYaml(req)` in `frontend/src/api/testsets.ts`** — typed wrapper for the new backend endpoint
+
+---
+
 ## [2.17.2] - April 13, 2026
 
 ### Web UI Workflow Refinements

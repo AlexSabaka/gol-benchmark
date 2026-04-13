@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.17.2** | Last updated: 2026-04-13
+> **Version 2.18.0** | Last updated: 2026-04-13
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -344,7 +344,7 @@ cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → 
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/` | Dashboard | Summary of available plugins, models, recent runs |
-| `/configure` | Configure | Dynamic plugin selection + configuration forms, multi-language checkboxes with flags, prompt style matrix, custom system prompt (text/file/URL) |
+| `/configure` | Configure | 4-step wizard: **Setup** (build from scratch or import via file/URL/paste YAML), **Plugins** (expandable table rows — checkbox auto-expands row with `ConfigForm`), **Prompts** (style matrix + hidden custom prompt revealed by "custom" toggle), **Review** (summary + Generate, Copy YAML, Download YAML) |
 | `/testsets` | Test Sets | Create, list, inspect (tabbed detail with paginated cases), regenerate with param overrides, switch between `Table` and grouped `Cards`, and use collapsible grouped rows in table mode |
 | `/execute` | Execute | Submit jobs; paginated checkbox-grid test set multi-select, model search/filter, favorite models sidebar grouped by provider, encrypted credential storage for OpenAI-compatible endpoints |
 | `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions, and cooperative cancellation for already-running inference or judge work |
@@ -376,7 +376,7 @@ frontend/src/
 |--------|--------|---------|
 | `plugins.py` | `/api/plugins` | Plugin discovery, task-specific form schemas |
 | `models.py` | `/api/models` | Model listing from Ollama/HF/OpenAI providers |
-| `testsets.py` | `/api/testsets` | Test set generation and listing |
+| `testsets.py` | `/api/testsets` | Test set generation, listing, upload (YAML/gz), `config-to-yaml` export |
 | `execution.py` | `/api/jobs` | Job submission, status polling, progress |
 | `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns, reanalysis, LLM-as-a-Judge |
 
