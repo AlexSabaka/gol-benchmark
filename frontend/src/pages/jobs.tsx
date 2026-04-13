@@ -5,6 +5,7 @@ import { Ban, Eye, Loader2 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
+import { IdentifierLabel } from "@/components/identifier-label"
 import { Progress } from "@/components/ui/progress"
 import { DataTable } from "@/components/data-table/data-table"
 import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
@@ -58,7 +59,15 @@ export default function JobsPage() {
     {
       accessorKey: "testset_path",
       header: "Test Set",
-      cell: ({ row }) => <span className="block max-w-50 truncate text-muted-foreground">{basename(row.original.testset_path)}</span>,
+      cell: ({ row }) => (
+        <IdentifierLabel
+          value={basename(row.original.testset_path)}
+          primaryMax={40}
+          secondaryMax={28}
+          primaryClassName="text-xs text-muted-foreground"
+          secondaryClassName="text-[10px]"
+        />
+      ),
       enableSorting: false,
     },
     {

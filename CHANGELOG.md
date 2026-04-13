@@ -2,6 +2,32 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.17.2] - April 13, 2026
+
+### Web UI Workflow Refinements
+
+#### Shared State and Table Persistence
+
+- **Persisted table and display preferences** — table sorting, filters, column visibility, pagination, and page-level display modes now persist consistently in local storage across the main Web UI browsing flows instead of resetting between visits
+- **Stable live pagination on Jobs** — the Jobs page no longer snaps back to the first page on each polling refresh while background progress updates stream in
+
+#### Judge and Identifier UX
+
+- **Merged judgment review flow** — the Judge page now keeps individual judgments and detail review in one expandable table workflow instead of splitting users between separate browsing and inspection views
+- **Suffix-biased identifier labels** — long test set names and test IDs now surface the distinguishing suffix instead of only the shared prefix across Dashboard, Test Sets, Jobs, and Judge tables
+
+#### Execute Page
+
+- **Wizard-based execution flow** — Execute is now a 4-step setup flow (`Test Sets` → `Models` → `Settings` → `Review`) with direct step jumping and a final batch summary before launch
+- **Shared DataTable test set picker** — Execute test set selection now uses the common table component with persisted state, standard footer pagination, and `10/20/50/100` page-size options
+- **Clearer launch states** — run actions now stay aligned with selection state, and the primary Execute CTA moves to the review step where the projected job count is explicit
+
+#### Charts
+
+- **Heatmap readability and accessibility pass** — the accuracy heatmap now uses a safer palette plus numeric labels and border styling as secondary encodings, with improved axis label handling for dense model lists
+- **Scatter label density controls** — the scaling scatter chart now supports persisted `Hover`, `Smart`, and `All` label modes to reduce overlap while preserving discoverability
+- **Chart header wrapping** — chart action controls now wrap cleanly instead of overflowing dense card headers
+
 ## [2.17.1] - April 12, 2026
 
 ### Web UI Workflow Fixes

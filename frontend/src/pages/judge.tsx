@@ -16,6 +16,7 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { IdentifierLabel } from "@/components/identifier-label"
 import {
   Select,
   SelectContent,
@@ -426,9 +427,14 @@ export default function JudgePage() {
       accessorKey: "test_id",
       header: "Test ID",
       cell: ({ row }) => (
-        <span className="block max-w-35 truncate font-mono text-xs" title={row.original.test_id}>
-          {row.original.test_id}
-        </span>
+        <IdentifierLabel
+          value={row.original.test_id}
+          mono
+          primaryMax={34}
+          secondaryMax={20}
+          primaryClassName="text-xs"
+          secondaryClassName="text-[10px]"
+        />
       ),
     },
     {
@@ -462,7 +468,7 @@ export default function JudgePage() {
         return (
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="block max-w-50 cursor-help truncate text-xs text-muted-foreground">
+              <span className="block max-w-70 cursor-help wrap-break-word text-xs leading-5 text-muted-foreground">
                 {notes}
               </span>
             </TooltipTrigger>

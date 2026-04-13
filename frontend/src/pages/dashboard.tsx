@@ -2,6 +2,7 @@ import { Link } from "react-router"
 import { Database, Play, BarChart3, Plus, Loader2 } from "lucide-react"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
+import { IdentifierLabel } from "@/components/identifier-label"
 import { Progress } from "@/components/ui/progress"
 import { PageHeader } from "@/components/layout/page-header"
 import { TaskBadge } from "@/components/task-badge"
@@ -90,9 +91,13 @@ export default function DashboardPage() {
               <div className="space-y-2">
                 {recentTestsets.map((ts) => (
                   <div key={ts.filename} className="flex items-center gap-3 text-sm">
-                    <div className="flex-1 truncate">
-                      <span className="font-medium">{String(ts.metadata?.name ?? "") || ts.filename}</span>
-                    </div>
+                    <IdentifierLabel
+                      value={ts.filename.replace(".json.gz", "")}
+                      className="flex-1"
+                      primaryMax={38}
+                      secondaryMax={24}
+                      primaryClassName="text-sm"
+                    />
                     <div className="flex gap-1">
                       {ts.task_types?.slice(0, 2).map((t) => <TaskBadge key={t} task={t} />)}
                       {(ts.task_types?.length ?? 0) > 2 && (

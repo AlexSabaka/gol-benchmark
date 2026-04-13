@@ -47,3 +47,17 @@ export function formatTimestamp(epochSeconds: number): string {
 export function basename(path: string): string {
   return path.split("/").pop() || path
 }
+
+export function stripArchiveExtension(value: string): string {
+  return value.replace(/\.(json\.gz|json)$/i, "")
+}
+
+export function suffixDisplay(value: string, maxChars = 42): string {
+  if (value.length <= maxChars) return value
+  return `…${value.slice(-(maxChars - 1))}`
+}
+
+export function prefixHint(value: string, maxChars = 28): string | undefined {
+  if (value.length <= maxChars) return undefined
+  return `${value.slice(0, maxChars - 1)}…`
+}

@@ -44,6 +44,7 @@ import type { ResultSummary } from "@/types"
 type HeatmapAxis = "model" | "task"
 type DimensionTab = "language" | "user_style" | "system_style"
 type ChartTab = "heatmap" | "bars" | "scatter" | "dimensions"
+type ScatterLabelMode = "hover" | "smart" | "all"
 
 /** Group results by model name */
 function groupByModel(results: ResultSummary[]): Record<string, ResultSummary[]> {
@@ -79,6 +80,17 @@ export default function ChartsPage() {
   const [taskTypeFilter, setTaskTypeFilter] = useLocalStorageSetState<string>(makeStorageKey(storageScope, "task-filter"))
   const [languageFilter, setLanguageFilter] = useLocalStorageSetState<string>(makeStorageKey(storageScope, "language-filter"))
   const [logScale, setLogScale] = useLocalStorageState<boolean>(makeStorageKey(storageScope, "log-scale"), true)
+  const [scatterLabelMode, setScatterLabelMode] = useLocalStorageState<ScatterLabelMode>(
+    makeStorageKey(storageScope, "scatter-label-mode"),
+    "smart",
+    {
+      sanitize: (value) => (
+        value === "hover" || value === "smart" || value === "all"
+          ? value
+          : "smart"
+      ),
+    },
+  )
   const [dimTab, setDimTab] = useLocalStorageState<DimensionTab>(makeStorageKey(storageScope, "dimension-tab"), "language")
   const [activeTab, setActiveTab] = useLocalStorageState<ChartTab>(makeStorageKey(storageScope, "active-tab"), "heatmap")
 
@@ -400,7 +412,7 @@ export default function ChartsPage() {
           <TabsContent value="heatmap">
             <ChartCard
               title="Accuracy Heatmap"
-              description={`${heatmapY === "model" ? "Models" : "Tasks"} vs ${heatmapX === "task" ? "Tasks" : "Models"} — color intensity = accuracy`}
+              description={`${heatmapY === "model" ? "Models" : "Tasks"} vs ${heatmapX === "task" ? "Tasks" : "Models"} — color, numeric labels, and border styles all encode accuracy`}
               actions={
                 <div className="flex items-center gap-2">
                   <ChartFilters
@@ -481,10 +493,20 @@ export default function ChartsPage() {
                   >
                     {logScale ? "Linear" : "Log"} Scale
                   </Button>
+                  <Select value={scatterLabelMode} onValueChange={(value) => setScatterLabelMode(value as ScatterLabelMode)}>
+                    <SelectTrigger className="w-38">
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="hover">Hover Labels</SelectItem>
+                      <SelectItem value="smart">Smart Labels</SelectItem>
+                      <SelectItem value="all">All Labels</SelectItem>
+                    </SelectContent>
+                  </Select>
                 </div>
               }
             >
-              <ScalingScatter data={filteredScatterData} logScale={logScale} />
+              <ScalingScatter data={filteredScatterData} logScale={logScale} labelMode={scatterLabelMode} />
             </ChartCard>
           </TabsContent>
 

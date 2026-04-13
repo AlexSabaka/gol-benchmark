@@ -1,7 +1,7 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 import { toast } from "sonner"
-import { Loader2, Play, Plus, Search, Trash2, X } from "lucide-react"
+import { Loader2, Play, Plus, Save, Search, Star, Trash2, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -25,6 +25,8 @@ import { FieldRenderer } from "@/components/plugin-config/field-renderer"
 import { useOllamaModels, useOpenAIModels, useHFModels } from "@/hooks/use-models"
 import { useRunMatrixExecution } from "@/hooks/use-matrix"
 import { usePlugins, usePluginSchema } from "@/hooks/use-plugins"
+import { loadCredentials, saveCredential } from "@/lib/credential-store"
+import { favoriteKey, getFavorites, toggleFavorite } from "@/lib/favorite-models"
 import type { ConfigField, MatrixFieldAxis, MatrixModelGroup, MatrixRunRequest, Provider } from "@/types"
 
 const USER_STYLES = ["minimal", "casual", "linguistic", "examples", "rules_math"]
@@ -64,6 +66,8 @@ interface ModelListProps {
   provider: Provider
   selected: Map<string, SelectedModel>
   onToggle: (model: SelectedModel) => void
+  favorites: Set<string>
+  onToggleFavorite: (key: string) => void
   searchTerm: string
   extraCtx?: { apiBase?: string; apiKey?: string; ollamaHost?: string }
 }
@@ -95,14 +99,32 @@ function productOf(values: number[]): number {
   return values.reduce((acc, value) => acc * value, 1)
 }
 
-function ModelList({ models, isLoading, provider, selected, onToggle, searchTerm, extraCtx }: ModelListProps) {
+function ModelList({
+  models,
+  isLoading,
+  provider,
+  selected,
+  onToggle,
+  favorites,
+  onToggleFavorite,
+  searchTerm,
+  extraCtx,
+}: ModelListProps) {
   const filtered = useMemo(() => {
+    let list = models
     const query = searchTerm.trim().toLowerCase()
-    if (!query) return models
-    return models.filter((model) =>
-      model.id.toLowerCase().includes(query) || model.label.toLowerCase().includes(query),
-    )
-  }, [models, searchTerm])
+    if (query) {
+      list = list.filter((model) =>
+        model.id.toLowerCase().includes(query) || model.label.toLowerCase().includes(query),
+      )
+    }
+    return [...list].sort((left, right) => {
+      const leftFav = favorites.has(favoriteKey(provider, left.id)) ? 0 : 1
+      const rightFav = favorites.has(favoriteKey(provider, right.id)) ? 0 : 1
+      if (leftFav !== rightFav) return leftFav - rightFav
+      return left.label.localeCompare(right.label)
+    })
+  }, [favorites, models, provider, searchTerm])
 
   if (isLoading) {
     return (
@@ -121,11 +143,22 @@ function ModelList({ models, isLoading, provider, selected, onToggle, searchTerm
       {filtered.map((model) => {
         const candidate: SelectedModel = { id: model.id, provider, ...extraCtx }
         const isSelected = selected.has(selectedModelKey(candidate))
+        const modelFavoriteKey = favoriteKey(provider, model.id)
+        const isFavorite = favorites.has(modelFavoriteKey)
         return (
-          <label key={`${provider}:${model.id}`} className="flex cursor-pointer items-center gap-1.5 text-xs">
-            <Checkbox checked={isSelected} onCheckedChange={() => onToggle(candidate)} />
-            <span className="truncate" title={model.id}>{model.label}</span>
-          </label>
+          <div key={`${provider}:${model.id}`} className="flex items-center gap-1.5 text-xs">
+            <button
+              onClick={() => onToggleFavorite(modelFavoriteKey)}
+              className="shrink-0 p-0.5 transition-colors hover:text-yellow-500"
+              type="button"
+            >
+              <Star className={`h-3 w-3 ${isFavorite ? "fill-yellow-500 text-yellow-500" : "text-muted-foreground/40"}`} />
+            </button>
+            <label className="flex min-w-0 cursor-pointer items-center gap-1.5">
+              <Checkbox checked={isSelected} onCheckedChange={() => onToggle(candidate)} />
+              <span className="truncate" title={model.id}>{model.label}</span>
+            </label>
+          </div>
         )
       })}
     </div>
@@ -137,12 +170,16 @@ function OllamaSection({
   onHostChange,
   selected,
   onToggle,
+  favorites,
+  onToggleFavorite,
   searchTerm,
 }: {
   host: string
   onHostChange: (host: string) => void
   selected: Map<string, SelectedModel>
   onToggle: (model: SelectedModel) => void
+  favorites: Set<string>
+  onToggleFavorite: (key: string) => void
   searchTerm: string
 }) {
   const { data, isLoading } = useOllamaModels(host, true)
@@ -163,6 +200,8 @@ function OllamaSection({
         provider="ollama"
         selected={selected}
         onToggle={onToggle}
+        favorites={favorites}
+        onToggleFavorite={onToggleFavorite}
         searchTerm={searchTerm}
         extraCtx={{ ollamaHost: host }}
       />
@@ -176,7 +215,10 @@ function OpenAIEndpointSection({
   onRemove,
   selected,
   onToggle,
+  favorites,
+  onToggleFavorite,
   searchTerm,
+  savedCredentials,
   canRemove,
 }: {
   endpoint: OpenAIEndpoint
@@ -184,7 +226,10 @@ function OpenAIEndpointSection({
   onRemove: () => void
   selected: Map<string, SelectedModel>
   onToggle: (model: SelectedModel) => void
+  favorites: Set<string>
+  onToggleFavorite: (key: string) => void
   searchTerm: string
+  savedCredentials: Array<{ apiBase: string; apiKey: string }>
   canRemove: boolean
 }) {
   const { data, isLoading } = useOpenAIModels(endpoint.apiBase, endpoint.apiKey, !!endpoint.apiBase)
@@ -193,12 +238,20 @@ function OpenAIEndpointSection({
     [data],
   )
 
+  const handleSave = useCallback(async () => {
+    if (!endpoint.apiBase) return
+    await saveCredential(endpoint.apiBase, endpoint.apiKey)
+    toast.success("Credential saved")
+  }, [endpoint])
+
+  const shortLabel = endpoint.apiBase
+    ? endpoint.apiBase.replace(/^https?:\/\//, "").replace(/\/openai\/v1\/?$|\/v1\/?$/, "").slice(0, 30)
+    : "New endpoint"
+
   return (
     <div className="space-y-2 rounded border p-3">
       <div className="flex items-center justify-between">
-        <span className="text-xs font-medium text-muted-foreground">
-          {endpoint.apiBase ? endpoint.apiBase.replace(/^https?:\/\//, "") : "New endpoint"}
-        </span>
+        <span className="text-xs font-medium text-muted-foreground">{shortLabel}</span>
         {canRemove && (
           <Button variant="ghost" size="icon" className="h-5 w-5" onClick={onRemove}>
             <Trash2 className="h-3 w-3" />
@@ -226,12 +279,36 @@ function OpenAIEndpointSection({
           />
         </div>
       </div>
+      <div className="flex items-center gap-2">
+        <Button variant="ghost" size="sm" className="h-6 text-xs" onClick={handleSave} disabled={!endpoint.apiBase}>
+          <Save className="mr-1 h-3 w-3" /> Save
+        </Button>
+        {savedCredentials.length > 0 && (
+          <Select onValueChange={(value) => {
+            const credential = savedCredentials.find((candidate) => candidate.apiBase === value)
+            if (credential) onChange({ ...endpoint, apiBase: credential.apiBase, apiKey: credential.apiKey })
+          }}>
+            <SelectTrigger className="h-6 w-40 text-xs">
+              <SelectValue placeholder="Load saved..." />
+            </SelectTrigger>
+            <SelectContent>
+              {savedCredentials.map((credential) => (
+                <SelectItem key={credential.apiBase} value={credential.apiBase} className="text-xs">
+                  {credential.apiBase.replace(/^https?:\/\//, "").slice(0, 28)}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        )}
+      </div>
       <ModelList
         models={models}
         isLoading={isLoading}
         provider="openai_compatible"
         selected={selected}
         onToggle={onToggle}
+        favorites={favorites}
+        onToggleFavorite={onToggleFavorite}
         searchTerm={searchTerm}
         extraCtx={{ apiBase: endpoint.apiBase, apiKey: endpoint.apiKey }}
       />
@@ -242,10 +319,14 @@ function OpenAIEndpointSection({
 function HuggingFaceSection({
   selected,
   onToggle,
+  favorites,
+  onToggleFavorite,
   searchTerm,
 }: {
   selected: Map<string, SelectedModel>
   onToggle: (model: SelectedModel) => void
+  favorites: Set<string>
+  onToggleFavorite: (key: string) => void
   searchTerm: string
 }) {
   const [hfQuery, setHfQuery] = useState("")
@@ -288,6 +369,8 @@ function HuggingFaceSection({
           provider="huggingface"
           selected={selected}
           onToggle={onToggle}
+          favorites={favorites}
+          onToggleFavorite={onToggleFavorite}
           searchTerm={searchTerm}
         />
       )}
@@ -376,10 +459,16 @@ export default function MatrixExecutionPage() {
   const [noThink, setNoThink] = useState(true)
   const [customSystemPrompt, setCustomSystemPrompt] = useState("")
   const [modelSearch, setModelSearch] = useState("")
+  const [favorites, setFavorites] = useState<Set<string>>(() => getFavorites())
+  const [savedCredentials, setSavedCredentials] = useState<Array<{ apiBase: string; apiKey: string }>>([])
 
   const [ollamaOpen, setOllamaOpen] = useState(true)
   const [openaiOpen, setOpenaiOpen] = useState(true)
   const [hfOpen, setHfOpen] = useState(false)
+
+  useEffect(() => {
+    loadCredentials().then(setSavedCredentials)
+  }, [])
 
   const handlePluginChange = useCallback((nextPluginType: string) => {
     setPluginType(nextPluginType)
@@ -423,6 +512,11 @@ export default function MatrixExecutionPage() {
       else next.set(key, model)
       return next
     })
+  }, [])
+
+  const handleToggleFavorite = useCallback((key: string) => {
+    const next = toggleFavorite(key)
+    setFavorites(new Set(next))
   }, [])
 
   const addOpenAIEndpoint = useCallback(() => {
@@ -521,6 +615,27 @@ export default function MatrixExecutionPage() {
     return counts
   }, [selectedModels])
 
+  const groupedFavorites = useMemo(() => {
+    const groups: Record<string, string[]> = {}
+    for (const key of favorites) {
+      const separatorIndex = key.indexOf(":")
+      if (separatorIndex === -1) continue
+      const provider = key.slice(0, separatorIndex)
+      const modelId = key.slice(separatorIndex + 1)
+      ;(groups[provider] ??= []).push(modelId)
+    }
+    for (const ids of Object.values(groups)) ids.sort()
+    return groups
+  }, [favorites])
+
+  const hasFavorites = favorites.size > 0
+
+  const providerLabel: Record<string, string> = {
+    ollama: "Ollama",
+    openai_compatible: "OpenAI / Groq / OpenRouter",
+    huggingface: "HuggingFace",
+  }
+
   const handleSubmit = async (generateOnly: boolean) => {
     if (!pluginType) {
       toast.error("Select a benchmark plugin")
@@ -601,6 +716,16 @@ export default function MatrixExecutionPage() {
         title="Matrix Execution"
         description="Generate a cartesian matrix for one benchmark plugin, then optionally run every cell across selected models."
       />
+
+      <Card className="border-dashed bg-muted/20">
+        <CardContent className="flex flex-wrap items-start justify-between gap-3 pt-4">
+          <div className="space-y-1">
+            <p className="text-sm font-medium">Use Configure for one test set. Use Matrix Execution when you need the cartesian product of prompt axes, plugin field variants, and selected models.</p>
+            <p className="text-xs text-muted-foreground">Each matrix cell becomes a normal test set, and Generate and Run continues into execution jobs for every selected model.</p>
+          </div>
+          <Badge variant="outline" className="shrink-0">Cartesian batch builder</Badge>
+        </CardContent>
+      </Card>
 
       <Card>
         <CardHeader className="pb-3">
@@ -759,89 +884,176 @@ export default function MatrixExecutionPage() {
         </CardContent>
       </Card>
 
-      <div className="relative max-w-sm">
-        <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-        <Input
-          placeholder="Filter models across all providers..."
-          value={modelSearch}
-          onChange={(event) => setModelSearch(event.target.value)}
-          className="h-8 pl-8 text-xs"
-        />
+      <div className="flex gap-6">
+        {hasFavorites && (
+          <div className="w-56 shrink-0">
+            <Card className="sticky top-4">
+              <CardHeader className="pb-2">
+                <CardTitle className="flex items-center gap-1.5 text-sm">
+                  <Star className="h-3.5 w-3.5 fill-yellow-500 text-yellow-500" />
+                  Favorites
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="max-h-[calc(100vh-200px)] space-y-3 overflow-y-auto">
+                {Object.entries(groupedFavorites).map(([provider, modelIds]) => (
+                  <div key={provider}>
+                    <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                      {providerLabel[provider] ?? provider}
+                    </p>
+                    <div className="space-y-0.5">
+                      {modelIds.map((modelId) => {
+                        const isSelected = [...selectedModels.values()].some(
+                          (selectedModel) => selectedModel.id === modelId && selectedModel.provider === provider,
+                        )
+                        return (
+                          <div key={modelId} className="group flex items-center gap-1">
+                            <button
+                              onClick={() => {
+                                const existing = [...selectedModels.entries()].find(
+                                  ([, selectedModel]) => selectedModel.id === modelId && selectedModel.provider === provider,
+                                )
+                                if (existing) {
+                                  setSelectedModels((previous) => {
+                                    const next = new Map(previous)
+                                    next.delete(existing[0])
+                                    return next
+                                  })
+                                  return
+                                }
+                                const candidate: SelectedModel = {
+                                  id: modelId,
+                                  provider: provider as SelectedModel["provider"],
+                                  ...(provider === "ollama" && { ollamaHost }),
+                                  ...(provider === "openai_compatible" && openaiEndpoints[0] && {
+                                    apiBase: openaiEndpoints[0].apiBase,
+                                    apiKey: openaiEndpoints[0].apiKey,
+                                  }),
+                                }
+                                toggleModelSelection(candidate)
+                              }}
+                              className={`flex-1 truncate rounded px-1.5 py-0.5 text-left text-xs transition-colors ${
+                                isSelected ? "bg-primary/10 font-medium text-primary" : "hover:bg-accent"
+                              }`}
+                              title={`${modelId} (${provider})`}
+                              type="button"
+                            >
+                              {modelId.length > 22 ? `${modelId.slice(0, 20)}…` : modelId}
+                            </button>
+                            <button
+                              onClick={() => handleToggleFavorite(favoriteKey(provider, modelId))}
+                              className="shrink-0 p-0.5 text-muted-foreground/50 opacity-0 transition-all group-hover:opacity-100 hover:text-destructive"
+                              type="button"
+                            >
+                              <X className="h-2.5 w-2.5" />
+                            </button>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+          </div>
+        )}
+
+        <div className="flex-1 space-y-6">
+          <div className="relative max-w-sm">
+            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+            <Input
+              placeholder="Filter models across all providers..."
+              value={modelSearch}
+              onChange={(event) => setModelSearch(event.target.value)}
+              className="h-8 pl-8 text-xs"
+            />
+          </div>
+
+          <Collapsible open={ollamaOpen} onOpenChange={setOllamaOpen}>
+            <Card>
+              <CardHeader className="pb-2">
+                <CollapsibleTrigger asChild>
+                  <button className="flex w-full items-center justify-between">
+                    <CardTitle className="text-sm">Ollama</CardTitle>
+                    <span className="text-xs text-muted-foreground">{ollamaOpen ? "collapse" : "expand"}</span>
+                  </button>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent>
+                  <OllamaSection
+                    host={ollamaHost}
+                    onHostChange={setOllamaHost}
+                    selected={selectedModels}
+                    onToggle={toggleModelSelection}
+                    favorites={favorites}
+                    onToggleFavorite={handleToggleFavorite}
+                    searchTerm={modelSearch}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          <Collapsible open={openaiOpen} onOpenChange={setOpenaiOpen}>
+            <Card>
+              <CardHeader className="pb-2">
+                <CollapsibleTrigger asChild>
+                  <button className="flex w-full items-center justify-between">
+                    <CardTitle className="text-sm">OpenAI-Compatible</CardTitle>
+                    <span className="text-xs text-muted-foreground">{openaiOpen ? "collapse" : "expand"}</span>
+                  </button>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent className="space-y-3">
+                  {openaiEndpoints.map((endpoint) => (
+                    <OpenAIEndpointSection
+                      key={endpoint.key}
+                      endpoint={endpoint}
+                      onChange={(updated) => updateOpenAIEndpoint(endpoint.key, updated)}
+                      onRemove={() => removeOpenAIEndpoint(endpoint.key)}
+                      selected={selectedModels}
+                      onToggle={toggleModelSelection}
+                      favorites={favorites}
+                      onToggleFavorite={handleToggleFavorite}
+                      searchTerm={modelSearch}
+                      savedCredentials={savedCredentials}
+                      canRemove={openaiEndpoints.length > 1}
+                    />
+                  ))}
+                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={addOpenAIEndpoint}>
+                    <Plus className="mr-1.5 h-3 w-3" /> Add Another Endpoint
+                  </Button>
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+
+          <Collapsible open={hfOpen} onOpenChange={setHfOpen}>
+            <Card>
+              <CardHeader className="pb-2">
+                <CollapsibleTrigger asChild>
+                  <button className="flex w-full items-center justify-between">
+                    <CardTitle className="text-sm">HuggingFace</CardTitle>
+                    <span className="text-xs text-muted-foreground">{hfOpen ? "collapse" : "expand"}</span>
+                  </button>
+                </CollapsibleTrigger>
+              </CardHeader>
+              <CollapsibleContent>
+                <CardContent>
+                  <HuggingFaceSection
+                    selected={selectedModels}
+                    onToggle={toggleModelSelection}
+                    favorites={favorites}
+                    onToggleFavorite={handleToggleFavorite}
+                    searchTerm={modelSearch}
+                  />
+                </CardContent>
+              </CollapsibleContent>
+            </Card>
+          </Collapsible>
+        </div>
       </div>
-
-      <Collapsible open={ollamaOpen} onOpenChange={setOllamaOpen}>
-        <Card>
-          <CardHeader className="pb-2">
-            <CollapsibleTrigger asChild>
-              <button className="flex w-full items-center justify-between">
-                <CardTitle className="text-sm">Ollama</CardTitle>
-                <span className="text-xs text-muted-foreground">{ollamaOpen ? "collapse" : "expand"}</span>
-              </button>
-            </CollapsibleTrigger>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent>
-              <OllamaSection
-                host={ollamaHost}
-                onHostChange={setOllamaHost}
-                selected={selectedModels}
-                onToggle={toggleModelSelection}
-                searchTerm={modelSearch}
-              />
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
-
-      <Collapsible open={openaiOpen} onOpenChange={setOpenaiOpen}>
-        <Card>
-          <CardHeader className="pb-2">
-            <CollapsibleTrigger asChild>
-              <button className="flex w-full items-center justify-between">
-                <CardTitle className="text-sm">OpenAI-Compatible</CardTitle>
-                <span className="text-xs text-muted-foreground">{openaiOpen ? "collapse" : "expand"}</span>
-              </button>
-            </CollapsibleTrigger>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent className="space-y-3">
-              {openaiEndpoints.map((endpoint) => (
-                <OpenAIEndpointSection
-                  key={endpoint.key}
-                  endpoint={endpoint}
-                  onChange={(updated) => updateOpenAIEndpoint(endpoint.key, updated)}
-                  onRemove={() => removeOpenAIEndpoint(endpoint.key)}
-                  selected={selectedModels}
-                  onToggle={toggleModelSelection}
-                  searchTerm={modelSearch}
-                  canRemove={openaiEndpoints.length > 1}
-                />
-              ))}
-              <Button variant="outline" size="sm" className="w-full text-xs" onClick={addOpenAIEndpoint}>
-                <Plus className="mr-1.5 h-3 w-3" /> Add Another Endpoint
-              </Button>
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
-
-      <Collapsible open={hfOpen} onOpenChange={setHfOpen}>
-        <Card>
-          <CardHeader className="pb-2">
-            <CollapsibleTrigger asChild>
-              <button className="flex w-full items-center justify-between">
-                <CardTitle className="text-sm">HuggingFace</CardTitle>
-                <span className="text-xs text-muted-foreground">{hfOpen ? "collapse" : "expand"}</span>
-              </button>
-            </CollapsibleTrigger>
-          </CardHeader>
-          <CollapsibleContent>
-            <CardContent>
-              <HuggingFaceSection selected={selectedModels} onToggle={toggleModelSelection} searchTerm={modelSearch} />
-            </CardContent>
-          </CollapsibleContent>
-        </Card>
-      </Collapsible>
 
       <Card>
         <CardHeader className="pb-3">

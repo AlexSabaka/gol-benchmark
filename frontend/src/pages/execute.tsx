@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react"
 import { useNavigate, useSearchParams } from "react-router"
 import { toast } from "sonner"
-import { Loader2, Play, Search, Star, Save, X, Plus, Trash2 } from "lucide-react"
+import { ArrowLeft, ArrowRight, Check, Loader2, Play, Plus, Save, Search, Star, Trash2, X } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card"
 import { Checkbox } from "@/components/ui/checkbox"
+import { DataTable, type ColumnDef } from "@/components/data-table/data-table"
 import {
   Collapsible,
   CollapsibleContent,
@@ -30,7 +31,7 @@ import { saveCredential, loadCredentials } from "@/lib/credential-store"
 import { favoriteKey, getFavorites, toggleFavorite } from "@/lib/favorite-models"
 import { langFlags } from "@/lib/language-flags"
 import { makeStorageKey, useLocalStorageSetState, useLocalStorageState } from "@/lib/local-storage"
-import { formatBytes, formatDate } from "@/lib/utils"
+import { formatBytes, formatDate, stripArchiveExtension, suffixDisplay } from "@/lib/utils"
 import type { RunRequest, TestsetSummary } from "@/types"
 
 // ── Types ──
@@ -52,60 +53,147 @@ interface OpenAIEndpoint {
   apiKey: string
 }
 
+type ExecuteStepId = "testsets" | "models" | "settings" | "review"
+
+const EXECUTE_STEPS: Array<{
+  id: ExecuteStepId
+  label: string
+  description: string
+}> = [
+  { id: "testsets", label: "Test Sets", description: "Choose benchmark inputs" },
+  { id: "models", label: "Models", description: "Pick providers and models" },
+  { id: "settings", label: "Settings", description: "Tune run overrides" },
+  { id: "review", label: "Review", description: "Check summary before launch" },
+]
+
+const EXECUTE_STEP_IDS = new Set<ExecuteStepId>(EXECUTE_STEPS.map((step) => step.id))
+
 function selectedModelKey(m: SelectedModel): string {
   if (m.provider === "openai_compatible") return `openai_compatible:${m.apiBase}:${m.id}`
   return `${m.provider}:${m.id}`
 }
 
-function ExecuteTestsetGridRow({
-  summary,
-  selected,
-  onToggle,
-}: {
-  summary: TestsetSummary
-  selected: boolean
-  onToggle: () => void
-}) {
-  const title = summary.filename.replace(".json.gz", "")
-  const languages = summary.languages ?? []
+function CompactTaskBadges({ tasks }: { tasks: string[] }) {
+  const visible = tasks.slice(0, 2)
+  const remaining = Math.max(tasks.length - visible.length, 0)
 
   return (
-    <tr className={selected ? "bg-primary/5" : "hover:bg-muted/30"}>
-      <td className="px-3 py-3 align-top">
-        <Checkbox
-          checked={selected}
-          onCheckedChange={() => onToggle()}
-          aria-label={`Select ${title}`}
-        />
-      </td>
-      <td className="px-3 py-3 align-top">
+    <div className="flex max-w-52 items-center gap-1 overflow-hidden whitespace-nowrap">
+      {visible.map((task) => (
+        <div key={task} className="shrink-0">
+          <TaskBadge task={task} />
+        </div>
+      ))}
+      {remaining > 0 && (
+        <Badge variant="outline" className="shrink-0 text-[10px]">
+          +{remaining}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+function CompactLanguageList({ languages }: { languages: string[] }) {
+  if (languages.length === 0) {
+    return <span className="text-xs text-muted-foreground">-</span>
+  }
+
+  const visible = languages.slice(0, 3)
+  const remaining = Math.max(languages.length - visible.length, 0)
+
+  return (
+    <div className="inline-flex items-center gap-1 whitespace-nowrap" title={languages.join(", ")}>
+      <span>{langFlags(visible)}</span>
+      {remaining > 0 && (
+        <Badge variant="outline" className="text-[10px]">
+          +{remaining}
+        </Badge>
+      )}
+    </div>
+  )
+}
+
+function StepButton({
+  step,
+  index,
+  active,
+  complete,
+  summary,
+  onClick,
+}: {
+  step: { id: ExecuteStepId; label: string; description: string }
+  index: number
+  active: boolean
+  complete: boolean
+  summary: string
+  onClick: () => void
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={`rounded-xl border px-4 py-3 text-left transition-colors ${
+        active
+          ? "border-primary bg-primary/5 shadow-sm"
+          : complete
+            ? "border-border bg-card hover:border-primary/50 hover:bg-accent/30"
+            : "border-border bg-card hover:bg-accent/20"
+      }`}
+    >
+      <div className="flex items-start gap-3">
+        <span
+          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
+            active
+              ? "bg-primary text-primary-foreground"
+              : complete
+                ? "bg-emerald-600 text-white"
+                : "bg-muted text-muted-foreground"
+          }`}
+        >
+          {complete && !active ? <Check className="h-3.5 w-3.5" /> : index + 1}
+        </span>
         <div className="min-w-0">
-          <p className="truncate text-sm font-medium" title={title}>{title}</p>
-          {summary.matrix_label && (
-            <p className="mt-1 truncate text-[11px] text-muted-foreground" title={summary.matrix_label}>
-              {summary.matrix_label}
-            </p>
-          )}
+          <p className="text-sm font-medium">{step.label}</p>
+          <p className="text-xs text-muted-foreground">{step.description}</p>
+          <p className="mt-2 truncate text-xs text-muted-foreground">{summary}</p>
         </div>
-      </td>
-      <td className="px-3 py-3 align-top">
-        <div className="flex min-w-40 flex-wrap gap-1">
-          {summary.task_types.map((task) => (
-            <TaskBadge key={task} task={task} />
-          ))}
-        </div>
-      </td>
-      <td className="px-3 py-3 align-top text-sm">
-        {languages.length > 0 ? (
-          <span title={languages.join(", ")}>{langFlags(languages)}</span>
+      </div>
+    </button>
+  )
+}
+
+function StepFooter({
+  previousLabel,
+  nextLabel,
+  onPrevious,
+  onNext,
+  nextDisabled,
+}: {
+  previousLabel?: string
+  nextLabel?: string
+  onPrevious?: () => void
+  onNext?: () => void
+  nextDisabled?: boolean
+}) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
+      <div>
+        {onPrevious ? (
+          <Button variant="outline" onClick={onPrevious}>
+            <ArrowLeft className="mr-2 h-4 w-4" />
+            {previousLabel ?? "Back"}
+          </Button>
         ) : (
-          <span className="text-xs text-muted-foreground">-</span>
+          <span className="text-xs text-muted-foreground">You can jump between steps at any time.</span>
         )}
-      </td>
-      <td className="px-3 py-3 align-top text-xs text-muted-foreground">{summary.test_count}</td>
-      <td className="px-3 py-3 align-top text-xs text-muted-foreground">{formatBytes(summary.size_bytes)}</td>
-      <td className="px-3 py-3 align-top text-xs text-muted-foreground whitespace-nowrap">{formatDate(summary.created)}</td>
-    </tr>
+      </div>
+      {onNext ? (
+        <Button onClick={onNext} disabled={nextDisabled}>
+          {nextLabel ?? "Continue"}
+          <ArrowRight className="ml-2 h-4 w-4" />
+        </Button>
+      ) : null}
+    </div>
   )
 }
 
@@ -410,7 +498,7 @@ export default function ExecutePage() {
   const storageScope = "execute-page"
   const nav = useNavigate()
   const [params] = useSearchParams()
-  const { data: testsets } = useTestsets()
+  const { data: testsets, isLoading: testsetsLoading } = useTestsets()
   const runMutation = useRunBenchmark()
   const requestedTestset = params.get("testset")
 
@@ -419,9 +507,17 @@ export default function ExecutePage() {
     makeStorageKey(storageScope, "selected-testsets"),
     requestedTestset ? [requestedTestset] : [],
   )
-  const [testsetSearch, setTestsetSearch] = useLocalStorageState<string>(makeStorageKey(storageScope, "testset-search"), "")
-  const [testsetPage, setTestsetPage] = useLocalStorageState<number>(makeStorageKey(storageScope, "testset-page"), 1)
-  const [testsetPageSize, setTestsetPageSize] = useLocalStorageState<number>(makeStorageKey(storageScope, "testset-page-size"), 9)
+  const [activeStep, setActiveStep] = useLocalStorageState<ExecuteStepId>(
+    makeStorageKey(storageScope, "active-step"),
+    "testsets",
+    {
+      sanitize: (value) => (
+        typeof value === "string" && EXECUTE_STEP_IDS.has(value as ExecuteStepId)
+          ? value as ExecuteStepId
+          : "testsets"
+      ),
+    },
+  )
   const [ollamaHost, setOllamaHost] = useState("http://localhost:11434")
   const [openaiEndpoints, setOpenaiEndpoints] = useState<OpenAIEndpoint[]>([
     { key: "ep_0", apiBase: "", apiKey: "" },
@@ -446,8 +542,8 @@ export default function ExecutePage() {
   useEffect(() => {
     if (!requestedTestset) return
     setSelectedTestsets(new Set([requestedTestset]))
-    setTestsetPage(1)
-  }, [requestedTestset, setSelectedTestsets, setTestsetPage])
+    setActiveStep("testsets")
+  }, [requestedTestset, setActiveStep, setSelectedTestsets])
 
   useEffect(() => {
     if (!testsets?.length) return
@@ -461,6 +557,23 @@ export default function ExecutePage() {
       return next
     })
   }, [setSelectedTestsets, testsets])
+
+  const sortedTestsets = useMemo(
+    () => [...(testsets ?? [])].sort((left, right) => new Date(right.created).getTime() - new Date(left.created).getTime()),
+    [testsets],
+  )
+
+  const testsetLookup = useMemo(
+    () => new Map(sortedTestsets.map((summary) => [summary.filename, summary])),
+    [sortedTestsets],
+  )
+
+  const selectedTestsetSummaries = useMemo(
+    () => Array.from(selectedTestsets)
+      .map((filename) => testsetLookup.get(filename))
+      .filter((summary): summary is TestsetSummary => summary !== undefined),
+    [selectedTestsets, testsetLookup],
+  )
 
   const toggleModelSelection = useCallback((m: SelectedModel) => {
     setSelected((prev) => {
@@ -514,44 +627,163 @@ export default function ExecutePage() {
     huggingface: "HuggingFace",
   }
 
-  const filteredTestsets = useMemo(() => {
-    const query = testsetSearch.trim().toLowerCase()
-    return [...(testsets ?? [])]
-      .filter((summary) => {
-        if (!query) return true
-        const haystack = [
-          summary.filename,
-          summary.matrix_label ?? "",
-          summary.matrix_plugin ?? "",
-          summary.matrix_batch_id ?? "",
-          summary.task_types.join(" "),
-          summary.languages.join(" "),
-        ].join(" ").toLowerCase()
-        return haystack.includes(query)
-      })
-      .sort((a, b) => new Date(b.created).getTime() - new Date(a.created).getTime())
-  }, [testsetSearch, testsets])
+  const selectedModelGroups = useMemo(() => {
+    const groups = new Map<string, {
+      provider: SelectedModel["provider"]
+      modelIds: string[]
+      apiBase?: string
+      apiKey?: string
+      ollamaHost?: string
+    }>()
 
-  const totalTestsetPages = Math.max(1, Math.ceil(filteredTestsets.length / Math.max(testsetPageSize, 1)))
-  const currentTestsetPage = Math.min(Math.max(testsetPage, 1), totalTestsetPages)
+    for (const model of selected.values()) {
+      const groupKey = model.provider === "openai_compatible"
+        ? `openai_compatible:${model.apiBase ?? ""}`
+        : model.provider
 
-  useEffect(() => {
-    if (currentTestsetPage !== testsetPage) {
-      setTestsetPage(currentTestsetPage)
+      const existing = groups.get(groupKey) ?? {
+        provider: model.provider,
+        modelIds: [],
+        apiBase: model.apiBase,
+        apiKey: model.apiKey,
+        ollamaHost: model.ollamaHost,
+      }
+
+      existing.modelIds.push(model.id)
+      groups.set(groupKey, existing)
     }
-  }, [currentTestsetPage, setTestsetPage, testsetPage])
 
-  const paginatedTestsets = useMemo(() => {
-    const start = (currentTestsetPage - 1) * testsetPageSize
-    return filteredTestsets.slice(start, start + testsetPageSize)
-  }, [currentTestsetPage, filteredTestsets, testsetPageSize])
+    return Array.from(groups.values()).map((group) => ({
+      ...group,
+      modelIds: [...group.modelIds].sort(),
+    }))
+  }, [selected])
 
-  const visibleTestsetNames = useMemo(
-    () => paginatedTestsets.map((summary) => summary.filename),
-    [paginatedTestsets],
-  )
+  const selectionSummary = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const m of selected.values()) {
+      counts[m.provider] = (counts[m.provider] ?? 0) + 1
+    }
+    return counts
+  }, [selected])
 
-  const allVisibleTestsetsSelected = visibleTestsetNames.length > 0 && visibleTestsetNames.every((filename) => selectedTestsets.has(filename))
+  const projectedJobCount = selectedTestsetCount * selectedCount
+  const runDisabled = runMutation.isPending || selectedTestsetCount === 0 || selectedCount === 0
+  const runButtonLabel = projectedJobCount > 0
+    ? `Run ${projectedJobCount} Job${projectedJobCount !== 1 ? "s" : ""}`
+    : selectedTestsetCount === 0 && selectedCount === 0
+      ? "Select test sets and models"
+      : selectedTestsetCount === 0
+        ? "Select test sets"
+        : "Select models"
+
+  const currentStepIndex = Math.max(EXECUTE_STEPS.findIndex((step) => step.id === activeStep), 0)
+  const previousStep = currentStepIndex > 0 ? EXECUTE_STEPS[currentStepIndex - 1] : null
+  const nextStep = currentStepIndex < EXECUTE_STEPS.length - 1 ? EXECUTE_STEPS[currentStepIndex + 1] : null
+
+  const stepSummaries: Record<ExecuteStepId, string> = {
+    testsets: selectedTestsetCount > 0 ? `${selectedTestsetCount} selected` : "Choose one or more test sets",
+    models: selectedCount > 0 ? `${selectedCount} selected` : "Pick models across providers",
+    settings: `Temp ${temperature.toFixed(2)} • ${noThink ? "no think" : "thinking"}`,
+    review: projectedJobCount > 0 ? `${projectedJobCount} projected jobs` : "Summary appears here before the run",
+  }
+
+  const stepComplete: Record<ExecuteStepId, boolean> = {
+    testsets: selectedTestsetCount > 0,
+    models: selectedCount > 0,
+    settings: true,
+    review: !runDisabled,
+  }
+
+  const nextStepDisabled = activeStep === "testsets"
+    ? selectedTestsetCount === 0
+    : activeStep === "models"
+      ? selectedCount === 0
+      : false
+
+  const goToNextStep = useCallback(() => {
+    if (nextStep) setActiveStep(nextStep.id)
+  }, [nextStep, setActiveStep])
+
+  const goToPreviousStep = useCallback(() => {
+    if (previousStep) setActiveStep(previousStep.id)
+  }, [previousStep, setActiveStep])
+
+  const testsetColumns = useMemo<ColumnDef<TestsetSummary>[]>(() => [
+    {
+      id: "pick",
+      header: "Pick",
+      enableSorting: false,
+      enableHiding: false,
+      cell: ({ row }) => (
+        <Checkbox
+          checked={selectedTestsets.has(row.original.filename)}
+          onCheckedChange={() => {
+            setSelectedTestsets((previous) => {
+              const next = new Set(previous)
+              if (next.has(row.original.filename)) next.delete(row.original.filename)
+              else next.add(row.original.filename)
+              return next
+            })
+          }}
+          aria-label={`Select ${row.original.filename}`}
+        />
+      ),
+    },
+    {
+      id: "testset",
+      accessorFn: (row) => [
+        row.filename,
+        row.matrix_label ?? "",
+        row.matrix_plugin ?? "",
+        row.task_types.join(" "),
+        row.languages.join(" "),
+      ].join(" "),
+      header: "Test Set",
+      enableHiding: false,
+      cell: ({ row }) => {
+        const title = stripArchiveExtension(row.original.filename)
+        const tooltipParts = [title, row.original.matrix_label].filter(Boolean)
+
+        return (
+          <div className="min-w-0" title={tooltipParts.join(" • ")}>
+            <span className="block max-w-[44ch] truncate font-medium">
+              {suffixDisplay(title, 50)}
+            </span>
+          </div>
+        )
+      },
+    },
+    {
+      id: "tasks",
+      accessorFn: (row) => row.task_types.join(" "),
+      header: "Tasks",
+      enableSorting: false,
+      cell: ({ row }) => <CompactTaskBadges tasks={row.original.task_types} />,
+    },
+    {
+      id: "languages",
+      accessorFn: (row) => row.languages.join(" "),
+      header: "Lang",
+      enableSorting: false,
+      cell: ({ row }) => <CompactLanguageList languages={row.original.languages} />,
+    },
+    {
+      accessorKey: "test_count",
+      header: "Tests",
+      cell: ({ row }) => <span className="text-xs tabular-nums text-muted-foreground">{row.original.test_count}</span>,
+    },
+    {
+      accessorKey: "size_bytes",
+      header: "Size",
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatBytes(row.original.size_bytes)}</span>,
+    },
+    {
+      accessorKey: "created",
+      header: "Created",
+      cell: ({ row }) => <span className="text-xs text-muted-foreground">{formatDate(row.original.created)}</span>,
+    },
+  ], [selectedTestsets, setSelectedTestsets])
 
   const handleRun = async () => {
     if (selectedTestsetCount === 0) { toast.error("Select at least one test set"); return }
@@ -562,32 +794,11 @@ export default function ExecutePage() {
       ? crypto.randomUUID().slice(0, 8)
       : `${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`.slice(0, 8)
 
-    // Group selected models by provider + endpoint
-    const groups = new Map<string, { provider: string; models: string[]; ollamaHost?: string; apiBase?: string; apiKey?: string }>()
-    for (const m of selected.values()) {
-      let groupKey: string
-      if (m.provider === "openai_compatible") {
-        groupKey = `openai_compatible:${m.apiBase ?? ""}`
-      } else {
-        groupKey = m.provider
-      }
-      if (!groups.has(groupKey)) {
-        groups.set(groupKey, {
-          provider: m.provider,
-          models: [],
-          ollamaHost: m.ollamaHost,
-          apiBase: m.apiBase,
-          apiKey: m.apiKey,
-        })
-      }
-      groups.get(groupKey)!.models.push(m.id)
-    }
-
     let totalJobs = 0
-    for (const group of groups.values()) {
+    for (const group of selectedModelGroups) {
       const req: RunRequest = {
         testset_filenames: testsetFilenames,
-        models: group.models,
+        models: group.modelIds,
         provider: group.provider,
         run_group_id: sharedRunGroupId,
         temperature,
@@ -609,377 +820,451 @@ export default function ExecutePage() {
     }
   }
 
-  // Summary of selected models by provider
-  const selectionSummary = useMemo(() => {
-    const counts: Record<string, number> = {}
-    for (const m of selected.values()) {
-      counts[m.provider] = (counts[m.provider] ?? 0) + 1
-    }
-    return counts
-  }, [selected])
-
   return (
     <div className="space-y-6">
-      <PageHeader title="Execute" description="Run test sets on model(s) from multiple providers" />
+      <PageHeader
+        title="Execute"
+        description="Step through test set selection, model selection, overrides, and a final review before launching jobs."
+        actions={activeStep === "review" ? (
+          <Button onClick={handleRun} disabled={runDisabled}>
+            {runMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
+            {runButtonLabel}
+          </Button>
+        ) : undefined}
+      />
 
-      <div className="flex gap-6">
-        {/* Favorites sidebar */}
-        {hasFavorites && (
-          <div className="w-56 shrink-0">
-            <Card className="sticky top-4">
-              <CardHeader className="pb-2">
-                <CardTitle className="text-sm flex items-center gap-1.5">
-                  <Star className="h-3.5 w-3.5 fill-yellow-500 text-yellow-500" />
-                  Favorites
-                </CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3 max-h-[calc(100vh-200px)] overflow-y-auto">
-                {Object.entries(groupedFavorites).map(([prov, modelIds]) => (
-                  <div key={prov}>
-                    <p className="text-[10px] font-medium text-muted-foreground uppercase tracking-wider mb-1">
-                      {providerLabel[prov] ?? prov}
-                    </p>
-                    <div className="space-y-0.5">
-                      {modelIds.map((modelId) => {
-                        // Check if any selection matches this model
-                        const isSelected = [...selected.values()].some(
-                          (s) => s.id === modelId && s.provider === prov
-                        )
-                        return (
-                          <div key={modelId} className="flex items-center gap-1 group">
-                            <button
-                              onClick={() => {
-                                // Toggle: find if already selected, else add with default context
-                                const existing = [...selected.entries()].find(
-                                  ([, s]) => s.id === modelId && s.provider === prov
-                                )
-                                if (existing) {
-                                  setSelected((prev) => { const n = new Map(prev); n.delete(existing[0]); return n })
-                                } else {
-                                  const sm: SelectedModel = {
-                                    id: modelId,
-                                    provider: prov as SelectedModel["provider"],
-                                    ...(prov === "ollama" && { ollamaHost }),
-                                    ...(prov === "openai_compatible" && openaiEndpoints[0] && {
-                                      apiBase: openaiEndpoints[0].apiBase,
-                                      apiKey: openaiEndpoints[0].apiKey,
-                                    }),
-                                  }
-                                  toggleModelSelection(sm)
-                                }
-                              }}
-                              className={`flex-1 text-left text-xs px-1.5 py-0.5 rounded truncate transition-colors ${
-                                isSelected ? "bg-primary/10 text-primary font-medium" : "hover:bg-accent"
-                              }`}
-                              title={`${modelId} (${prov})`}
-                            >
-                              {modelId.length > 22 ? modelId.slice(0, 20) + "\u2026" : modelId}
-                            </button>
-                            <button
-                              onClick={() => handleToggleFavorite(favoriteKey(prov, modelId))}
-                              className="opacity-0 group-hover:opacity-100 shrink-0 p-0.5 text-muted-foreground/50 hover:text-destructive transition-all"
-                            >
-                              <X className="h-2.5 w-2.5" />
-                            </button>
-                          </div>
-                        )
-                      })}
-                    </div>
-                  </div>
-                ))}
-              </CardContent>
-            </Card>
-          </div>
-        )}
-
-        <div className="flex-1 max-w-3xl space-y-6">
-          {/* Test set selector */}
-          <Card>
-            <CardHeader className="pb-3">
-              <div className="flex flex-wrap items-center justify-between gap-3">
-                <CardTitle className="text-sm">Test Sets</CardTitle>
-                <div className="flex items-center gap-2">
-                  <Badge variant="secondary">{selectedTestsetCount} selected</Badge>
-                  <Badge variant="outline">{filteredTestsets.length} visible</Badge>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <div className="relative min-w-60 flex-1 sm:max-w-sm">
-                  <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-                  <Input
-                    value={testsetSearch}
-                    onChange={(event) => {
-                      setTestsetSearch(event.target.value)
-                      setTestsetPage(1)
-                    }}
-                    placeholder="Filter test sets..."
-                    className="pl-8"
-                  />
-                </div>
-                <Select value={String(testsetPageSize)} onValueChange={(value) => {
-                  setTestsetPageSize(Number(value))
-                  setTestsetPage(1)
-                }}>
-                  <SelectTrigger className="h-9 w-28">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[6, 9, 12, 18].map((size) => (
-                      <SelectItem key={size} value={String(size)}>{size} / page</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  className="h-9 text-xs"
-                  onClick={() => {
-                    setSelectedTestsets((previous) => {
-                      const next = new Set(previous)
-                      for (const filename of visibleTestsetNames) next.add(filename)
-                      return next
-                    })
-                  }}
-                  disabled={visibleTestsetNames.length === 0 || allVisibleTestsetsSelected}
-                >
-                  Select Page
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="sm"
-                  className="h-9 text-xs"
-                  onClick={() => setSelectedTestsets(new Set())}
-                  disabled={selectedTestsetCount === 0}
-                >
-                  Clear Selection
-                </Button>
-              </div>
-
-              {paginatedTestsets.length === 0 ? (
-                <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
-                  No test sets match the current filter.
-                </div>
-              ) : (
-                <div className="overflow-x-auto rounded-lg border">
-                  <table className="min-w-[940px] w-full text-sm">
-                    <thead className="bg-muted/40 text-left text-xs text-muted-foreground">
-                      <tr>
-                        <th className="w-12 px-3 py-2 font-medium">Pick</th>
-                        <th className="px-3 py-2 font-medium">Test Set</th>
-                        <th className="w-56 px-3 py-2 font-medium">Tasks</th>
-                        <th className="w-24 px-3 py-2 font-medium">Lang</th>
-                        <th className="w-20 px-3 py-2 font-medium">Tests</th>
-                        <th className="w-24 px-3 py-2 font-medium">Size</th>
-                        <th className="w-40 px-3 py-2 font-medium">Created</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {paginatedTestsets.map((summary) => (
-                        <ExecuteTestsetGridRow
-                          key={summary.filename}
-                          summary={summary}
-                          selected={selectedTestsets.has(summary.filename)}
-                          onToggle={() => {
-                            setSelectedTestsets((previous) => {
-                              const next = new Set(previous)
-                              if (next.has(summary.filename)) next.delete(summary.filename)
-                              else next.add(summary.filename)
-                              return next
-                            })
-                          }}
-                        />
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              )}
-
-              <div className="flex items-center justify-between gap-3 text-xs text-muted-foreground">
-                <span>Page {currentTestsetPage} of {totalTestsetPages}</span>
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setTestsetPage((page) => Math.max(1, page - 1))}
-                    disabled={currentTestsetPage <= 1}
-                  >
-                    Previous
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    className="h-8 text-xs"
-                    onClick={() => setTestsetPage((page) => Math.min(totalTestsetPages, page + 1))}
-                    disabled={currentTestsetPage >= totalTestsetPages}
-                  >
-                    Next
-                  </Button>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Global model search */}
-          <div className="relative max-w-sm">
-            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
-            <Input
-              placeholder="Filter models across all providers..."
-              value={modelSearch}
-              onChange={(e) => setModelSearch(e.target.value)}
-              className="pl-8 h-8 text-xs"
-            />
-          </div>
-
-          {/* Ollama */}
-          <Collapsible open={ollamaOpen} onOpenChange={setOllamaOpen}>
-            <Card>
-              <CardHeader className="pb-2">
-                <CollapsibleTrigger asChild>
-                  <button className="flex w-full items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      Ollama
-                      {selectionSummary.ollama && (
-                        <Badge variant="secondary" className="text-[10px]">{selectionSummary.ollama} selected</Badge>
-                      )}
-                    </CardTitle>
-                    <span className="text-xs text-muted-foreground">{ollamaOpen ? "collapse" : "expand"}</span>
-                  </button>
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent>
-                  <OllamaSection
-                    host={ollamaHost}
-                    onHostChange={setOllamaHost}
-                    selected={selected}
-                    onToggle={toggleModelSelection}
-                    favorites={favorites}
-                    onToggleFavorite={handleToggleFavorite}
-                    searchTerm={modelSearch}
-                  />
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-
-          {/* OpenAI-Compatible (multiple endpoints) */}
-          <Collapsible open={openaiOpen} onOpenChange={setOpenaiOpen}>
-            <Card>
-              <CardHeader className="pb-2">
-                <CollapsibleTrigger asChild>
-                  <button className="flex w-full items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      OpenAI-Compatible
-                      {selectionSummary.openai_compatible && (
-                        <Badge variant="secondary" className="text-[10px]">{selectionSummary.openai_compatible} selected</Badge>
-                      )}
-                    </CardTitle>
-                    <span className="text-xs text-muted-foreground">{openaiOpen ? "collapse" : "expand"}</span>
-                  </button>
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent className="space-y-3">
-                  {openaiEndpoints.map((ep) => (
-                    <OpenAIEndpointSection
-                      key={ep.key}
-                      endpoint={ep}
-                      onChange={(updated) => updateOpenaiEndpoint(ep.key, updated)}
-                      onRemove={() => removeOpenaiEndpoint(ep.key)}
-                      selected={selected}
-                      onToggle={toggleModelSelection}
-                      favorites={favorites}
-                      onToggleFavorite={handleToggleFavorite}
-                      searchTerm={modelSearch}
-                      savedCredentials={savedCredentials}
-                      canRemove={openaiEndpoints.length > 1}
-                    />
-                  ))}
-                  <Button variant="outline" size="sm" className="w-full text-xs" onClick={addOpenaiEndpoint}>
-                    <Plus className="mr-1.5 h-3 w-3" /> Add Another Endpoint
-                  </Button>
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-
-          {/* HuggingFace */}
-          <Collapsible open={hfOpen} onOpenChange={setHfOpen}>
-            <Card>
-              <CardHeader className="pb-2">
-                <CollapsibleTrigger asChild>
-                  <button className="flex w-full items-center justify-between">
-                    <CardTitle className="text-sm flex items-center gap-2">
-                      HuggingFace
-                      {selectionSummary.huggingface && (
-                        <Badge variant="secondary" className="text-[10px]">{selectionSummary.huggingface} selected</Badge>
-                      )}
-                    </CardTitle>
-                    <span className="text-xs text-muted-foreground">{hfOpen ? "collapse" : "expand"}</span>
-                  </button>
-                </CollapsibleTrigger>
-              </CardHeader>
-              <CollapsibleContent>
-                <CardContent>
-                  <HuggingFaceSection
-                    selected={selected}
-                    onToggle={toggleModelSelection}
-                    favorites={favorites}
-                    onToggleFavorite={handleToggleFavorite}
-                    searchTerm={modelSearch}
-                  />
-                </CardContent>
-              </CollapsibleContent>
-            </Card>
-          </Collapsible>
-
-          {/* Sampling overrides */}
-          <Card>
-            <CardHeader className="pb-3"><CardTitle className="text-sm">Sampling Overrides</CardTitle></CardHeader>
-            <CardContent>
-              <div className="grid gap-4 sm:grid-cols-3">
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Temperature</Label>
-                  <Input type="number" value={temperature} min={0} max={2} step={0.05} onChange={(e) => setTemperature(Number(e.target.value))} className="h-8 w-28" />
-                </div>
-                <div className="space-y-1.5">
-                  <Label className="text-xs">Max Tokens</Label>
-                  <Input type="number" value={maxTokens} min={64} max={32768} step={64} onChange={(e) => setMaxTokens(Number(e.target.value))} className="h-8 w-28" />
-                </div>
-                <div className="flex items-center gap-2 pt-5">
-                  <Checkbox id="exec-no-think" checked={noThink} onCheckedChange={(c) => setNoThink(!!c)} />
-                  <Label htmlFor="exec-no-think" className="text-xs cursor-pointer">Disable thinking</Label>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Run button with summary */}
-          <div className="flex items-center justify-between">
-            <div className="text-xs text-muted-foreground">
-              {(selectedCount > 0 || selectedTestsetCount > 0) && (
-                <span>
-                  <Badge variant="outline" className="mr-1 text-[10px]">
-                    Test Sets: {selectedTestsetCount}
-                  </Badge>
-                  {Object.entries(selectionSummary).map(([p, c]) => (
-                    <Badge key={p} variant="outline" className="mr-1 text-[10px]">
-                      {providerLabel[p] ?? p}: {c}
-                    </Badge>
-                  ))}
-                </span>
-              )}
-            </div>
-            <Button onClick={handleRun} disabled={runMutation.isPending || selectedTestsetCount === 0 || selectedCount === 0}>
-              {runMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <Play className="mr-2 h-4 w-4" />}
-              Run {selectedTestsetCount * selectedCount} Job{selectedTestsetCount * selectedCount !== 1 ? "s" : ""}
-            </Button>
-          </div>
-        </div>
+      <div className="grid gap-3 xl:grid-cols-4">
+        {EXECUTE_STEPS.map((step, index) => (
+          <StepButton
+            key={step.id}
+            step={step}
+            index={index}
+            active={activeStep === step.id}
+            complete={stepComplete[step.id]}
+            summary={stepSummaries[step.id]}
+            onClick={() => setActiveStep(step.id)}
+          />
+        ))}
       </div>
+
+      {activeStep === "testsets" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Step 1. Select Test Sets</CardTitle>
+            <CardDescription>
+              Choose one or more generated test sets. The table state follows the shared app pattern, including persisted sorting, filters, columns, and pagination.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <DataTable
+              columns={testsetColumns}
+              data={sortedTestsets}
+              searchKey="testset"
+              searchPlaceholder="Filter test sets..."
+              loading={testsetsLoading}
+              persistKey="execute-testset-table"
+              getRowId={(row) => row.filename}
+              initialPageSize={10}
+              toolbar={(table) => {
+                const pageFilenames = table.getRowModel().rows.map((row) => row.original.filename)
+                const allPageSelected = pageFilenames.length > 0 && pageFilenames.every((filename) => selectedTestsets.has(filename))
+
+                return (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Badge variant="secondary">{selectedTestsetCount} selected</Badge>
+                    <Badge variant="outline">{table.getFilteredRowModel().rows.length} visible</Badge>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      onClick={() => {
+                        setSelectedTestsets((previous) => {
+                          const next = new Set(previous)
+                          for (const filename of pageFilenames) next.add(filename)
+                          return next
+                        })
+                      }}
+                      disabled={pageFilenames.length === 0 || allPageSelected}
+                    >
+                      Select Page
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      onClick={() => setSelectedTestsets(new Set())}
+                      disabled={selectedTestsetCount === 0}
+                    >
+                      Clear Selection
+                    </Button>
+                  </div>
+                )
+              }}
+            />
+
+            <StepFooter
+              nextLabel={nextStep ? `Continue to ${nextStep.label}` : undefined}
+              onNext={nextStep ? goToNextStep : undefined}
+              nextDisabled={nextStepDisabled}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {activeStep === "models" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div>
+                <CardTitle>Step 2. Select Models</CardTitle>
+                <CardDescription>
+                  Pick models across providers. Favorites stay pinned for quick reuse, and saved API credentials remain available inside each OpenAI-compatible endpoint block.
+                </CardDescription>
+              </div>
+              <Badge variant="secondary">{selectedCount} selected</Badge>
+            </div>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className={hasFavorites ? "flex gap-6" : "space-y-6"}>
+              {hasFavorites && (
+                <div className="w-56 shrink-0">
+                  <Card className="sticky top-4">
+                    <CardHeader className="pb-2">
+                      <CardTitle className="flex items-center gap-1.5 text-sm">
+                        <Star className="h-3.5 w-3.5 fill-yellow-500 text-yellow-500" />
+                        Favorites
+                      </CardTitle>
+                    </CardHeader>
+                    <CardContent className="max-h-[calc(100vh-260px)] space-y-3 overflow-y-auto">
+                      {Object.entries(groupedFavorites).map(([prov, modelIds]) => (
+                        <div key={prov}>
+                          <p className="mb-1 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+                            {providerLabel[prov] ?? prov}
+                          </p>
+                          <div className="space-y-0.5">
+                            {modelIds.map((modelId) => {
+                              const isSelected = [...selected.values()].some((entry) => entry.id === modelId && entry.provider === prov)
+
+                              return (
+                                <div key={modelId} className="group flex items-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const existing = [...selected.entries()].find(([, entry]) => entry.id === modelId && entry.provider === prov)
+
+                                      if (existing) {
+                                        setSelected((previous) => {
+                                          const next = new Map(previous)
+                                          next.delete(existing[0])
+                                          return next
+                                        })
+                                        return
+                                      }
+
+                                      const candidate: SelectedModel = {
+                                        id: modelId,
+                                        provider: prov as SelectedModel["provider"],
+                                        ...(prov === "ollama" && { ollamaHost }),
+                                        ...(prov === "openai_compatible" && openaiEndpoints[0] && {
+                                          apiBase: openaiEndpoints[0].apiBase,
+                                          apiKey: openaiEndpoints[0].apiKey,
+                                        }),
+                                      }
+                                      toggleModelSelection(candidate)
+                                    }}
+                                    className={`flex-1 truncate rounded px-1.5 py-0.5 text-left text-xs transition-colors ${
+                                      isSelected ? "bg-primary/10 font-medium text-primary" : "hover:bg-accent"
+                                    }`}
+                                    title={`${modelId} (${prov})`}
+                                  >
+                                    {modelId.length > 22 ? `${modelId.slice(0, 20)}…` : modelId}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleToggleFavorite(favoriteKey(prov, modelId))}
+                                    className="shrink-0 p-0.5 text-muted-foreground/50 opacity-0 transition-all group-hover:opacity-100 hover:text-destructive"
+                                  >
+                                    <X className="h-2.5 w-2.5" />
+                                  </button>
+                                </div>
+                              )
+                            })}
+                          </div>
+                        </div>
+                      ))}
+                    </CardContent>
+                  </Card>
+                </div>
+              )}
+
+              <div className="flex-1 space-y-6">
+                <div className="relative max-w-sm">
+                  <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Filter models across all providers..."
+                    value={modelSearch}
+                    onChange={(e) => setModelSearch(e.target.value)}
+                    className="h-8 pl-8 text-xs"
+                  />
+                </div>
+
+                <Collapsible open={ollamaOpen} onOpenChange={setOllamaOpen}>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CollapsibleTrigger asChild>
+                        <button className="flex w-full items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-sm">
+                            Ollama
+                            {selectionSummary.ollama && <Badge variant="secondary" className="text-[10px]">{selectionSummary.ollama} selected</Badge>}
+                          </CardTitle>
+                          <span className="text-xs text-muted-foreground">{ollamaOpen ? "collapse" : "expand"}</span>
+                        </button>
+                      </CollapsibleTrigger>
+                    </CardHeader>
+                    <CollapsibleContent>
+                      <CardContent>
+                        <OllamaSection
+                          host={ollamaHost}
+                          onHostChange={setOllamaHost}
+                          selected={selected}
+                          onToggle={toggleModelSelection}
+                          favorites={favorites}
+                          onToggleFavorite={handleToggleFavorite}
+                          searchTerm={modelSearch}
+                        />
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                <Collapsible open={openaiOpen} onOpenChange={setOpenaiOpen}>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CollapsibleTrigger asChild>
+                        <button className="flex w-full items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-sm">
+                            OpenAI-Compatible
+                            {selectionSummary.openai_compatible && <Badge variant="secondary" className="text-[10px]">{selectionSummary.openai_compatible} selected</Badge>}
+                          </CardTitle>
+                          <span className="text-xs text-muted-foreground">{openaiOpen ? "collapse" : "expand"}</span>
+                        </button>
+                      </CollapsibleTrigger>
+                    </CardHeader>
+                    <CollapsibleContent>
+                      <CardContent className="space-y-3">
+                        {openaiEndpoints.map((ep) => (
+                          <OpenAIEndpointSection
+                            key={ep.key}
+                            endpoint={ep}
+                            onChange={(updated) => updateOpenaiEndpoint(ep.key, updated)}
+                            onRemove={() => removeOpenaiEndpoint(ep.key)}
+                            selected={selected}
+                            onToggle={toggleModelSelection}
+                            favorites={favorites}
+                            onToggleFavorite={handleToggleFavorite}
+                            searchTerm={modelSearch}
+                            savedCredentials={savedCredentials}
+                            canRemove={openaiEndpoints.length > 1}
+                          />
+                        ))}
+                        <Button variant="outline" size="sm" className="w-full text-xs" onClick={addOpenaiEndpoint}>
+                          <Plus className="mr-1.5 h-3 w-3" /> Add Another Endpoint
+                        </Button>
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+
+                <Collapsible open={hfOpen} onOpenChange={setHfOpen}>
+                  <Card>
+                    <CardHeader className="pb-2">
+                      <CollapsibleTrigger asChild>
+                        <button className="flex w-full items-center justify-between">
+                          <CardTitle className="flex items-center gap-2 text-sm">
+                            HuggingFace
+                            {selectionSummary.huggingface && <Badge variant="secondary" className="text-[10px]">{selectionSummary.huggingface} selected</Badge>}
+                          </CardTitle>
+                          <span className="text-xs text-muted-foreground">{hfOpen ? "collapse" : "expand"}</span>
+                        </button>
+                      </CollapsibleTrigger>
+                    </CardHeader>
+                    <CollapsibleContent>
+                      <CardContent>
+                        <HuggingFaceSection
+                          selected={selected}
+                          onToggle={toggleModelSelection}
+                          favorites={favorites}
+                          onToggleFavorite={handleToggleFavorite}
+                          searchTerm={modelSearch}
+                        />
+                      </CardContent>
+                    </CollapsibleContent>
+                  </Card>
+                </Collapsible>
+              </div>
+            </div>
+
+            <StepFooter
+              previousLabel={previousStep ? `Back to ${previousStep.label}` : undefined}
+              onPrevious={previousStep ? goToPreviousStep : undefined}
+              nextLabel={nextStep ? `Continue to ${nextStep.label}` : undefined}
+              onNext={nextStep ? goToNextStep : undefined}
+              nextDisabled={nextStepDisabled}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {activeStep === "settings" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Step 3. Settings</CardTitle>
+            <CardDescription>
+              Apply shared execution overrides for every queued job in this batch.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="space-y-1.5">
+                <Label className="text-xs">Temperature</Label>
+                <Input type="number" value={temperature} min={0} max={2} step={0.05} onChange={(e) => setTemperature(Number(e.target.value))} className="h-8 w-28" />
+              </div>
+              <div className="space-y-1.5">
+                <Label className="text-xs">Max Tokens</Label>
+                <Input type="number" value={maxTokens} min={64} max={32768} step={64} onChange={(e) => setMaxTokens(Number(e.target.value))} className="h-8 w-32" />
+              </div>
+              <div className="flex items-center gap-2 pt-5">
+                <Checkbox id="exec-no-think" checked={noThink} onCheckedChange={(checked) => setNoThink(!!checked)} />
+                <Label htmlFor="exec-no-think" className="cursor-pointer text-xs">Disable thinking</Label>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <p className="text-sm font-medium">Current run shape</p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                Each selected test set will run once per selected model. Provider-specific connection settings stay attached to the selected models, while these overrides apply to the whole batch.
+              </p>
+            </div>
+
+            <StepFooter
+              previousLabel={previousStep ? `Back to ${previousStep.label}` : undefined}
+              onPrevious={previousStep ? goToPreviousStep : undefined}
+              nextLabel={nextStep ? `Continue to ${nextStep.label}` : undefined}
+              onNext={nextStep ? goToNextStep : undefined}
+            />
+          </CardContent>
+        </Card>
+      )}
+
+      {activeStep === "review" && (
+        <Card>
+          <CardHeader className="pb-3">
+            <CardTitle>Step 4. Review & Run</CardTitle>
+            <CardDescription>
+              Final sanity check before jobs are submitted.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-6">
+            <div className="grid gap-4 xl:grid-cols-3">
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-medium">Test Sets</h3>
+                  <Badge variant="secondary">{selectedTestsetCount}</Badge>
+                </div>
+                {selectedTestsetSummaries.length > 0 ? (
+                  <div className="mt-3 space-y-2">
+                    {selectedTestsetSummaries.slice(0, 5).map((summary) => (
+                      <div key={summary.filename} className="flex items-center justify-between gap-3 text-sm">
+                        <span className="truncate font-medium" title={stripArchiveExtension(summary.filename)}>
+                          {suffixDisplay(stripArchiveExtension(summary.filename), 46)}
+                        </span>
+                        <span className="shrink-0 text-xs text-muted-foreground">{summary.test_count} tests</span>
+                      </div>
+                    ))}
+                    {selectedTestsetSummaries.length > 5 && (
+                      <p className="text-xs text-muted-foreground">+{selectedTestsetSummaries.length - 5} more test set(s)</p>
+                    )}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">No test sets selected yet.</p>
+                )}
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-medium">Models</h3>
+                  <Badge variant="secondary">{selectedCount}</Badge>
+                </div>
+                {selectedModelGroups.length > 0 ? (
+                  <div className="mt-3 space-y-3">
+                    {selectedModelGroups.map((group) => (
+                      <div key={`${group.provider}:${group.apiBase ?? group.ollamaHost ?? "default"}`} className="space-y-1">
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-sm font-medium">{providerLabel[group.provider]}</p>
+                          <Badge variant="outline">{group.modelIds.length}</Badge>
+                        </div>
+                        {group.provider === "openai_compatible" && group.apiBase ? (
+                          <p className="text-xs text-muted-foreground">{group.apiBase.replace(/^https?:\/\//, "")}</p>
+                        ) : group.provider === "ollama" && group.ollamaHost && group.ollamaHost !== "http://localhost:11434" ? (
+                          <p className="text-xs text-muted-foreground">{group.ollamaHost}</p>
+                        ) : null}
+                        <p className="text-xs leading-5 text-muted-foreground">
+                          {group.modelIds.slice(0, 3).map((modelId) => suffixDisplay(modelId, 28)).join(", ")}
+                          {group.modelIds.length > 3 ? ` +${group.modelIds.length - 3} more` : ""}
+                        </p>
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <p className="mt-3 text-sm text-muted-foreground">No models selected yet.</p>
+                )}
+              </div>
+
+              <div className="rounded-lg border p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <h3 className="text-sm font-medium">Overrides</h3>
+                  <Badge variant="outline">{noThink ? "No think" : "Thinking on"}</Badge>
+                </div>
+                <div className="mt-3 space-y-2 text-sm">
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">Temperature</span>
+                    <span className="font-medium">{temperature.toFixed(2)}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">Max tokens</span>
+                    <span className="font-medium">{maxTokens.toLocaleString()}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">Providers</span>
+                    <span className="font-medium">{Object.keys(selectionSummary).length}</span>
+                  </div>
+                  <div className="flex items-center justify-between gap-4">
+                    <span className="text-muted-foreground">Projected jobs</span>
+                    <span className="font-medium">{projectedJobCount}</span>
+                  </div>
+                </div>
+                <p className="mt-3 text-xs text-muted-foreground">
+                  Each selected test set runs against every selected model. Jobs are grouped by provider or endpoint, but the review count reflects the full cartesian launch set.
+                </p>
+              </div>
+            </div>
+
+            <div className="rounded-lg border bg-muted/20 p-4">
+              <p className="text-sm font-medium">
+                {runDisabled ? "Selections incomplete" : `${projectedJobCount} job${projectedJobCount !== 1 ? "s" : ""} ready to launch`}
+              </p>
+              <p className="mt-1 text-sm text-muted-foreground">
+                {runDisabled
+                  ? "Pick at least one test set and one model before launching the batch."
+                  : "Use the Run button in the header to queue the full batch."}
+              </p>
+            </div>
+
+            <StepFooter
+              previousLabel={previousStep ? `Back to ${previousStep.label}` : undefined}
+              onPrevious={previousStep ? goToPreviousStep : undefined}
+            />
+          </CardContent>
+        </Card>
+      )}
     </div>
   )
 }

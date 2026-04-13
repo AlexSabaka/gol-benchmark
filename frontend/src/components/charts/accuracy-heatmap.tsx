@@ -1,5 +1,6 @@
 import { memo, useState, useMemo, useCallback } from "react"
-import { accuracyColor } from "@/lib/chart-colors"
+import { accuracyBucket, accuracyColor, accuracyTextColor } from "@/lib/chart-colors"
+import { suffixDisplay } from "@/lib/utils"
 import type { HeatmapCell } from "@/types"
 
 interface AccuracyHeatmapProps {
@@ -24,6 +25,10 @@ function formatLabel(s: string): string {
 /** Truncate label to maxLen characters */
 function truncate(s: string, maxLen: number): string {
   return s.length > maxLen ? s.slice(0, maxLen - 1) + "\u2026" : s
+}
+
+function axisLabel(value: string, axis: "model" | "task", maxLen: number): string {
+  return axis === "model" ? suffixDisplay(value, maxLen) : truncate(formatLabel(value), maxLen)
 }
 
 export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey }: AccuracyHeatmapProps) {
@@ -71,13 +76,20 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
     return <div className="flex h-full items-center justify-center text-muted-foreground">No data available</div>
   }
 
+  const xDisplayLabels = xLabels.map((label) => axisLabel(label, xKey, xKey === "model" ? 24 : 18))
+  const yDisplayLabels = yLabels.map((label) => axisLabel(label, yKey, yKey === "model" ? 28 : 24))
+  const longestXLabel = xDisplayLabels.reduce((max, label) => Math.max(max, label.length), 0)
+  const longestYLabel = yDisplayLabels.reduce((max, label) => Math.max(max, label.length), 0)
+
   // Layout
-  const marginLeft = 160
-  const marginTop = 100
-  const marginRight = 80
-  const marginBottom = 20
-  const cellSize = 48
+  const density = Math.max(xLabels.length, yLabels.length)
+  const cellSize = density > 18 ? 34 : density > 12 ? 40 : 48
   const gap = 2
+  const marginLeft = Math.min(Math.max(longestYLabel * 7 + 28, 168), 280)
+  const marginTop = Math.min(Math.max(longestXLabel * 5 + 44, 100), 180)
+  const marginRight = 120
+  const marginBottom = 20
+  const valueFontSize = cellSize >= 42 ? 11 : 10
 
   const gridW = xLabels.length * (cellSize + gap)
   const gridH = yLabels.length * (cellSize + gap)
@@ -99,7 +111,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
             dominantBaseline="central"
             className="fill-foreground text-xs"
           >
-            {truncate(label, 22)}
+            {yDisplayLabels[yi]}
           </text>
         ))}
 
@@ -114,7 +126,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
             className="fill-foreground text-xs"
             transform={`translate(${marginLeft + xi * (cellSize + gap) + cellSize / 2}, ${marginTop - 8}) rotate(-45)`}
           >
-            {truncate(formatLabel(label), 18)}
+            {xDisplayLabels[xi]}
           </text>
         ))}
 
@@ -123,6 +135,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
           yLabels.map((yLabel, yi) => {
             const cell = lookup.get(`${xLabel}|${yLabel}`)
             if (!cell) return null
+            const bucket = accuracyBucket(cell.accuracy)
             return (
               <rect
                 key={`${xLabel}-${yLabel}`}
@@ -132,7 +145,10 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
                 height={cellSize}
                 rx={4}
                 fill={accuracyColor(cell.accuracy)}
-                opacity={0.9}
+                stroke="rgba(255,255,255,0.45)"
+                strokeWidth={bucket === "high" ? 2 : 1.25}
+                strokeDasharray={bucket === "low" ? "5 3" : bucket === "mid" ? "2 2" : undefined}
+                opacity={0.95}
                 className="cursor-pointer transition-opacity hover:opacity-100"
                 onMouseEnter={(e) => handleMouseEnter(e, cell)}
                 onMouseLeave={handleMouseLeave}
@@ -153,7 +169,9 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
                 y={marginTop + yi * (cellSize + gap) + cellSize / 2}
                 textAnchor="middle"
                 dominantBaseline="central"
-                className={`pointer-events-none text-xs font-semibold ${cell.accuracy > 0.55 ? "fill-white" : "fill-foreground"}`}
+                fontSize={valueFontSize}
+                className="pointer-events-none font-semibold"
+                fill={accuracyTextColor(cell.accuracy)}
               >
                 {(cell.accuracy * 100).toFixed(0)}
               </text>
@@ -220,6 +238,19 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
           <p>Tests: {tooltip.cell.total}</p>
         </div>
       )}
+
+      <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
+        <span className="font-medium">Encoding:</span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3 w-5 rounded-sm border-2 border-white/60 bg-transparent" />
+          high bucket border
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-3 w-5 rounded-sm border border-white/60 border-dashed bg-transparent" />
+          lower buckets use dashed borders
+        </span>
+        <span>numbers in cells show exact accuracy %</span>
+      </div>
     </div>
   )
 })

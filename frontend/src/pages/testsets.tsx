@@ -6,6 +6,7 @@ import { Eye, MoreHorizontal, Play, RotateCcw, Search, Trash2 } from "lucide-rea
 
 import { DataTable } from "@/components/data-table/data-table"
 import { GroupedGridSection } from "@/components/grouped-grid-section"
+import { IdentifierLabel } from "@/components/identifier-label"
 import { PageHeader } from "@/components/layout/page-header"
 import { PageFacetFilter } from "@/components/page-facet-filter"
 import { ParamOverrideModal } from "@/components/param-override-modal"
@@ -198,9 +199,12 @@ export default function TestSetsPage() {
       accessorKey: "filename",
       header: "Name",
       cell: ({ row }) => (
-        <span className="block max-w-75 truncate text-xs font-medium" title={row.original.filename}>
-          {row.original.filename.replace(".json.gz", "")}
-        </span>
+        <IdentifierLabel
+          value={row.original.filename.replace(".json.gz", "")}
+          primaryMax={48}
+          secondaryMax={30}
+          primaryClassName="text-xs"
+        />
       ),
     },
     {

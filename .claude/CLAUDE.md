@@ -774,7 +774,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-08*
-*Version: 2.17.0*
-*Key additions: Picross (Nonogram) plugin (19th benchmark — grid-based deductive reasoning with line solver, 3 clue formats, partial-solution mode) • Compact Results toolbar (icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping) • Localized measure comparison (unit display names + decimal framing templates in all 6 languages) • prompt_metadata propagation fix (language now reaches parsers in CLI and Web UI) • Filename truncation for long testset names • Judge page delete + tooltip • Language filter labels with flag emojis • LLM-as-a-Judge • Deep multilingual content localization + grammatical gender • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
+*Last updated: 2026-04-13*
+*Version: 2.17.2*
+*Key additions: Picross (Nonogram) plugin (19th benchmark — grid-based deductive reasoning with line solver, 3 clue formats, partial-solution mode) • Compact Results toolbar (icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping) • Localized measure comparison (unit display names + decimal framing templates in all 6 languages) • prompt_metadata propagation fix (language now reaches parsers in CLI and Web UI) • Filename truncation for long testset names • Judge page delete + tooltip • Language filter labels with flag emojis • LLM-as-a-Judge • Deep multilingual content localization + grammatical gender • Web UI refinement pass (persisted table/view state, stable Jobs pagination, expandable Judge review rows, suffix-biased identifiers, Execute wizard flow, chart readability/accessibility improvements) • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
 *For questions or issues: Check [README.md](README.md) or create an issue*

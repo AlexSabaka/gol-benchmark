@@ -1,3 +1,4 @@
+import { useMemo } from "react"
 import {
   ScatterChart,
   Scatter,
@@ -15,6 +16,7 @@ import type { ScatterPoint } from "@/types"
 interface ScalingScatterProps {
   data: ScatterPoint[]
   logScale?: boolean
+  labelMode?: "hover" | "smart" | "all"
 }
 
 type ScatterPayload = {
@@ -33,33 +35,59 @@ function CustomTooltip({ active, payload }: { active?: boolean; payload?: Scatte
   )
 }
 
+function buildSmartLabelSet(data: Array<{ model: string; x: number; y: number }>): Set<string> {
+  if (data.length <= 12) return new Set(data.map((entry) => entry.model))
+
+  const selected = new Set<string>()
+  const byAccuracyDesc = [...data].sort((left, right) => right.y - left.y)
+  const byAccuracyAsc = [...data].sort((left, right) => left.y - right.y)
+  const byParams = [...data].sort((left, right) => left.x - right.x)
+
+  byAccuracyDesc.slice(0, 4).forEach((entry) => selected.add(entry.model))
+  byAccuracyAsc.slice(0, 2).forEach((entry) => selected.add(entry.model))
+  byParams.slice(0, 1).forEach((entry) => selected.add(entry.model))
+  byParams.slice(-1).forEach((entry) => selected.add(entry.model))
+
+  const stride = Math.max(Math.floor(data.length / 6), 1)
+  byParams.forEach((entry, index) => {
+    if (index % stride === 0 && selected.size < 12) selected.add(entry.model)
+  })
+
+  return selected
+}
+
 // Custom dot with model name label
 function CustomDot(props: {
   cx?: number
   cy?: number
   payload?: { model: string; x: number; y: number }
   index?: number
+  showLabel?: boolean
 }) {
-  const { cx, cy, payload, index } = props
+  const { cx, cy, payload, index, showLabel } = props
   if (cx == null || cy == null || !payload) return null
   const color = CHART_COLORS_HEX[(index ?? 0) % CHART_COLORS_HEX.length]
+  const showLabelAbove = ((index ?? 0) % 2) === 0
+
   return (
     <g>
       <circle cx={cx} cy={cy} r={6} fill={color} stroke="#fff" strokeWidth={1.5} opacity={0.85} />
-      <text
-        x={cx + 10}
-        y={cy - 10}
-        className="text-xs"
-        fill="currentColor"
-        opacity={0.8}
-      >
-        {payload.model.length > 20 ? payload.model.slice(0, 18) + "\u2026" : payload.model}
-      </text>
+      {showLabel ? (
+        <text
+          x={cx + 10}
+          y={showLabelAbove ? cy - 10 : cy + 16}
+          className="text-xs"
+          fill="currentColor"
+          opacity={0.8}
+        >
+          {payload.model.length > 20 ? payload.model.slice(0, 18) + "\u2026" : payload.model}
+        </text>
+      ) : null}
     </g>
   )
 }
 
-export function ScalingScatter({ data, logScale = true }: ScalingScatterProps) {
+export function ScalingScatter({ data, logScale = true, labelMode = "smart" }: ScalingScatterProps) {
   const known = data.filter((d) => d.paramCount !== null)
   const unknown = data.filter((d) => d.paramCount === null)
 
@@ -79,6 +107,12 @@ export function ScalingScatter({ data, logScale = true }: ScalingScatterProps) {
     x: d.paramCount!,
     y: d.accuracy,
   }))
+
+  const labeledModels = useMemo(() => {
+    if (labelMode === "all") return new Set(chartData.map((entry) => entry.model))
+    if (labelMode === "hover") return new Set<string>()
+    return buildSmartLabelSet(chartData)
+  }, [chartData, labelMode])
 
   return (
     <div className="space-y-2">
@@ -112,10 +146,17 @@ export function ScalingScatter({ data, logScale = true }: ScalingScatterProps) {
           <Scatter
             data={chartData}
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            shape={(props: any) => <CustomDot {...props} />}
+            shape={(props: any) => <CustomDot {...props} showLabel={labeledModels.has(props.payload.model)} />}
           />
         </ScatterChart>
       </ResponsiveContainer>
+      <p className="text-xs text-muted-foreground">
+        {labelMode === "hover"
+          ? "Labels are hidden until hover for maximum clarity."
+          : labelMode === "smart"
+            ? "Smart labels highlight a smaller representative subset of models."
+            : "All model labels are shown. Use hover for exact values when labels overlap."}
+      </p>
     </div>
   )
 }
