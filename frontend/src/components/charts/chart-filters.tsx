@@ -7,15 +7,18 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover"
 import { Check, ListFilter } from "lucide-react"
+import { languageLabel } from "@/components/language-filter-chip"
 
 interface FilterGroupProps {
   label: string
   options: string[]
   selected: Set<string>
   onChange: (next: Set<string>) => void
+  /** Optional formatter for option labels — defaults to underscore→space. */
+  renderLabel?: (value: string) => string
 }
 
-function FilterGroup({ label, options, selected, onChange }: FilterGroupProps) {
+function FilterGroup({ label, options, selected, onChange, renderLabel }: FilterGroupProps) {
   const toggle = useCallback(
     (value: string) => {
       const next = new Set(selected)
@@ -61,7 +64,7 @@ function FilterGroup({ label, options, selected, onChange }: FilterGroupProps) {
                   {active && <Check className="h-2.5 w-2.5" />}
                 </div>
                 <span className="truncate">
-                  {opt.replace(/_/g, " ")}
+                  {renderLabel ? renderLabel(opt) : opt.replace(/_/g, " ")}
                 </span>
               </button>
             )
@@ -113,6 +116,7 @@ export function ChartFilters({
           options={availableLanguages}
           selected={selectedLanguages}
           onChange={onLanguagesChange}
+          renderLabel={languageLabel}
         />
       )}
     </div>

@@ -1,12 +1,13 @@
 import logging
+import os
 
-# Configure logging
+_log_file = os.environ.get("GOL_LOG_FILE", "gol_eval.log")
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler('game_of_life_eval.log'),
-        # logging.StreamHandler()
+        logging.FileHandler(_log_file),
     ]
 )
 

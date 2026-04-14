@@ -24,11 +24,12 @@ import { AccuracyHeatmap } from "@/components/charts/accuracy-heatmap"
 import { ModelBarChart } from "@/components/charts/model-bar-chart"
 import { ScalingScatter } from "@/components/charts/scaling-scatter"
 import { DimensionBarChart } from "@/components/charts/dimension-bar-chart"
+import { languageLabel } from "@/components/language-filter-chip"
 import { useResults } from "@/hooks/use-results"
 import { useChartData } from "@/hooks/use-chart-data"
 import { makeStorageKey, useLocalStorageSetState, useLocalStorageState } from "@/lib/local-storage"
 import { formatPercent } from "@/lib/utils"
-import { getModelSize } from "@/lib/model-sizes"
+import { canonicalModelName, getModelSize } from "@/lib/model-sizes"
 import {
   Loader2,
   Grid3X3,
@@ -150,23 +151,30 @@ export default function ChartsPage() {
   const filteredScatterData = useMemo(() => {
     if (!chartData) return []
     if (taskTypeFilter.size === 0) return chartData.scatterData
-    // Recalculate accuracy from only the filtered tasks
-    return chartData.models.map((model) => {
-      const analysis = chartData.raw.models[model]
-      let total = 0
-      let correct = 0
+
+    // Re-bucket raw provider tags by canonical model, summing correct/total
+    // across only the tasks that pass the filter.
+    const buckets: Record<string, { total: number; correct: number; aliases: string[] }> = {}
+    for (const [rawModel, analysis] of Object.entries(chartData.raw.models)) {
+      const canonical = canonicalModelName(rawModel)
+      const b = (buckets[canonical] ??= { total: 0, correct: 0, aliases: [] })
+      b.aliases.push(rawModel)
       for (const [task, tb] of Object.entries(analysis.task_breakdown)) {
         if (taskTypeFilter.has(task)) {
-          total += tb.total
-          correct += Math.round(tb.accuracy * tb.total)
+          b.total += tb.total
+          b.correct += Math.round(tb.accuracy * tb.total)
         }
       }
-      return {
+    }
+
+    return Object.entries(buckets)
+      .map(([model, b]) => ({
         model,
         paramCount: getModelSize(model),
-        accuracy: total > 0 ? correct / total : 0,
-      }
-    }).filter((d) => d.accuracy > 0 || taskTypeFilter.size === 0)
+        accuracy: b.total > 0 ? b.correct / b.total : 0,
+        aliases: b.aliases.length > 1 ? b.aliases : undefined,
+      }))
+      .filter((d) => d.accuracy > 0)
   }, [chartData, taskTypeFilter])
 
   const barData = useMemo(() => {
@@ -532,7 +540,15 @@ export default function ChartsPage() {
               }
             >
               <DimensionBarChart
-                data={chartData.dimensionBreakdowns[dimTab]}
+                data={
+                  dimTab === "language"
+                    ? Object.fromEntries(
+                        Object.entries(chartData.dimensionBreakdowns.language).map(
+                          ([code, bucket]) => [languageLabel(code), bucket],
+                        ),
+                      )
+                    : chartData.dimensionBreakdowns[dimTab]
+                }
                 label={dimTab === "language" ? "Language" : dimTab === "user_style" ? "User Style" : "System Style"}
               />
             </ChartCard>

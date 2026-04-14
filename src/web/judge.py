@@ -12,7 +12,6 @@ import re
 import tempfile
 import time
 from collections import defaultdict
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
@@ -115,11 +114,11 @@ def run_judge_worker(
     import time as _time
     from src.models import create_model_interface
 
-    def _read_progress() -> Dict[str, Any]:
-        return dict(progress_dict.get(job_id, {}))
-
+    # Note: progress helpers below mirror the module-level helpers in jobs.py.
+    # They cannot be shared without a circular import (jobs ↔ judge), so the
+    # logic is intentionally kept local to this subprocess-worker function.
     def _set_progress(**updates: Any) -> None:
-        current = _read_progress()
+        current = dict(progress_dict.get(job_id, {}))
         cancel_requested = bool(current.get("cancel_requested")) or bool(updates.get("cancel_requested"))
         merged = {**current, **updates, "cancel_requested": cancel_requested}
         if cancel_requested and merged.get("state") in (None, "pending", "running"):
@@ -127,7 +126,7 @@ def run_judge_worker(
         progress_dict[job_id] = merged
 
     def _cancel_requested() -> bool:
-        current = _read_progress()
+        current = dict(progress_dict.get(job_id, {}))
         return bool(current.get("cancel_requested")) or current.get("state") == "cancelled"
 
     start_time = _time.time()

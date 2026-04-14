@@ -414,16 +414,12 @@ class JobManager:
         if job.state in TERMINAL_JOB_STATES or future.done():
             return False
 
-        if future.cancel():
-            job.state = JobState.CANCELLED
-            job.finished_at = time.time()
-            _write_progress(self._progress, job_id, state="cancelled", cancel_requested=True)
-            return True
-
+        # Signal cancellation regardless of whether the future was already
+        # picked up by a worker; the worker polls _cancel_requested().
+        future.cancel()
         job.state = JobState.CANCELLED
         job.finished_at = time.time()
         _write_progress(self._progress, job_id, state="cancelled", cancel_requested=True)
-        job.started_at = job.started_at or time.time()
         return True
 
     def shutdown(self):

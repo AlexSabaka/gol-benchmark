@@ -2,6 +2,7 @@ import { memo, useState, useMemo, useCallback } from "react"
 import { accuracyBucket, accuracyColor, accuracyTextColor } from "@/lib/chart-colors"
 import { suffixDisplay } from "@/lib/utils"
 import type { HeatmapCell } from "@/types"
+import { ModelBadge } from "./model-badge"
 
 interface AccuracyHeatmapProps {
   data: HeatmapCell[]
@@ -85,7 +86,9 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
   const density = Math.max(xLabels.length, yLabels.length)
   const cellSize = density > 18 ? 34 : density > 12 ? 40 : 48
   const gap = 2
-  const marginLeft = Math.min(Math.max(longestYLabel * 7 + 28, 168), 280)
+  // Widen the Y-axis margin when rendering model badges (dot + family/variant + size chip)
+  const yLabelMinWidth = yKey === "model" ? 220 : 168
+  const marginLeft = Math.min(Math.max(longestYLabel * 7 + 28, yLabelMinWidth), 280)
   const marginTop = Math.min(Math.max(longestXLabel * 5 + 44, 100), 180)
   const marginRight = 120
   const marginBottom = 20
@@ -101,19 +104,37 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
       <svg width={svgW} height={svgH} className="select-none" role="img" aria-label={`Accuracy heatmap: ${yLabels.length} ${yKey}s by ${xLabels.length} ${xKey}s`}>
         <title>Accuracy Heatmap</title>
         <desc>Heatmap showing benchmark accuracy for each {yKey} and {xKey} combination</desc>
-        {/* Y-axis labels */}
-        {yLabels.map((label, yi) => (
-          <text
-            key={`y-${label}`}
-            x={marginLeft - 8}
-            y={marginTop + yi * (cellSize + gap) + cellSize / 2}
-            textAnchor="end"
-            dominantBaseline="central"
-            className="fill-foreground text-xs"
-          >
-            {yDisplayLabels[yi]}
-          </text>
-        ))}
+        {/* Y-axis labels — full ModelBadge when axis is models, plain text otherwise */}
+        {yLabels.map((label, yi) => {
+          const cy = marginTop + yi * (cellSize + gap) + cellSize / 2
+          if (yKey === "model") {
+            return (
+              <foreignObject
+                key={`y-${label}`}
+                x={0}
+                y={cy - cellSize / 2}
+                width={marginLeft - 8}
+                height={cellSize}
+              >
+                <div className="flex h-full items-center justify-end pr-1">
+                  <ModelBadge model={label} layout="stacked" />
+                </div>
+              </foreignObject>
+            )
+          }
+          return (
+            <text
+              key={`y-${label}`}
+              x={marginLeft - 8}
+              y={cy}
+              textAnchor="end"
+              dominantBaseline="central"
+              className="fill-foreground text-xs"
+            >
+              {yDisplayLabels[yi]}
+            </text>
+          )
+        })}
 
         {/* X-axis labels (rotated) */}
         {xLabels.map((label, xi) => (
@@ -225,17 +246,26 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
       {/* Tooltip */}
       {tooltip && (
         <div
-          className="pointer-events-none absolute z-50 rounded-md border bg-popover px-3 py-2 text-sm shadow-md"
+          className="pointer-events-none absolute z-50 space-y-1.5 rounded-md border bg-popover px-3 py-2 text-sm shadow-md"
           style={{
             left: Math.max(80, tooltip.x),
             top: Math.max(40, tooltip.y),
             transform: "translate(-50%, -100%)",
           }}
         >
-          <p className="font-medium">{tooltip.cell.model}</p>
-          <p className="text-muted-foreground">{formatLabel(tooltip.cell.task)}</p>
-          <p>Accuracy: {(tooltip.cell.accuracy * 100).toFixed(1)}%</p>
-          <p>Tests: {tooltip.cell.total}</p>
+          <ModelBadge
+            model={tooltip.cell.model}
+            layout="inline"
+            mergedCount={tooltip.cell.aliases?.length}
+          />
+          <p className="text-xs text-muted-foreground">{formatLabel(tooltip.cell.task)}</p>
+          <p className="text-xs">Accuracy: {(tooltip.cell.accuracy * 100).toFixed(1)}%</p>
+          <p className="text-xs">Tests: {tooltip.cell.total}</p>
+          {tooltip.cell.aliases && tooltip.cell.aliases.length > 1 && (
+            <p className="text-[10px] text-muted-foreground">
+              Merged from: {tooltip.cell.aliases.join(", ")}
+            </p>
+          )}
         </div>
       )}
 

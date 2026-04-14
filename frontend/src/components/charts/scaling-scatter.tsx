@@ -9,9 +9,9 @@ import {
   ResponsiveContainer,
   Label,
 } from "recharts"
-import { CHART_COLORS_HEX } from "@/lib/chart-colors"
-import { formatParamCount } from "@/lib/model-sizes"
+import { formatModelSize, formatParamCount, getModelFamilyColor, getModelInfo } from "@/lib/model-sizes"
 import type { ScatterPoint } from "@/types"
+import { ModelBadge } from "./model-badge"
 
 interface ScalingScatterProps {
   data: ScatterPoint[]
@@ -19,23 +19,26 @@ interface ScalingScatterProps {
   labelMode?: "hover" | "smart" | "all"
 }
 
-type ScatterPayload = {
-  payload: { model: string; x: number; y: number }
-}
+type ScatterDatum = { model: string; x: number; y: number; aliases?: string[] }
 
-function CustomTooltip({ active, payload }: { active?: boolean; payload?: ScatterPayload[] }) {
+function CustomTooltip({ active, payload }: { active?: boolean; payload?: Array<{ payload: ScatterDatum }> }) {
   if (!active || !payload?.length) return null
   const d = payload[0].payload
   return (
-    <div className="rounded-md border bg-popover px-3 py-2 text-sm shadow-md">
-      <p className="font-medium">{d.model}</p>
-      <p>Parameters: {formatParamCount(d.x)}</p>
-      <p>Accuracy: {(d.y * 100).toFixed(1)}%</p>
+    <div className="space-y-2 rounded-md border bg-popover px-3 py-2 text-sm shadow-md">
+      <ModelBadge model={d.model} layout="inline" mergedCount={d.aliases?.length} />
+      <div className="space-y-0.5 text-xs">
+        <p>Parameters: {formatParamCount(d.x)}</p>
+        <p>Accuracy: {(d.y * 100).toFixed(1)}%</p>
+        {d.aliases && d.aliases.length > 1 && (
+          <p className="text-muted-foreground">Merged from: {d.aliases.join(", ")}</p>
+        )}
+      </div>
     </div>
   )
 }
 
-function buildSmartLabelSet(data: Array<{ model: string; x: number; y: number }>): Set<string> {
+function buildSmartLabelSet(data: ScatterDatum[]): Set<string> {
   if (data.length <= 12) return new Set(data.map((entry) => entry.model))
 
   const selected = new Set<string>()
@@ -56,32 +59,45 @@ function buildSmartLabelSet(data: Array<{ model: string; x: number; y: number }>
   return selected
 }
 
-// Custom dot with model name label
+/** Custom dot: family colour fill + compact label (family · variant, truncated). */
 function CustomDot(props: {
   cx?: number
   cy?: number
-  payload?: { model: string; x: number; y: number }
-  index?: number
+  payload?: ScatterDatum
   showLabel?: boolean
 }) {
-  const { cx, cy, payload, index, showLabel } = props
+  const { cx, cy, payload, showLabel } = props
   if (cx == null || cy == null || !payload) return null
-  const color = CHART_COLORS_HEX[(index ?? 0) % CHART_COLORS_HEX.length]
-  const showLabelAbove = ((index ?? 0) % 2) === 0
+
+  const color = getModelFamilyColor(payload.model)
+  const info = getModelInfo(payload.model)
+  const nameLabel = info ? (info.variant ? `${info.family} ${info.variant}` : info.family) : payload.model
+  const truncated = nameLabel.length > 22 ? nameLabel.slice(0, 20) + "\u2026" : nameLabel
+  const sizeLabel = info ? formatModelSize(info) : null
+
+  // Stagger labels above/below the dot to reduce overlap
+  const aboveDot = ((cx + cy) % 2) === 0
 
   return (
     <g>
-      <circle cx={cx} cy={cy} r={6} fill={color} stroke="#fff" strokeWidth={1.5} opacity={0.85} />
+      <circle cx={cx} cy={cy} r={6} fill={color} stroke="#fff" strokeWidth={1.5} opacity={0.9} />
       {showLabel ? (
-        <text
-          x={cx + 10}
-          y={showLabelAbove ? cy - 10 : cy + 16}
-          className="text-xs"
-          fill="currentColor"
-          opacity={0.8}
-        >
-          {payload.model.length > 20 ? payload.model.slice(0, 18) + "\u2026" : payload.model}
-        </text>
+        <g>
+          <text
+            x={cx + 10}
+            y={aboveDot ? cy - 10 : cy + 16}
+            className="text-xs"
+            fill="currentColor"
+            opacity={0.85}
+          >
+            {truncated}
+            {sizeLabel ? (
+              <tspan className="font-mono" fill="currentColor" opacity={0.6} dx={6}>
+                {sizeLabel}
+              </tspan>
+            ) : null}
+          </text>
+        </g>
       ) : null}
     </g>
   )
@@ -90,6 +106,23 @@ function CustomDot(props: {
 export function ScalingScatter({ data, logScale = true, labelMode = "smart" }: ScalingScatterProps) {
   const known = data.filter((d) => d.paramCount !== null)
   const unknown = data.filter((d) => d.paramCount === null)
+
+  const chartData: ScatterDatum[] = useMemo(
+    () =>
+      known.map((d) => ({
+        model: d.model,
+        x: d.paramCount!,
+        y: d.accuracy,
+        aliases: d.aliases,
+      })),
+    [known],
+  )
+
+  const labeledModels = useMemo(() => {
+    if (labelMode === "all") return new Set(chartData.map((entry) => entry.model))
+    if (labelMode === "hover") return new Set<string>()
+    return buildSmartLabelSet(chartData)
+  }, [chartData, labelMode])
 
   if (!known.length) {
     return (
@@ -101,18 +134,6 @@ export function ScalingScatter({ data, logScale = true, labelMode = "smart" }: S
       </div>
     )
   }
-
-  const chartData = known.map((d) => ({
-    model: d.model,
-    x: d.paramCount!,
-    y: d.accuracy,
-  }))
-
-  const labeledModels = useMemo(() => {
-    if (labelMode === "all") return new Set(chartData.map((entry) => entry.model))
-    if (labelMode === "hover") return new Set<string>()
-    return buildSmartLabelSet(chartData)
-  }, [chartData, labelMode])
 
   return (
     <div className="space-y-2">

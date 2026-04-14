@@ -4,8 +4,6 @@ import { toast } from "sonner"
 import {
   AlertTriangle,
   ArrowLeft,
-  ArrowRight,
-  Check,
   ChevronDown,
   ChevronRight,
   Copy,
@@ -36,6 +34,7 @@ import { Separator } from "@/components/ui/separator"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/layout/page-header"
+import { StepButton, StepFooter } from "@/components/wizard"
 import { ConfigForm } from "@/components/plugin-config/config-form"
 import { fetchPromptFromUrl, configToYaml } from "@/api/testsets"
 import { usePlugins } from "@/hooks/use-plugins"
@@ -71,95 +70,6 @@ const CONFIGURE_STEPS: Array<{
   { id: "review",  label: "Review",  description: "Summary & generate" },
 ]
 
-// ── Wizard nav components (mirrors execute.tsx pattern) ────────────────────────
-
-function StepButton({
-  step,
-  index,
-  active,
-  complete,
-  summary,
-  onClick,
-}: {
-  step: { id: ConfigureStepId; label: string; description: string }
-  index: number
-  active: boolean
-  complete: boolean
-  summary: string
-  onClick: () => void
-}) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      className={`rounded-xl border px-4 py-3 text-left transition-colors ${
-        active
-          ? "border-primary bg-primary/5 shadow-sm"
-          : complete
-            ? "border-border bg-card hover:border-primary/50 hover:bg-accent/30"
-            : "border-border bg-card hover:bg-accent/20"
-      }`}
-    >
-      <div className="flex items-start gap-3">
-        <span
-          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-            active
-              ? "bg-primary text-primary-foreground"
-              : complete
-                ? "bg-emerald-600 text-white"
-                : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {complete && !active ? <Check className="h-3.5 w-3.5" /> : index + 1}
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{step.label}</p>
-          <p className="text-xs text-muted-foreground">{step.description}</p>
-          {summary && (
-            <p className="mt-1.5 truncate text-xs text-muted-foreground">{summary}</p>
-          )}
-        </div>
-      </div>
-    </button>
-  )
-}
-
-function StepFooter({
-  previousLabel,
-  nextLabel,
-  onPrevious,
-  onNext,
-  nextDisabled,
-}: {
-  previousLabel?: string
-  nextLabel?: string
-  onPrevious?: () => void
-  onNext?: () => void
-  nextDisabled?: boolean
-}) {
-  return (
-    <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
-      <div>
-        {onPrevious ? (
-          <Button variant="outline" onClick={onPrevious}>
-            <ArrowLeft className="mr-2 h-4 w-4" />
-            {previousLabel ?? "Back"}
-          </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            You can jump between steps at any time.
-          </span>
-        )}
-      </div>
-      {onNext && (
-        <Button onClick={onNext} disabled={nextDisabled}>
-          {nextLabel ?? "Continue"}
-          <ArrowRight className="ml-2 h-4 w-4" />
-        </Button>
-      )}
-    </div>
-  )
-}
 
 // ── Main page ──────────────────────────────────────────────────────────────────
 

@@ -25,6 +25,7 @@ import gzip
 import sys
 import os
 import html as html_mod
+from src.plugins import PluginRegistry
 import random as _random
 import re as _re
 import numpy as np
@@ -85,6 +86,10 @@ TASK_COLORS = {
     'misquote': '#c0392b',             # Dark red (misattribution)
     'family_relations': '#d35400',     # Burnt orange (family tree)
     'encoding_cipher': '#27ae60',      # Green (encoding)
+    'time_arithmetic': '#0097a7',      # Cyan (clocks / time)
+    'false_premise': '#6d4c41',        # Brown (grounded reasoning)
+    'symbol_arithmetic': '#5c6bc0',    # Indigo (abstract symbols)
+    'picross': '#00897b',              # Teal-green (grid puzzles)
     'multi-task': '#95a5a6',           # Light gray
 }
 
@@ -198,28 +203,16 @@ def extract_summary_stats(result: Dict) -> Dict:
 
 # All known task types, ordered longest-first so more specific patterns match before generic ones.
 # E.g. "symbol_arithmetic" and "time_arithmetic" must match before bare "arithmetic".
-_KNOWN_TASK_TYPES = [
-    "cellular_automata_1d",
-    "symbol_arithmetic",
-    "time_arithmetic",
-    "measure_comparison",
-    "family_relations",
-    "encoding_cipher",
-    "fancy_unicode",
-    "object_tracking",
-    "false_premise",
-    "inverted_cup",
-    "ascii_shapes",
-    "game_of_life",
-    "linda_fallacy",
-    "grid_tasks",
-    "sally_anne",
-    "strawberry",
-    "arithmetic",
-    "misquote",
-    "carwash",
-    "picross",
-]
+# Task types that were removed from the plugin system but may still appear in old result files.
+_LEGACY_TASK_TYPES = ["fancy_unicode"]
+
+# Canonical task type list, sorted longest-first so that more-specific names (e.g.
+# "time_arithmetic") are matched before shorter ones they contain ("arithmetic").
+_KNOWN_TASK_TYPES: list = sorted(
+    PluginRegistry.list_task_types() + [t for t in _LEGACY_TASK_TYPES if t not in PluginRegistry.list_task_types()],
+    key=len,
+    reverse=True,
+)
 
 # Aliases: alternative substrings that map to canonical task types
 _TASK_ALIASES = {
@@ -910,11 +903,7 @@ def _render_sample_cards(all_results_for_model: List[Dict], num_correct: int = 5
         # Detect task type from test_id
         tid = sample.get('test_id', '')
         task_badge = ''
-        for tname in ['arithmetic', 'game_of_life', 'gol', 'linda', 'ascii_shapes',
-                       'cellular_automata_1d', 'c14', 'object_tracking', 'sally_anne',
-                       'carwash', 'inverted_cup', 'strawberry', 'measure_comparison', 'grid_tasks',
-                       'misquote', 'time_arithmetic', 'false_premise', 'family_relations',
-                       'encoding_cipher']:
+        for tname in _KNOWN_TASK_TYPES:
             if tname in tid:
                 nice = tname.replace('_', ' ').title()
                 task_badge = f"<span class='badge badge-primary'>{nice}</span>"

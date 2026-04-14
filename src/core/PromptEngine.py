@@ -6,11 +6,11 @@ Active exports (used by plugin system):
     SYSTEM_PROMPTS                             — system prompt templates by language/style
     PromptEngine.get_system_prompt_by_enum()   — lookup system prompt by enums
 
-Deprecated (kept for backward-compatible legacy fallbacks in generate_testset.py):
+Legacy exports (still used by src/stages/generate_testset.py — not removed yet):
     TaskType, PromptContext, PromptResult       — legacy dataclasses
     PromptEngine.generate() / get_user_prompt() — legacy generation path
     GAME_OF_LIFE_PROMPTS, MATH_EXPRESSION_PROMPTS, etc. — task-specific templates
-        → now live in each plugin's prompts.py (src/plugins/<task>/prompts.py)
+        → new plugins use each plugin's own prompts.py (src/plugins/<task>/prompts.py)
     create_gol_context(), create_math_context(), etc. — convenience factories
 """
 

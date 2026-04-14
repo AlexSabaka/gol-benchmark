@@ -13,13 +13,17 @@ from src.plugins.base import ParsedAnswer
 
 # ── Task-type inference ──────────────────────────────────────────────────
 
-_TASK_TYPE_SUFFIXES = [
-    "strawberry", "measure_comparison", "carwash", "inverted_cup",
-    "object_tracking", "sally_anne", "time_arithmetic", "game_of_life",
-    "arithmetic", "linda_fallacy", "cellular_automata_1d", "ascii_shapes",
-    "grid_tasks", "misquote", "false_premise", "family_relations",
-    "encoding_cipher", "symbol_arithmetic", "fancy_unicode",
-]
+# Task types removed from the plugin system that may still appear in old result files.
+_LEGACY_TASK_TYPE_SUFFIXES = ["fancy_unicode"]
+
+# Derived from the plugin registry so new plugins are automatically included.
+# Sorted longest-first so specific names (e.g. "time_arithmetic") match before
+# shorter names they contain (e.g. "arithmetic").
+_TASK_TYPE_SUFFIXES: list = sorted(
+    PluginRegistry.list_task_types() + [t for t in _LEGACY_TASK_TYPE_SUFFIXES if t not in PluginRegistry.list_task_types()],
+    key=len,
+    reverse=True,
+)
 
 
 def infer_task_type(test_id: str, testset_task_type: str | None) -> str | None:

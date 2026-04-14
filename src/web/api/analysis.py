@@ -3,17 +3,29 @@ from __future__ import annotations
 
 import gzip
 import json
+import logging
 import os
 import tempfile
 import time
 from pathlib import Path
-from typing import List
+from typing import List, Optional
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 
 from src.web.config import web_config
+from src.web.jobs import job_manager
+from src.web.reanalyze import reanalyze_result_file
+from src.stages.analyze_results import (
+    _infer_task_type_from_id,
+    load_result_file,
+    extract_summary_stats,
+    generate_html_report,
+    generate_visualizations,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter()
 
@@ -40,6 +52,26 @@ def _find_result_files() -> List[Path]:
     return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
+def _find_result_file(filename: str) -> Optional[Path]:
+    """Return the Path for a result filename, searching all result directories."""
+    for d in _results_dirs():
+        fp = d / filename
+        if fp.exists():
+            return fp
+    return None
+
+
+def _resolve_result_files(filenames: List[str]) -> List[Path]:
+    """Resolve a list of filenames to Paths, raising 404 for any that are missing."""
+    resolved = []
+    for fname in filenames:
+        fp = _find_result_file(fname)
+        if fp is None:
+            raise HTTPException(404, f"Result file not found: {fname}")
+        resolved.append(fp)
+    return resolved
+
+
 def _load_result(filepath: Path) -> dict:
     with gzip.open(str(filepath), "rt", encoding="utf-8") as f:
         return json.load(f)
@@ -57,7 +89,6 @@ def _summarize_result(filepath: Path) -> dict:
         num_results = len(data.get("results", []))
 
         # Extract task types, languages, and prompt styles from results
-        from src.stages.analyze_results import _infer_task_type_from_id
         success = [r for r in data.get("results", []) if r.get("status") == "success"]
         task_types = list({
             r.get("input", {}).get("task_params", {}).get("task_type", "") or _infer_task_type_from_id(r.get("test_id", ""))
@@ -142,8 +173,6 @@ async def serve_chart(filename: str):
 
 # ── LLM-as-a-Judge endpoints (MUST be before /{filename} catch-all) ──────
 
-from typing import Optional
-
 
 class JudgeRequest(BaseModel):
     result_filenames: List[str] = Field(min_length=1)
@@ -165,19 +194,7 @@ async def submit_judge(req: JudgeRequest):
     if not req.model:
         raise HTTPException(400, "Model name is required")
 
-    resolved = []
-    for fname in req.result_filenames:
-        found = False
-        for d in _results_dirs():
-            fp = d / fname
-            if fp.exists():
-                resolved.append(str(fp))
-                found = True
-                break
-        if not found:
-            raise HTTPException(404, f"Result file not found: {fname}")
-
-    from src.web.jobs import job_manager
+    resolved = [str(fp) for fp in _resolve_result_files(req.result_filenames)]
 
     job_id = job_manager.submit_judge(
         result_paths=resolved,
@@ -221,7 +238,8 @@ async def list_judge_results():
                 "created": time.ctime(f.stat().st_mtime),
                 "duration_seconds": meta.get("duration_seconds", 0),
             })
-        except Exception:
+        except Exception as exc:
+            logger.warning("Skipping unreadable judge result %s: %s", f.name, exc)
             continue
     return results
 
@@ -229,11 +247,10 @@ async def list_judge_results():
 @router.get("/judge-results/{filename}")
 async def get_judge_result(filename: str):
     """Load a full judge result file."""
-    for d in _results_dirs():
-        fp = d / filename
-        if fp.exists():
-            return _load_result(fp)
-    raise HTTPException(404, f"Judge result file not found: {filename}")
+    fp = _find_result_file(filename)
+    if fp is None:
+        raise HTTPException(404, f"Judge result file not found: {filename}")
+    return _load_result(fp)
 
 
 # ── Catch-all result file endpoints (MUST be last) ──────────────────────
@@ -241,32 +258,30 @@ async def get_judge_result(filename: str):
 @router.delete("/{filename}")
 async def delete_result(filename: str):
     """Delete a result file."""
-    for d in _results_dirs():
-        filepath = d / filename
-        if filepath.exists():
-            filepath.unlink()
-            return {"status": "deleted", "filename": filename}
-    raise HTTPException(404, f"Result file not found: {filename}")
+    fp = _find_result_file(filename)
+    if fp is None:
+        raise HTTPException(404, f"Result file not found: {filename}")
+    fp.unlink()
+    return {"status": "deleted", "filename": filename}
 
 
 @router.get("/{filename}")
 async def get_result(filename: str):
     """Load a full result file."""
-    for d in _results_dirs():
-        filepath = d / filename
-        if filepath.exists():
-            data = _load_result(filepath)
-            return {
-                "filename": filename,
-                "metadata": data.get("metadata", {}),
-                "model_info": data.get("model_info", {}),
-                "testset_metadata": data.get("testset_metadata", {}),
-                "execution_info": data.get("execution_info", {}),
-                "summary_statistics": data.get("summary_statistics", {}),
-                "results_count": len(data.get("results", [])),
-                "results": data.get("results", []),
-            }
-    raise HTTPException(404, f"Result file not found: {filename}")
+    fp = _find_result_file(filename)
+    if fp is None:
+        raise HTTPException(404, f"Result file not found: {filename}")
+    data = _load_result(fp)
+    return {
+        "filename": filename,
+        "metadata": data.get("metadata", {}),
+        "model_info": data.get("model_info", {}),
+        "testset_metadata": data.get("testset_metadata", {}),
+        "execution_info": data.get("execution_info", {}),
+        "summary_statistics": data.get("summary_statistics", {}),
+        "results_count": len(data.get("results", [])),
+        "results": data.get("results", []),
+    }
 
 
 class ReanalyzeResponse(BaseModel):
@@ -281,16 +296,14 @@ class ReanalyzeResponse(BaseModel):
 @router.post("/{filename}/reanalyze")
 async def reanalyze_result(filename: str):
     """Re-parse and re-evaluate a result file using current plugin parsers."""
-    for d in _results_dirs():
-        filepath = d / filename
-        if filepath.exists():
-            try:
-                from src.web.reanalyze import reanalyze_result_file
-                stats = reanalyze_result_file(filepath)
-                return ReanalyzeResponse(status="ok", **stats)
-            except Exception as exc:
-                raise HTTPException(500, f"Reanalysis failed: {exc}")
-    raise HTTPException(404, f"Result file not found: {filename}")
+    fp = _find_result_file(filename)
+    if fp is None:
+        raise HTTPException(404, f"Result file not found: {filename}")
+    try:
+        stats = reanalyze_result_file(fp)
+        return ReanalyzeResponse(status="ok", **stats)
+    except Exception as exc:
+        raise HTTPException(500, f"Reanalysis failed: {exc}")
 
 
 # ── Analysis endpoints ───────────────────────────────────────────────────
@@ -303,22 +316,9 @@ class AnalyzeRequest(BaseModel):
 @router.post("/analyze")
 async def analyze_results(req: AnalyzeRequest):
     """Run Stage 3 analysis on selected result files."""
-    # Resolve file paths
-    resolved = []
-    for fname in req.result_filenames:
-        found = False
-        for d in _results_dirs():
-            fp = d / fname
-            if fp.exists():
-                resolved.append(str(fp))
-                found = True
-                break
-        if not found:
-            raise HTTPException(404, f"Result file not found: {fname}")
+    resolved = [str(fp) for fp in _resolve_result_files(req.result_filenames)]
 
     try:
-        from src.stages.analyze_results import load_result_file, extract_summary_stats, extract_task_breakdown
-
         loaded = [load_result_file(p) for p in resolved]
         summaries = [extract_summary_stats(r) for r in loaded]
 
@@ -370,22 +370,9 @@ async def analyze_results(req: AnalyzeRequest):
 @router.post("/generate-report")
 async def generate_report(req: AnalyzeRequest):
     """Generate an HTML report and return its path."""
-    resolved = []
-    for fname in req.result_filenames:
-        for d in _results_dirs():
-            fp = d / fname
-            if fp.exists():
-                resolved.append(str(fp))
-                break
-
-    if not resolved:
-        raise HTTPException(404, "No result files found")
+    resolved = [str(fp) for fp in _resolve_result_files(req.result_filenames)]
 
     try:
-        from src.stages.analyze_results import (
-            load_result_file, generate_html_report, generate_visualizations,
-        )
-
         loaded = [load_result_file(p) for p in resolved]
         reports_dir = Path(web_config.reports_dir)
         reports_dir.mkdir(parents=True, exist_ok=True)

@@ -5,13 +5,14 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from src import __version__
 from src.web.api import api_router
 
 _WEB_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _WEB_DIR.resolve().parent.parent
 _SPA_DIR = _PROJECT_ROOT / "frontend" / "dist"
 
-app = FastAPI(title="GoL Benchmark", version="2.17.2")
+app = FastAPI(title="GoL Benchmark", version=__version__)
 
 # --- API routes ---------------------------------------------------------------
 app.include_router(api_router, prefix="/api")

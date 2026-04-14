@@ -6,6 +6,8 @@ import json
 import os
 import tempfile
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -17,6 +19,8 @@ from pydantic import BaseModel, Field
 from src.web.config import web_config
 
 router = APIRouter()
+
+DEFAULT_CELL_MARKERS: List[str] = ["1", "0"]
 
 
 # ---------- Pydantic models for request bodies --------------------------------
@@ -41,13 +45,64 @@ class GenerateRequest(BaseModel):
     temperature: float = 0.1
     max_tokens: int = 2048
     no_thinking: bool = True
-    cell_markers: List[str] = Field(default_factory=lambda: ["1", "0"])
+    cell_markers: List[str] = Field(default_factory=lambda: list(DEFAULT_CELL_MARKERS))
     seed: int = 42
     custom_system_prompt: Optional[str] = None
     metadata_extra: Dict[str, Any] = Field(default_factory=dict)
 
 
 # ---------- Helpers -----------------------------------------------------------
+
+def _build_yaml_config(req: "GenerateRequest") -> dict:
+    """Build a YAML config dict from a GenerateRequest. Used by both generate and config-to-yaml endpoints."""
+    ts = time.strftime("%Y%m%d_%H%M%S")
+    metadata = dict(req.metadata_extra)
+    metadata.update({
+        "name": f"{req.name}_{ts}",
+        "version": "1.0",
+        "schema_version": "1.0.0",
+        "description": req.description or f"Web-generated: {req.name}",
+        "task_type": "multi-task" if len(req.tasks) > 1 else req.tasks[0].type,
+    })
+
+    config: Dict[str, Any] = {
+        "metadata": metadata,
+        "sampling": {
+            "temperature": req.temperature,
+            "max_tokens": req.max_tokens,
+        },
+        "execution": {
+            "no_thinking": req.no_thinking,
+            "cell_markers": req.cell_markers,
+        },
+    }
+
+    if req.custom_system_prompt:
+        config["custom_system_prompt"] = req.custom_system_prompt
+
+    tasks_yaml = []
+    for t in req.tasks:
+        gen = dict(t.generation)
+        gen.setdefault("seed", req.seed)
+        for key in ("target_values", "complexity", "difficulties"):
+            if key in gen and isinstance(gen[key], str):
+                gen[key] = [int(x.strip()) for x in gen[key].split(",") if x.strip()]
+        tasks_yaml.append({
+            "type": t.type,
+            "generation": gen,
+            "prompt_configs": [
+                {"name": f"{pc.user_style}_{pc.system_style}", "user_style": pc.user_style, "system_style": pc.system_style, "language": pc.language}
+                for pc in t.prompt_configs
+            ],
+        })
+
+    if len(tasks_yaml) == 1:
+        config["task"] = tasks_yaml[0]
+    else:
+        config["tasks"] = tasks_yaml
+
+    return config
+
 
 def _testsets_dir() -> Path:
     p = Path(web_config.testsets_dir)
@@ -140,59 +195,8 @@ async def delete_testset(filename: str):
 @router.post("/generate")
 async def generate_testset(req: GenerateRequest):
     """Generate a test set from configuration (wraps Stage 1)."""
-    # Build YAML config dict
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    metadata = dict(req.metadata_extra)
-    metadata.update({
-        "name": f"{req.name}_{ts}",
-        "version": "1.0",
-        "schema_version": "1.0.0",
-        "description": req.description or f"Web-generated: {req.name}",
-        "task_type": "multi-task" if len(req.tasks) > 1 else req.tasks[0].type,
-    })
+    config = _build_yaml_config(req)
 
-    config = {
-        "metadata": metadata,
-        "sampling": {
-            "temperature": req.temperature,
-            "max_tokens": req.max_tokens,
-        },
-        "execution": {
-            "no_thinking": req.no_thinking,
-            "cell_markers": req.cell_markers,
-        },
-    }
-
-    if req.custom_system_prompt:
-        config["custom_system_prompt"] = req.custom_system_prompt
-
-    # Single-task vs multi-task
-    tasks_yaml = []
-    for t in req.tasks:
-        gen = dict(t.generation)
-        gen.setdefault("seed", req.seed)
-
-        # Normalize generation params: convert comma-separated strings to lists
-        for key in ("target_values", "complexity", "difficulties"):
-            if key in gen and isinstance(gen[key], str):
-                gen[key] = [int(x.strip()) for x in gen[key].split(",") if x.strip()]
-
-        task_entry = {
-            "type": t.type,
-            "generation": gen,
-            "prompt_configs": [
-                {"name": f"{pc.user_style}_{pc.system_style}", "user_style": pc.user_style, "system_style": pc.system_style, "language": pc.language}
-                for pc in t.prompt_configs
-            ],
-        }
-        tasks_yaml.append(task_entry)
-
-    if len(tasks_yaml) == 1:
-        config["task"] = tasks_yaml[0]
-    else:
-        config["tasks"] = tasks_yaml
-
-    # Write temp YAML
     with tempfile.NamedTemporaryFile(mode="w", suffix=".yaml", delete=False, prefix="web_cfg_") as tmp:
         yaml.dump(config, tmp, default_flow_style=False)
         tmp_path = tmp.name
@@ -215,53 +219,7 @@ async def generate_testset(req: GenerateRequest):
 @router.post("/config-to-yaml", response_class=PlainTextResponse)
 async def config_to_yaml(req: GenerateRequest):
     """Convert a GenerateRequest to a YAML config string (without generating a test set)."""
-    ts = time.strftime("%Y%m%d_%H%M%S")
-    metadata = dict(req.metadata_extra)
-    metadata.update({
-        "name": f"{req.name}_{ts}",
-        "version": "1.0",
-        "schema_version": "1.0.0",
-        "description": req.description or f"Web-generated: {req.name}",
-        "task_type": "multi-task" if len(req.tasks) > 1 else req.tasks[0].type,
-    })
-
-    config = {
-        "metadata": metadata,
-        "sampling": {
-            "temperature": req.temperature,
-            "max_tokens": req.max_tokens,
-        },
-        "execution": {
-            "no_thinking": req.no_thinking,
-            "cell_markers": req.cell_markers,
-        },
-    }
-
-    if req.custom_system_prompt:
-        config["custom_system_prompt"] = req.custom_system_prompt
-
-    tasks_yaml = []
-    for t in req.tasks:
-        gen = dict(t.generation)
-        gen.setdefault("seed", req.seed)
-        for key in ("target_values", "complexity", "difficulties"):
-            if key in gen and isinstance(gen[key], str):
-                gen[key] = [int(x.strip()) for x in gen[key].split(",") if x.strip()]
-        task_entry = {
-            "type": t.type,
-            "generation": gen,
-            "prompt_configs": [
-                {"name": f"{pc.user_style}_{pc.system_style}", "user_style": pc.user_style, "system_style": pc.system_style, "language": pc.language}
-                for pc in t.prompt_configs
-            ],
-        }
-        tasks_yaml.append(task_entry)
-
-    if len(tasks_yaml) == 1:
-        config["task"] = tasks_yaml[0]
-    else:
-        config["tasks"] = tasks_yaml
-
+    config = _build_yaml_config(req)
     return yaml.dump(config, default_flow_style=False, allow_unicode=True)
 
 
@@ -319,9 +277,6 @@ class FetchPromptUrlRequest(BaseModel):
 @router.post("/fetch-prompt-url")
 async def fetch_prompt_from_url(req: FetchPromptUrlRequest):
     """Fetch text content from a URL for use as a custom system prompt."""
-    import urllib.request
-    import urllib.error
-
     try:
         with urllib.request.urlopen(req.url, timeout=10) as resp:
             content = resp.read(50 * 1024)  # Cap at 50KB

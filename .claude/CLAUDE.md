@@ -113,9 +113,9 @@ gol_eval/
 │   │   ├── api/           # Typed API client layer
 │   │   ├── hooks/         # React Query hooks with auto-refresh
 │   │   ├── types/         # TypeScript interfaces
-│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports, Judge
+│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute (landing + execute/simple-wizard.tsx + execute/matrix-wizard.tsx), Jobs, Results, Charts, Reports, Judge
 │   │   ├── lib/           # Utilities (chart-colors, model-sizes, credential-store, favorite-models, language-flags)
-│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, param-override-modal, judge-setup-sheet, language-filter-chip, prompt-style-badge
+│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, wizard (StepButton/StepFooter), model-selection (ModelList/Ollama/OpenAI/HF), param-override-modal, judge-setup-sheet, language-filter-chip, prompt-style-badge
 │   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
 │
@@ -261,6 +261,22 @@ Audit incorrect model responses via a judge LLM:
 - **Frontend**: `/judge` page with file selector, summary dashboard, filterable judgments table, JSONL/Markdown export
 - **Verdicts**: `true_incorrect`, `false_negative`, `parser_failure` (with issue sub-types)
 - **Export**: Markdown report structured for agent consumption — grouped by task type, with language, response samples, and actionable summary
+
+### 9. Version Management (v2.19.0+)
+
+- **Single source of truth**: `src/__init__.py` — `__version__` field
+- `src/web/app.py` imports `__version__` automatically; no separate hardcoding needed
+- `frontend/package.json` is the npm source of truth — kept in sync manually when cutting releases
+- **All locations to update when bumping version**: `src/__init__.py`, `frontend/package.json` (+`package-lock.json`), `.github/copilot-instructions.md`, CHANGELOG.md, CLAUDE.md footer
+
+### 10. Plugin Task Type List — Single Source of Truth (v2.19.0+)
+
+`PluginRegistry.list_task_types()` is the canonical list of active plugin task types — **do not maintain separate hardcoded lists**.
+
+- `src/stages/analyze_results.py` — `_KNOWN_TASK_TYPES` is derived from the registry at import time
+- `src/web/reanalyze.py` — `_TASK_TYPE_SUFFIXES` is derived from the registry at import time
+- Adding a new plugin in `src/plugins/` automatically propagates to all task-type inference and badge detection with no other changes required
+- `_LEGACY_TASK_TYPES = ["fancy_unicode"]` — the only manually maintained list; for task types removed from the plugin system that may still appear in old result files
 
 ---
 
@@ -413,6 +429,10 @@ Audit incorrect model responses via a judge LLM:
 --seed 42
 ```
 
+### Environment Variables
+
+- **`GOL_LOG_FILE`** — log file path (default: `gol_eval.log`); configured in `src/utils/logger.py`
+
 ### Difficulty Levels
 
 | Level | GoL Grid Size | ARI Complexity | Description |
@@ -492,10 +512,10 @@ from src.plugins.grammar_utils import article, resolve_vocab, pick_templates, vo
 # Plugin-local prompt templates (inside each plugin's generator.py)
 from .prompts import USER_PROMPT_TEMPLATES  # Each plugin defines its own (nested dict: lang → style → template)
 
-# Core (PromptEngine: system prompts + enums are active; user templates are deprecated)
+# Core (PromptEngine: system prompts + enums are active; user templates are legacy)
 from src.core.types import GameOfLifeTestConfig, DifficultyLevel
 from src.core.PromptEngine import Language, PromptStyle, SystemPromptStyle  # Active enums
-# DEPRECATED: Do NOT import TaskType, PromptContext, PromptResult, create_*_context()
+# Legacy (still used by generate_testset.py — not yet removed): TaskType, PromptContext, PromptResult, create_*_context()
 from src.core.TestGenerator import TestGenerator
 
 # Models
@@ -774,7 +794,23 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-13*
-*Version: 2.18.0*
-*Key additions: Configure page wizard redesign (4-step Setup → Plugins → Prompts → Review; import config via URL fetch or paste YAML; expandable plugin table rows with auto-expand on select; custom system prompt hidden until "custom" toggle checked; Review step with YAML copy/download split button) • `POST /api/testsets/config-to-yaml` endpoint (returns YAML string from GenerateRequest without generating a file) • Picross (Nonogram) plugin (19th benchmark — grid-based deductive reasoning with line solver, 3 clue formats, partial-solution mode) • Compact Results toolbar (icon-only buttons with count badges, per-row dropdown actions, filter-aware select-all, testset grouping) • Localized measure comparison (unit display names + decimal framing templates in all 6 languages) • prompt_metadata propagation fix (language now reaches parsers in CLI and Web UI) • Filename truncation for long testset names • Judge page delete + tooltip • Language filter labels with flag emojis • LLM-as-a-Judge • Deep multilingual content localization + grammatical gender • Web UI refinement pass (persisted table/view state, stable Jobs pagination, expandable Judge review rows, suffix-biased identifiers, Execute wizard flow, chart readability/accessibility improvements) • React SPA (Vite 6 + React 19 + TS + Tailwind v4 + shadcn/ui)*
+*Last updated: 2026-04-14*
+*Version: 2.19.0*
+
+**Recent key additions:**
+
+- **Execute page unified** — `/execute` landing with "Simple run" / "Matrix run" tiles; `?mode=simple|matrix` deep-links; lazy-loaded sub-wizards (`pages/execute/simple-wizard.tsx`, `pages/execute/matrix-wizard.tsx`); `/matrix-execution` redirects via `<Navigate />`
+- **Matrix Exec wizard** — 5-step flow: Setup → Axes → Models → Settings → Review; reuses `StepButton`/`StepFooter` primitives
+- **Shared component extraction** — `components/wizard/` (StepButton, StepFooter) + `components/model-selection/` (ModelList, OllamaSection, OpenAIEndpointSection, HuggingFaceSection); removes ~300 lines of duplication
+- **Configure page wizard** — 4-step Setup → Plugins → Prompts → Review; import via URL/paste YAML; expandable plugin rows; custom system prompt toggle; YAML copy/download split button
+- **`POST /api/testsets/config-to-yaml`** — returns YAML string from `GenerateRequest` without generating a file
+- **Picross (Nonogram) plugin** — 19th benchmark; grid-based deductive reasoning with line solver, 3 clue formats, partial-solution mode
+- **Backend simplification** — extracted `_build_yaml_config()` and `_find_result_file()` helpers eliminating ~80 lines of duplication; fixed `cancel()` dead code; moved inline imports to module level; bare `except` blocks now log warnings
+- **Version single-sourced** — `src/__init__.py` is canonical; `src/web/app.py` imports `__version__` automatically
+- **Plugin task types auto-discovered** — `_KNOWN_TASK_TYPES` and `_TASK_TYPE_SUFFIXES` derived from `PluginRegistry`; fixed missing `picross` in reanalyze inference
+- **`TASK_COLORS`** — added missing entries for `time_arithmetic`, `false_premise`, `symbol_arithmetic`, `picross`
+- **LLM-as-a-Judge** — `/judge` page; verdicts: `true_incorrect`, `false_negative`, `parser_failure`; Markdown export
+- **Multilingual content** — deep localization + grammatical gender across all 19 plugins
+- **React SPA** — Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui
+
 *For questions or issues: Check [README.md](README.md) or create an issue*

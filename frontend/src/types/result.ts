@@ -109,12 +109,16 @@ export interface HeatmapCell {
   task: string
   accuracy: number
   total: number
+  /** Raw provider tags that were merged into this canonical model (for tooltip disclosure). */
+  aliases?: string[]
 }
 
 export interface ScatterPoint {
   model: string
   paramCount: number | null
   accuracy: number
+  /** Raw provider tags that were merged into this canonical model (for tooltip disclosure). */
+  aliases?: string[]
 }
 
 // ── Judge types ──

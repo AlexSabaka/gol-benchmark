@@ -1,6 +1,6 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.18.0** | Last updated: 2026-04-13
+> **Version 2.19.0** | Last updated: 2026-04-14
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
 
@@ -346,7 +346,7 @@ cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → 
 | `/` | Dashboard | Summary of available plugins, models, recent runs |
 | `/configure` | Configure | 4-step wizard: **Setup** (build from scratch or import via file/URL/paste YAML), **Plugins** (expandable table rows — checkbox auto-expands row with `ConfigForm`), **Prompts** (style matrix + hidden custom prompt revealed by "custom" toggle), **Review** (summary + Generate, Copy YAML, Download YAML) |
 | `/testsets` | Test Sets | Create, list, inspect (tabbed detail with paginated cases), regenerate with param overrides, switch between `Table` and grouped `Cards`, and use collapsible grouped rows in table mode |
-| `/execute` | Execute | Submit jobs; paginated checkbox-grid test set multi-select, model search/filter, favorite models sidebar grouped by provider, encrypted credential storage for OpenAI-compatible endpoints |
+| `/execute` | Execute | Landing page with two choice tiles — **Simple run** (4-step wizard: Test Sets → Models → Settings → Review) for running existing test sets, and **Matrix run** (5-step wizard: Setup → Axes → Models → Settings → Review) for generating a cartesian sweep and optionally launching it. Mode carried in `?mode=simple\|matrix` query param; `/matrix-execution` redirects to `/execute?mode=matrix` |
 | `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions, and cooperative cancellation for already-running inference or judge work |
 | `/results` | Results | Browse results with sortable DataTable, model/task/language faceted filters (language chips show flag + full name); reanalyze, rerun with params, switch between `Table` and grouped `Cards`, and use collapsible grouped rows for task/model/run grouping |
 | `/charts` | Charts | Heatmap, bar comparison, scaling scatter; task type + language filtering, log/linear scale toggle |
@@ -359,13 +359,15 @@ frontend/src/
 ├── api/          # Typed fetch client (client.ts, plugins.ts, models.ts, testsets.ts, jobs.ts, results.ts)
 ├── hooks/        # React Query hooks with auto-refresh (use-plugins, use-models, use-testsets, use-jobs, use-results)
 ├── types/        # TypeScript interfaces mirroring backend schemas
-├── pages/        # 8 route pages (Dashboard, Configure, TestSets, Execute, Jobs, Results, Charts, Reports)
+├── pages/        # Route pages (Dashboard, Configure, TestSets, Execute [landing + execute/simple-wizard + execute/matrix-wizard], Jobs, Results, Charts, Reports, Judge)
 ├── components/
-│   ├── ui/           # shadcn/ui primitives (19 components incl. textarea)
-│   ├── layout/       # AppLayout, Sidebar, Header
-│   ├── plugin-config/ # Dynamic ConfigField renderer (number, select, multi-select, boolean, range, weight_map)
-│   ├── charts/       # AccuracyHeatmap, ModelBarChart, ScalingScatter, ChartFilters, ChartCard
-│   ├── data-table/   # Generic sortable/filterable DataTable with optional collapsible grouping
+│   ├── ui/              # shadcn/ui primitives (19 components incl. textarea)
+│   ├── layout/          # AppLayout, Sidebar, Header
+│   ├── wizard/          # StepButton, StepFooter — shared by Execute, Configure, and Matrix wizards
+│   ├── model-selection/ # ModelList, OllamaSection, OpenAIEndpointSection, HuggingFaceSection + SelectedModel types
+│   ├── plugin-config/   # Dynamic ConfigField renderer (number, select, multi-select, boolean, range, weight_map)
+│   ├── charts/          # AccuracyHeatmap, ModelBarChart, ScalingScatter, ChartFilters, ChartCard
+│   ├── data-table/      # Generic sortable/filterable DataTable with optional collapsible grouping
 │   └── param-override-modal.tsx  # Shared modal for rerun/regenerate with param overrides
 └── App.tsx       # BrowserRouter + QueryClientProvider + ThemeProvider
 ```

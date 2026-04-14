@@ -2,6 +2,91 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.19.0] - April 14, 2026
+
+### Backend Code Simplification & Cleanup
+
+#### Duplicate Code Eliminated
+
+- **`_build_yaml_config()` helper** (`src/web/api/testsets.py`) — extracted ~70 lines of YAML config-dict construction that was copy-pasted identically between `generate_testset()` and `config_to_yaml()`; both endpoints now delegate to the shared helper
+- **`_find_result_file()` / `_resolve_result_files()` helpers** (`src/web/api/analysis.py`) — extracted the repeated "search `_results_dirs()` for a filename" loop that appeared 9 times across 7 route handlers; all endpoints now use the shared helpers
+- **`DEFAULT_CELL_MARKERS` constant** — `["1", "0"]` was hardcoded independently in `testsets.py` and `matrix.py`; now defined once in `testsets.py` and imported in `matrix.py`
+
+#### Bug Fixes
+
+- **`cancel()` dead code removed** (`src/web/jobs.py`) — the `if future.cancel():` branch and the unconditional code below it performed identical state transitions; the duplicate block (including a suspicious `job.started_at = job.started_at or time.time()` after cancellation) is gone; `future.cancel()` is now called as a best-effort signal, and state is set unconditionally regardless of its return value
+- **Bare `except Exception: continue`** in `list_judge_results()` (`src/web/api/analysis.py`) — now logs the skipped filename and exception via `logger.warning()`
+
+#### Inline Imports Moved to Module Level
+
+- `urllib.request` / `urllib.error` in `fetch_prompt_from_url()` (`testsets.py`) — moved to top of file
+- `from typing import Optional` misplaced mid-file in `analysis.py` — removed (already in the top-level `typing` import)
+- All `from src.stages.analyze_results import ...` calls scattered across `_summarize_result()`, `analyze_results()`, and `generate_report()` — consolidated into one module-level import block
+- `from src.web.jobs import job_manager` and `from src.web.reanalyze import reanalyze_result_file` — moved from inside route handlers to module level in `analysis.py`
+- Unused `extract_task_breakdown` import removed from `analyze_results()` (was imported but never called)
+
+#### Documentation Clarity
+
+- **`src/core/PromptEngine.py` module docstring** — changed "Deprecated" to "Legacy (still used by generate_testset.py — not removed yet)" for `TaskType`, `PromptContext`, and the convenience factory functions, since they remain in active use and calling them deprecated was misleading
+- **`src/web/judge.py` progress helpers** — added comment explaining why the progress-tracking closures mirror the module-level helpers in `jobs.py` rather than importing them (circular import: `jobs.py` ↔ `judge.py`)
+- **Unused `Path` import** removed from `judge.py`
+
+#### `src/utils/logger.py` Cleanup
+
+- Removed dead `# logging.StreamHandler()` comment
+- Renamed default log file from `game_of_life_eval.log` to `gol_eval.log`
+- Made log file path configurable via `GOL_LOG_FILE` environment variable
+
+### Version — Single Source of Truth
+
+- **`src/__init__.py`** is now the canonical Python version; bumped to `2.19.0`
+- **`src/web/app.py`** replaced the hardcoded `"2.17.2"` string with `from src import __version__` — FastAPI OpenAPI docs always reflect the package version automatically; future bumps require only one file edit
+- **`frontend/package.json` + `package-lock.json`** updated to `2.19.0` (npm source of truth, kept in sync manually)
+- **`.github/copilot-instructions.md`** updated to `2.19.0` with corrected date
+
+### Plugin Task Types — Single Source of Truth
+
+- **`src/stages/analyze_results.py` — `_KNOWN_TASK_TYPES`** replaced the 20-item hardcoded list with `PluginRegistry.list_task_types()` + a small `_LEGACY_TASK_TYPES = ["fancy_unicode"]` list for removed-but-still-referenced types; sorted longest-first to prevent `"arithmetic"` matching before `"time_arithmetic"` in substring searches
+- **`src/web/reanalyze.py` — `_TASK_TYPE_SUFFIXES`** same change; also **fixes a bug**: `picross` was missing from this list, so Picross test IDs could never be recognized during reanalysis
+- **`src/stages/analyze_results.py` — inline badge list** in `_card()` replaced the stale hardcoded subset (was missing `symbol_arithmetic`, `picross`, `false_premise`) with `_KNOWN_TASK_TYPES`
+- **`src/stages/analyze_results.py` — `TASK_COLORS`** added the four missing registered task types: `time_arithmetic` (`#0097a7`), `false_premise` (`#6d4c41`), `symbol_arithmetic` (`#5c6bc0`), `picross` (`#00897b`)
+- Adding a new plugin in `src/plugins/` now automatically propagates to all task-type inference and badge detection with no other changes required
+
+### Matrix Execution — Wizard Redesign
+
+- **5-step wizard** — the former flat Matrix Exec form is now a sequential `Setup` → `Axes` → `Models` → `Settings` → `Review` flow with the same `StepButton` / `StepFooter` primitives used by Execute and Configure
+- **Step 1 Setup** — plugin select, test set name prefix, seed, description, and the plugin's base `ConfigForm`; `Continue to Axes` disabled until a plugin is picked
+- **Step 2 Axes** — prompt axes (user / system / language checkboxes) + plugin field variation axes via the existing `FieldAxisEditor`; Custom System Prompt card is hidden until the "custom" toggle is checked (mirroring the Configure Prompts step)
+- **Step 3 Models** — reuses the extracted `OllamaSection`, `OpenAIEndpointSection`, `HuggingFaceSection` components; favorites sidebar, saved credentials, and cross-provider search behave identically to Execute
+- **Step 4 Settings** — temperature, max tokens, disable-thinking; shows current matrix shape (cells × models = projected jobs)
+- **Step 5 Review & Run** — 3-column summary (Plugin & Cells / Axes / Models & Jobs), amber `AlertTriangle` warnings for incomplete selections, `Generate Only` + `Generate and Run` CTAs in the footer row
+- **All prompt axes default to empty sets** — no pre-selected user style / system style / language; Review warns clearly when any axis column is empty
+- **Step state persisted** — `matrix-page-active-step` in localStorage (same pattern as Execute / Configure)
+
+### Execute Page — Merged Landing
+
+- **Single `/execute` entry point** — bare `/execute` now renders a two-tile landing with explanatory copy: "Simple run" (4-step wizard) and "Matrix run" (5-step wizard)
+- **Query-param mode** — `/execute?mode=simple` and `/execute?mode=matrix` deep-link directly into either wizard; `← Back to options` ghost button above each wizard clears the param
+- **Lazy-loaded wizards** — each sub-wizard is a separate chunk, so users only pay the bytes for the wizard they open (`execute` landing bundle dropped from ~27 kB to 4.57 kB)
+- **Legacy redirect** — `/matrix-execution` now redirects to `/execute?mode=matrix` via React Router `<Navigate replace />`
+- **Sidebar collapsed** — the "Matrix Exec" nav item is removed; one "Execute" entry covers both flows
+
+### Shared Component Extraction
+
+- **`frontend/src/components/wizard/`** — new `StepButton` (generic over step id) and `StepFooter`; replaces three inline copies previously duplicated across Execute, Configure, and Matrix Exec
+- **`frontend/src/components/model-selection/`** — new `ModelList`, `OllamaSection`, `OpenAIEndpointSection`, `HuggingFaceSection`, plus shared `SelectedModel` / `OpenAIEndpoint` types and `selectedModelKey()` helper; replaces two inline copies (Execute + Matrix Exec)
+- **~300 lines of duplicated UI code removed** — single definition of each model-selection subcomponent means fixes land in one place for all wizards
+
+### Navigation & Routing
+
+- **`pages/execute.tsx`** — rewritten as a thin landing + dispatcher component (~140 lines)
+- **`pages/execute/simple-wizard.tsx`** — former Execute body moved into its own lazy-loaded chunk
+- **`pages/execute/matrix-wizard.tsx`** — Matrix wizard body lives here; former `pages/matrix-execution.tsx` deleted
+- **`App.tsx`** — `/matrix-execution` route replaced with `<Navigate to="/execute?mode=matrix" replace />`; unused `MatrixExecutionPage` lazy import removed
+- **`components/layout/app-shell.tsx`** — `NAV_ITEMS` trimmed to one "Execute" entry; unused `Grid3X3` icon import dropped
+
+---
+
 ## [2.18.0] - April 14, 2026
 
 ### Configure Page — Wizard Redesign

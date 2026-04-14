@@ -13,7 +13,7 @@ from pydantic import BaseModel, Field
 from src.plugins import PluginRegistry
 from src.plugins.base import ConfigField
 from src.web.api.execution import RunRequest, submit_run
-from src.web.api.testsets import GenerateRequest, PromptConfig, TaskConfig, generate_testset
+from src.web.api.testsets import DEFAULT_CELL_MARKERS, GenerateRequest, PromptConfig, TaskConfig, generate_testset
 
 router = APIRouter()
 
@@ -49,7 +49,7 @@ class MatrixRunRequest(BaseModel):
     temperature: float = 0.1
     max_tokens: int = 2048
     no_think: bool = True
-    cell_markers: List[str] = Field(default_factory=lambda: ["1", "0"])
+    cell_markers: List[str] = Field(default_factory=lambda: list(DEFAULT_CELL_MARKERS))
     custom_system_prompt: str | None = None
     base_generation: Dict[str, Any] = Field(default_factory=dict)
     prompt_axes: MatrixPromptAxes = Field(default_factory=MatrixPromptAxes)
