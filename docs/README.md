@@ -30,12 +30,9 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | Document | Description |
 |----------|-------------|
 | [prompt-engine/SYSTEM_PROMPTS.md](prompt-engine/SYSTEM_PROMPTS.md) | System prompt styles (analytical, casual, adversarial) — **active** |
-| [prompt-engine/USER_PROMPTS_GOL.md](prompt-engine/USER_PROMPTS_GOL.md) | Game of Life user prompt templates (**deprecated** — see `src/plugins/game_of_life/prompts.py`) |
-| [prompt-engine/USER_PROMPTS_MATH.md](prompt-engine/USER_PROMPTS_MATH.md) | Arithmetic user prompt templates (**deprecated** — see `src/plugins/arithmetic/prompts.py`) |
-| [prompt-engine/USER_PROMPTS_LINDA.md](prompt-engine/USER_PROMPTS_LINDA.md) | Linda Fallacy user prompt templates (**deprecated** — see `src/plugins/linda_fallacy/prompts.py`) |
 | [prompt-engine/MIGRATION_GUIDE.md](prompt-engine/MIGRATION_GUIDE.md) | Prompt engine migration guide (updated for v2.8.0 plugin-local templates) |
 
-> **Note (v2.8.0):** User prompt templates have moved from `PromptEngine.py` to plugin-local `prompts.py` files. Each plugin in `src/plugins/<task>/prompts.py` is the canonical source. The documents above for GoL/Math/Linda are retained for historical reference. See [PLUGIN_GUIDE.md — Prompt Template Architecture](PLUGIN_GUIDE.md#prompt-template-architecture) for the current approach.
+> **Note (v2.8.0):** User prompt templates have moved from `PromptEngine.py` to plugin-local `prompts.py` files. Each plugin in `src/plugins/<task>/prompts.py` is the canonical source. Deprecated GoL/Math/Linda template docs are in `_archive/`. See [PLUGIN_GUIDE.md — Prompt Template Architecture](PLUGIN_GUIDE.md#prompt-template-architecture) for the current approach.
 
 ## Research
 
@@ -46,6 +43,7 @@ Documentation for the GoL Benchmark Suite — a procedural benchmark for testing
 | [research/prompt-analysis/RESULTS_REPORT.md](research/prompt-analysis/RESULTS_REPORT.md) | Prompt engineering study — model personalities |
 | [research/prompt-analysis/VISUALIZATIONS_GUIDE.md](research/prompt-analysis/VISUALIZATIONS_GUIDE.md) | Charts and visualization guide |
 | [research/MODEL_CATALOG.md](research/MODEL_CATALOG.md) | Available models reference |
+| [research/PROMPT_BENCHMARK_NOV_2025.md](research/PROMPT_BENCHMARK_NOV_2025.md) | Historical benchmark: 44.86% performance spread across 9 prompt configs (Nov 2025) |
 
 ---
 
@@ -88,16 +86,14 @@ docs/
 │   └── MODEL_PROVIDERS.md
 ├── prompt-engine/              # Prompt template reference
 │   ├── SYSTEM_PROMPTS.md
-│   ├── USER_PROMPTS_GOL.md
-│   ├── USER_PROMPTS_MATH.md
-│   ├── USER_PROMPTS_LINDA.md
 │   └── MIGRATION_GUIDE.md
 ├── research/                   # Research findings
 │   ├── MODEL_CATALOG.md
+│   ├── PROMPT_BENCHMARK_NOV_2025.md  # Historical Nov 2025 baseline
 │   ├── quantization/           # Q2_K vs F16 study
 │   └── prompt-analysis/        # Prompt engineering study
 ├── images/                     # Charts and visualizations
-└── _archive/                   # Superseded documents (25 files)
+└── _archive/                   # Superseded documents (15 files)
 ```
 
 ---
@@ -110,5 +106,5 @@ docs/
 
 ---
 
-**Version:** 2.17.2
-**Last Updated:** April 13, 2026
+**Version:** 2.19.0
+**Last Updated:** April 14, 2026

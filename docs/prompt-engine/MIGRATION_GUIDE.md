@@ -10,7 +10,7 @@ This document explains two migration paths:
 
 ## Current Architecture (v2.8.0)
 
-All 16 plugins now use **plugin-local `prompts.py` files** for user prompt templates. The central `PromptEngine` is used **only for system prompts and enums**.
+All 19 plugins now use **plugin-local `prompts.py` files** for user prompt templates. The central `PromptEngine` is used **only for system prompts and enums**.
 
 ### What's Active in PromptEngine
 

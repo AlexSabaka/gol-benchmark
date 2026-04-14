@@ -1002,6 +1002,55 @@ The model is given an N×N operation table (e.g. A ★ B = C) and an expression 
 
 ---
 
+### 19. Picross (Nonogram)
+
+**Path**: `src/plugins/picross/`
+**task_type**: `picross`
+**Tests**: Grid-based deductive reasoning — given row and column run-length clues, reconstruct the complete binary grid by propagating constraints across both axes.
+
+The model receives clues specifying how many consecutive filled cells appear in each row and column, and must produce the completed N×N grid.
+
+**3 clue formats** (configurable via `clue_format`):
+
+- `inline` — labeled list: `Row 1: 2 1`, `Col 3: 3` (default; localized labels in all 6 languages)
+- `grid_header` — visual ASCII crossword-style grid with column clues above and row clues to the left
+- `json` — JSON object `{"rows": [[2,1], ...], "cols": [[3], ...]}` (localized header)
+
+**Difficulty → grid size mapping**:
+
+- `trivial` — 3×3
+- `easy` — 5×5 (default)
+- `hard` — 8×8
+- `nightmare` — 10×10
+
+**Generator** (`generator.py`):
+
+- Generates valid nonogram puzzles via `src/plugins/picross/grid_gen.py` with configurable density (0.2–0.8)
+- `require_line_solvable=True` (default) — only emits puzzles solvable by pure line logic (no guessing required); guarantees a unique solution
+- `require_unique=True` — rejects puzzles with multiple solutions (relevant when `require_line_solvable=False`)
+- **Partial solution mode** (`partial_solution=True`) — appends a ~50% pre-revealed grid; model must fill remaining `?` cells
+- Configurable cell markers (default `1`/`0`; any custom markers supported)
+- Config fields: `difficulty` (multi-select), `puzzles_per_difficulty`, `density`, `require_line_solvable`, `clue_format`, `require_unique`, `cell_markers`, `partial_solution`
+
+**Parser** (`parser.py`) — 4-strategy end-first parser:
+
+1. `line_scan_reverse` — scans from end of response for a contiguous block of grid-shaped lines; strips row-label prefixes (`Row 3:`, `3 │`)
+2. `marker_search` — locates keywords (`solution:`, `grid:`, `answer:`, `result:`, `output:`, `resolved:`) and extracts grid following them (end-first)
+3. `digit_extraction` — finds rectangular patterns of `0`/`1` characters scanning from end
+4. `last_resort` — collects all binary digits in response and reshapes into expected grid dimensions (tries from end first)
+
+Marker normalization: recognizes common nonogram aliases regardless of prompt markers — filled: `1 X x # ■ █ ● ★`; empty: `0 . □ ○ ☆ _ -`
+
+**Evaluator** (`evaluator.py`) — 3-type match taxonomy:
+
+- `exact` (True) — all cells match
+- `partial` (False) — some cells correct; includes normalized accuracy `2 * (raw_accuracy - 0.5)` mapping chance-level to 0.0 and perfect to 1.0
+- `dimension_mismatch` (False) — predicted grid shape differs from expected
+- `parse_error` (False) — couldn't extract a grid
+- Aggregation: adds `normalized_accuracy` (average across all results)
+
+---
+
 ## Adding a New Plugin
 
 This walkthrough creates a hypothetical `word_scramble` plugin that tests whether models can unscramble anagrams.

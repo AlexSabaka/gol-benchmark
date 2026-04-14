@@ -229,6 +229,7 @@ gol_eval/
 | `family_relations` | Family Relations | Perspective-aware family counting puzzles | Integer (person count) |
 | `encoding_cipher` | Encoding & Cipher Decoding | Decode Base64/Caesar/Morse and follow instructions | Decoded text / response word |
 | `symbol_arithmetic` | Symbol Arithmetic | Evaluate expressions under arbitrary binary operations | Symbol from operation table |
+| `picross` | Picross (Nonogram) | Grid-based deductive reasoning — solve puzzles from row/column clue constraints | 2D binary grid |
 
 Each plugin is self-contained in `src/plugins/<task_type>/` with its own generator, parser, and evaluator.
 
