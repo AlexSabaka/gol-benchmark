@@ -2,6 +2,71 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.23.0] - April 16, 2026
+
+### fancy_unicode — Fancy Unicode Normalization Plugin (20th benchmark)
+
+New benchmark plugin testing LLM ability to recognise and decode decorative Unicode encodings — math-script bold/italic/monospace, fullwidth, small caps, superscript/subscript, circled, squared, negative-squared, negative-circled, and combining-dot script — and to follow instructions embedded in the decoded text. Unlike `encoding_cipher` (which labels the encoding scheme explicitly), this plugin presents decorated text as-is. The model must identify the Unicode style on its own. This surfaces failure modes specific to each Unicode family and reveals world-knowledge bypass behaviours.
+
+**Note:** `fancy_unicode` was previously registered in `_LEGACY_TASK_TYPES` in `src/stages/analyze_results.py` and `src/web/reanalyze.py` (added in v2.19.0 when the earlier skeleton was removed). Now that the plugin is fully implemented and auto-discovered by `PluginRegistry`, **`"fancy_unicode"` should be removed from `_LEGACY_TASK_TYPES`** to avoid it appearing twice in task-type inference. Tracked as TD-092.
+
+#### Plugin architecture
+
+- **`families.py`** — 12 encoding family codepoint mapping tables; `encode_text()`, `decode_to_ascii()`, coverage metadata; `UPPERCASE_ONLY_FAMILIES` + `TIER1_FAMILIES` sets; `text_covered_by()` / `word_covered_by()` coverage predicates used for pool filtering at generation time
+- **`generator.py`** — `decode_only` and `decode_and_act` task modes; per-family coverage filtering so every alphabetic character has a codepoint; reuses `encoding_cipher`'s `words_en.txt` pool for `decode_and_act` (with fallback inline list); length-tiered sentence fragment pool for `decode_only` (short 3–8 w, medium 8–20 w, long 20–40 w); `_pick_valid_family()` retry loop ensures a non-empty pool before committing to a family
+- **`parser.py`** — 10-strategy end-first parser; refusal and runaway sentinels detected before extraction; `_try_normalized_first_line` handles models that echo the encoded answer in the first line (Tier-3 emoji blocks + small caps); `_is_explanation_line` + `_try_content_block` handle multi-line answers with trailing font/encoding commentary; `_LAST_WORD_STOPWORDS` prevents instruction-fragment words from being returned as the response word
+- **`evaluator.py`** — 7-type failure taxonomy; `_plaintext_evidence()` heuristic (40% word-overlap threshold) distinguishes genuine decoding from world-knowledge bypass; `decode_to_ascii()` applied to raw response to catch models that echo the answer still encoded; `aggregate_results()` primary output is `by_family` (per-family accuracy + rate fields) — the research-facing breakdown
+- **`i18n.yaml`** — EN-only 3-style prompt templates; encoding family name deliberately absent from all templates
+
+#### Encoding families (12, 3 tiers)
+
+| Tier | Families | Coverage |
+| --- | --- | --- |
+| 1 — full A–Z a–z | `math_script_bold`, `math_italic`, `math_monospace`, `fullwidth` | 52/52 codepoints |
+| 2 — partial | `small_caps` (24/26), `superscript` (21/26), `subscript` (17/26), `circled` (full) | varies |
+| 3 — uppercase only / combining | `squared`, `negative_squared`, `negative_circled`, `dotted_script` | A–Z only; input uppercased |
+
+#### Task modes
+
+- **`decode_only`** — present an encoded sentence fragment; model must identify the style and return the plain text
+- **`decode_and_act`** — present an encoded action instruction; model must decode AND comply, returning a single response word
+
+#### Failure taxonomy (7 types)
+
+| Match type | Meaning |
+| --- | --- |
+| `correct` | Exact match after NFKD + reverse-map normalisation |
+| `bypassed_decode` | `decode_and_act`: correct word, but <40% of plaintext words in response (world-knowledge bypass) |
+| `hallucinated_decode` | `decode_and_act`: wrong word + confident decode claim that doesn't match real plaintext |
+| `paranoid_refusal` | Model refused to process the text |
+| `runaway_refusal` | Response hit `max_tokens` without a parseable answer |
+| `wrong_decode` | Answer extracted but incorrect |
+| `parse_error` | Could not extract any usable response |
+
+#### Parsing strategies
+
+**decode_only:** `boxed` → `labelled_answer` → `bold` → `content_block` → `last_line`
+
+**decode_and_act:** `single_word` → `normalized_first_line` → `boxed` → `labelled_answer` → `labelled_word` → `quoted_word` → `bold_word` → `last_word`
+
+Refusal and runaway sentinels are checked before all extraction strategies.
+
+#### Language support
+
+EN only. Unicode decoration is language-agnostic at the codepoint level; multilingual extension is possible but non-trivial due to coverage gaps in non-Latin scripts (see TD-092).
+
+#### Files added
+
+- [src/plugins/fancy_unicode/\_\_init\_\_.py](src/plugins/fancy_unicode/__init__.py) — plugin class + auto-discovery
+- [src/plugins/fancy_unicode/families.py](src/plugins/fancy_unicode/families.py) — 12 encoding family tables + encode/decode
+- [src/plugins/fancy_unicode/generator.py](src/plugins/fancy_unicode/generator.py) — test case generation (2 modes, 3 length tiers)
+- [src/plugins/fancy_unicode/parser.py](src/plugins/fancy_unicode/parser.py) — 10-strategy end-first parser
+- [src/plugins/fancy_unicode/evaluator.py](src/plugins/fancy_unicode/evaluator.py) — 7-type failure taxonomy
+- [src/plugins/fancy_unicode/i18n.yaml](src/plugins/fancy_unicode/i18n.yaml) — EN prompt templates (3 styles)
+- [src/plugins/fancy_unicode/README.md](src/plugins/fancy_unicode/README.md) — plugin reference doc
+
+---
+
 ## [2.22.1] - April 16, 2026
 
 ### encoding_cipher — Parser Overhaul (annotation-data-driven)

@@ -1,0 +1,21 @@
+# Fancy Unicode Normalization plugin — decode decorative Unicode and respond.
+#
+# Variables: {instruction}, {encoded_text}
+#
+# The {instruction} variable carries mode-specific framing injected by the
+# generator (decode_only vs decode_and_act).  The encoding family name is
+# deliberately NOT included — the model must recognize the encoding on its own.
+#
+# The body is composed with shared style wrappers from styles.yaml.
+# All three styles are domain-specific and fully overridden.
+
+body:
+  en: "{instruction}\n\n{encoded_text}"
+
+overrides:
+  minimal:
+    en: "{instruction}\n\n{encoded_text}\n\nAnswer: "
+  casual:
+    en: "Hey, quick one — {instruction}\n\n{encoded_text}"
+  linguistic:
+    en: "I have a task for you.\n\n{instruction}\n\nHere is the text:\n\n{encoded_text}\n\nPlease provide your answer."
