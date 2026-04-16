@@ -13,7 +13,7 @@ This package provides:
 - Utilities (src.utils)
 """
 
-__version__ = "2.19.0"
+__version__ = "2.21.0"
 __author__ = "GoL Benchmark Team"
 
 # Import subpackages for convenient access

@@ -2,6 +2,262 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.21.0] - April 16, 2026
+
+### Improvement Report — Agent-Facing Seed Artifact (v2.1 → v2.4 additive iterations)
+
+Four rapid, additive iterations on `src/web/human_review_aggregator.py` and the corresponding `/report` payload, driven by "read this JSON as if you were about to refactor the carwash parser" critical reviews. Each iteration kept `format_version` on a 2.x additive track — legacy consumers of v2.0 payloads continue to parse; new fields are all optional. The report's stated purpose is now explicit: it is a seed artifact for coding-agent tasks that refactor plugin parsers, so fields are named and structured for that consumer.
+
+`format_version` went from `"2"` (v2.20.0) → `"2.1"` → `"2.2"` → `"2.3"` → `"2.4"` across this release.
+
+#### Improvement Report v2.1 — Span context + regex test harness
+
+- **Context window widened 24 → 120 chars** in both `_extract_context_windows` (`src/web/api/human_review.py`) and the aggregator's backfill mirror `_build_context_windows`. 24 chars was too narrow to hold common prefix phrases like `**Final answer:** ` + the span itself
+- **Containing sentence per span** — new `sentence` field on every `example_spans[]` row; computed by walking back/forward from the char range until `[.!?\n]`
+- **`structural_ratios` per span group** — seven categorical signals averaged across the group: `line_start`, `paragraph_start`, `list_marker`, `label_colon`, `bold_wrap`, `quote_wrap`, `answer_label_match` (multilingual via `build_answer_label_re(language)`). A group with 90% `label_colon` + 90% `answer_label_match` is a trivially labelled answer
+- **`prefix_anchors` per span group** — top 5 trailing 1/2/3-gram phrases of `before`, with `count`, `ratio`, stop-word filtering (`to`, `is`, `**`, `_`, …), suppression of shorter anchors subsumed by longer at equal count
+- **`regex_test` harness** — every candidate regex run against every example's full context (`before + text + after`, or `sentence` if longer); emits `match_rate`, `matched_count`, `total`; compile errors surface as `match_rate: -1.0` instead of raising
+- **Sidecar case records enriched** — `save_annotation` now persists `language`, `user_style`, `system_style`, `parse_strategy`, `parse_confidence`, `model_name`, `context_windows` on every case record. Legacy sidecars pre-v2.20.1 backfill from source result payloads via `result_payloads_by_file` parameter to `build_report`
+
+#### Improvement Report v2.2 — Context-anchored regex + model answer distribution
+
+- **Flipped the auto-regex semantics.** The v2.0 generator used span text as anchor (`walk\s+(\w+)`) — this captures what comes *after* the answer, which is useless. v2.2 anchors on the shared `before` prefix + format-aware capture (`(?i)\*\*answer:\*\*\s*\*\*([^*\n]+?)\*\*`): "find the label, grab the answer"
+- **Regex `kind` taxonomy** — candidates now carry one of `context_anchor` (primary: before-prefix + format capture), `format_only` (bare format wrapper for distinctive formats — bold/italic/boxed/strikethrough/header), `text_pattern` (legacy span-text LCP fallback for when `before` context is sparse)
+- **Format-aware capture shape** (`_format_capture`) — `bold` → `\*\*([^*\n]+?)\*\*`, `italic` → `(?:_([^_\n]+?)_|\*([^*\n]+?)\*)`, `strikethrough` → `~~([^~\n]+?)~~`, `header` → `(?:^|\n)#{1,6}\s+([^\n]+)`, `boxed` → `\\boxed\{([^{}\n]+)\}`, `label` → `([^.\n]+?)(?:[.\n]|$)`, `plain` → `(\w+)`
+- **Trailing-marker strip** — when the top prefix anchor ends with the format's opening marker (e.g. bold's `**`), strip it before building the pattern so the capture's own opening marker isn't duplicated
+- **All patterns case-insensitive by default** via inline `(?i)` flag
+- **Inline parser-vs-annotator diff per example** — each `example_spans[]` row carries `parser_extracted` + `parser_match_type`. Frontend renders as `[parser] drive → annotator: walk [naive_trap]` below the example
+- **`label_taxonomy` per span group** — breaks `answer_label_match_ratio` into specific labels: `[{label: "answer", count: 6}, {label: "recommendation", count: 3}]` across 20+ multilingual label words
+- **`model_answer_distribution`** — top-level histogram of what the *model* actually answered (markdown-stripped, lowercased). Complements `by_expected` which is uniform in single-answer plugins like carwash
+- **New span formats: `italic`, `strikethrough`, `header`** — frontend `autoFormat` detects `_walk_` / `*walk*` (word-boundary to avoid identifiers like `my_var`) / `~~walk~~` / leading `# heading`; `FORMAT_TO_STRATEGY` maps to `italic_keyword` / `strikethrough_keyword` / `header_line`
+- **Confidence reshaped** — `high` when top prefix-anchor ratio ≥ 0.5 AND group size ≥ 3; `medium` when ratio ≥ 0.25 OR a `format_only` candidate emits; `low` otherwise
+
+#### Improvement Report v2.3 — Capture quality + parser-span alignment + data quality
+
+- **Capture quality metrics** — every `regex_test[]` row now also carries `capture_exact_rate` (fraction where `match.group(1)` equals annotated span text, normalized), `capture_contains_rate` (fraction where capture aligns with span via `_is_aligned`: exact or single-word inclusion), and `sample_captures` (up to 3 concrete `{case_id, captured, annotated, exact_match, aligned}` rows). Solves the "match_rate 1.0 but regex captures wrong substring" blind spot
+- **Parser-span alignment metric** — top-level `parser_span_alignment` splits "parser missed" into `aligned_with_parser` (parser extracted correctly, annotator just used spans-only workflow without marking `parser_ok`), `misaligned_with_parser` (true parser failure — extracted wrong token), and `no_parser_output` (parse_error, nothing extracted). Includes `sample_misaligned` — up to 5 concrete `{case_id, parser_extracted, annotated_spans, parser_match_type}` rows. Summary gains mirrored `parser_missed_aligned` / `parser_missed_misaligned` / `parser_missed_no_output` breakdowns
+- **`_is_aligned` / `_normalize_answer_text` helpers** — alignment semantics: exact normalize match, or single-word parser output appearing as whole word in multi-word span, or symmetric. Different stems (`walking` vs `walk`) count as misaligned — surfacing those differences is the whole point
+- **Data quality warnings** — new top-level `data_quality.warnings[]` auto-detects: `no_parse_strategy` (≥90% cases have `parse_strategy="unknown"`), `uniform_language` / `uniform_system_style` / `uniform_user_style` (single-bucket axes), `uniform_expected` (all cases share expected answer)
+- **Single-bucket axis suppression** — when `language_breakdown` / `config_breakdown` / `user_style_breakdown` would have exactly one bucket, they are **omitted from the output JSON entirely** and listed in `data_quality.suppressed_sections`. Keeps signal-dense
+- **Frontend: collapsible amber banner** for `data_quality.warnings`, sky-toned `ParserSpanAlignmentCallout` with stacked-bar + sample-misaligned disclosure on Summary tab, `ParserMissedStat` inline split on the "Parser missed" card, `CaptureQualityPill` on every regex test row, click-to-expand sample captures with ✓/~/✗ alignment icons
+
+#### Improvement Report v2.4 — Merged disjunction + anchor types + low-support filter
+
+- **`_merged_label_disjunction`** — when a span group has ≥2 distinct `label`-type atoms (e.g. `recommendation:` + `conclusion:`), emits a single `(?i)(?:atom1|atom2)\s*[:：]\s*{format_capture}` candidate with `kind: "merged_label_disjunction"` and `participating_atoms: [...]`. On the Haiku carwash sample this synthesizes what were two separate ~50%-match candidates into one ~100% candidate — the single highest-leverage v2.4 change
+- **Atom extraction** — `_label_atom` strips trailing `:` then splits on `. ` / `\n` / `- ` / `* ` to handle anchors like `choice. recommendation:` → atom `recommendation`
+- **Anchor type classification** — every `prefix_anchors[]` row now carries `type: "label" | "format" | "phrase"`. `label` = ends with `:`/`：`; `format` = ends with markdown markers (`**`, `__`, `~~`, `*`, `_`, `` ` ``) or emoji glyphs (`✅`, `✓`, `➜`, `→`, `▶`, `➤`, `•`); `phrase` = flowing text. Secondary sort by type rank (label > format > phrase) at equal count
+- **Post-harness low-support filter (`_filter_candidates`)** — drops candidates where `support < 2 AND support/group_size < 0.1`, or `match_rate < 0.1 AND capture_contains_rate < 0.1`. Always keeps `format_only` (safety net) and compile errors (diagnostic signal)
+- **Regex candidate cap bumped 3 → 4** so the merged disjunction doesn't push out `format_only` + `text_pattern` fallbacks
+- **`model_answer_variants`** — per normalized bucket, top 10 raw text variants with counts. Preserves `Walk` / `WALK` / `**Walk**` / `Walk to the carwash` separately under the normalized `walk` bucket so the agent sees case + markdown + phrasing variation inside each answer class. `model_answer_distribution` kept unchanged for backwards-compat
+- **Frontend: anchor type chip** (emerald label / amber format / muted phrase) left of each phrase in `PrefixAnchorsTable`; sky-toned badge for `merged_label_disjunction` kind; `ModelAnswerRow` expansion reveals raw variant breakdown when the bucket has >1 variant
+
+#### Layout polish (shipped with v2.1 and v2.2)
+
+- **Dialog auto-fit** — `max-w-4xl` → `w-fit max-w-[min(95vw,1200px)]`; no more truncated tabs on wide content
+- **Tab row** — `flex-wrap` → `flex-nowrap overflow-x-auto` with `whitespace-nowrap shrink-0` per trigger; all 9 tabs stay on one line at any viewport width
+- **Summary grid** — rebalanced from 7-card 3-col orphan to 8-card 4-col layout; added `Parser accuracy` card (inverse of FPR callout)
+- **9 tabs** — Summary / Spans / Strategy / Languages / Misses / Answers (v2.2 new) / Anchors / Ordering / Classes / Notes
+
+#### parse_strategy persistence — Upstream fix enabling `strategy_breakdown`
+
+Before v2.21.0, `parse_strategy` was being computed by plugin parsers but only persisted for Linda Fallacy — all other plugins dropped the value into `/dev/null`, leaving `strategy_breakdown` stuck at `{unknown: ...}`. Fixed across three execution paths:
+
+- `src/stages/run_testset.py` — `parse_answer_via_plugin` now returns the full `ParsedAnswer` instead of `.value`; caller splits into `output.parse_strategy` and `output.parse_confidence`
+- `src/web/jobs.py` — `output` dict now includes `parse_strategy` + `parse_confidence` for Web UI execution
+- `src/web/reanalyze.py` — reanalysis path now writes the captured strategy back to the output dict
+
+#### Tests — 68 passing (up from 22 at v2.20.0)
+
+- **v2.20.0 baseline**: 22 tests
+- **+10 v2.1 tests** — format version, prefix anchors, structural ratios (line_start / bold_wrap / label_colon / answer_label_match), sentence capture, regex harness match_rate, bad-regex safety, 120-char context
+- **+9 v2.2 tests** — anchor regex match rate, format-only safety net, label taxonomy breakdown, stop-word filter, parser_extracted surfacing, model answer markdown-strip, v2.2 format version
+- **+9 v2.3 tests** — `_is_aligned` semantics, parser_span_alignment split, summary metric split, capture_exact_rate + capture_contains_rate + sample_captures, data_quality `no_parse_strategy`, single-bucket suppression, multi-bucket preservation, uniform_expected, bad-regex capture-quality fields
+- **+9 v2.4 tests** — `_classify_anchor` all types, `prefix_anchors.type`, label-before-phrase sort at equal count, merged disjunction with 2 atoms, merged disjunction skipped for single atom, low-support filter drops + keeps format_only, model_answer_variants preserves raw text, variants top-10 cap, v2.4 format version
+
+#### Files touched
+
+- `src/web/human_review_aggregator.py` — grew from 821 → ~1,500 lines (TD-043 tracks the split candidacy)
+- `src/web/api/human_review.py` — `_CONTEXT_WINDOW_CHARS` 24 → 120, `_extract_sentence`, `_extract_context_windows` sentence field
+- `src/web/jobs.py` + `src/stages/run_testset.py` + `src/web/reanalyze.py` — `parse_strategy` / `parse_confidence` plumbing
+- `frontend/src/types/review.ts` — `StructuralRatios`, `PrefixAnchor` (+ `type`), `RegexTestResult` (5 kinds + capture quality), `RegexCaptureSample`, `LabelTaxonomyRow`, `ModelAnswerBucket` + variants, `ParserSpanAlignment`, `DataQuality`
+- `frontend/src/components/review/improvement-report-dialog.tsx` — 9 tabs, `DataQualityBanner`, `ParserSpanAlignmentCallout`, `ParserMissedStat`, `AccuracyStat`, `StructuralSignalsRow`, `PrefixAnchorsTable` (type-chipped), `LabelTaxonomyBlock`, `RegexTestRow` (expansion + capture pill), `CaptureSampleRow`, `ModelAnswersTab` + `ModelAnswerRow`
+- `frontend/src/components/review/annotation-dock.tsx` — `autoFormat` gains italic / strikethrough / header detection + widened multilingual label vocabulary
+
+### Job Persistence & Pause/Resume
+
+Benchmark execution jobs now survive server restarts and can be paused mid-run and resumed from a checkpoint.
+
+#### Persistence Layer (`src/web/job_store.py`)
+
+New `JobStore` class is the single place all job JSON I/O happens — swap the class body to change backends (NoSQL, Redis, etc.) without touching any other file.
+
+- **Storage**: `jobs.json` at project root (path configurable via `GOL_JOBS_FILE` env var)
+- **Format**: `{"version": 1, "jobs": {id: job_record, …}}`
+- **Atomic writes**: temp file in same dir → `os.replace` — no partial-write corruption
+- **Startup recovery**: `job_manager.load_from_store()` called from FastAPI lifespan; PENDING/RUNNING jobs found → marked FAILED ("Interrupted by server restart"); PAUSED jobs survive and remain resumable
+- **Shutdown persistence**: `job_manager.save_to_store()` on lifespan exit; each terminal transition also calls `_persist_job()` immediately so history is safe even without a clean shutdown
+- Execution params (`provider`, `ollama_host`, `temperature`, `no_think`, `api_key`, `api_base`) now stored on `Job` so resume can recreate an identical worker without user re-input
+
+#### Pause / Resume
+
+Workers cooperatively pause between test cases (no forced kill — current test case always completes cleanly).
+
+- **`PAUSED`** added to `JobState`; not in `TERMINAL_JOB_STATES` — paused jobs can be resumed
+- **`POST /api/jobs/{id}/pause`** — sets `pause_requested` flag in shared multiprocessing dict; worker checks it before each test case; on pause: saves `partial_<job_id>.json.gz` with all completed results + running stats, returns `{"status": "paused", "paused_at_index": N}`
+- **`POST /api/jobs/{id}/resume`** — paused job marked CANCELLED (superseded); new job submitted inheriting all params + `start_index=paused_at_index`; on completion merges partial + new results into final file, deletes partial
+- Judge jobs: cancel-only (multi-file batching makes checkpointing significantly more complex — TD-086)
+
+#### Jobs Page (frontend)
+
+- `JobState` type gains `"paused"`; `Job` interface gains `paused_at_index` / `partial_result_path`
+- Jobs table: amber **Pause** button (PauseCircle) on running inference jobs; green **Resume** button (PlayCircle) on paused jobs
+- Paused progress bar renders in amber with checkpoint position (`paused_at_index / total`)
+- `usePauseJob()` / `useResumeJob()` hooks; "Paused" filter facet in state faceted filter
+- `job-state-badge.tsx`: amber variant for paused state
+
+#### Known Limitations (see TECHDEBT)
+
+- TD-085: `api_key` / `api_base` stored plaintext in `jobs.json` — add file to `.gitignore` (done in this release), restrict filesystem permissions
+- TD-086: Resume produces a second job row in the UI (paused job shows as "Cancelled — superseded")
+- TD-087: `partial_<job_id>.json.gz` orphaned if server crashes between pause and resume completion
+
+#### Files modified
+
+- `src/web/job_store.py` — **new file** (~100 lines)
+- `src/web/jobs.py` — `JobState.PAUSED`, `Job` dataclass (new fields + `to_storable_dict` / `from_stored_dict`), `_pause_requested()`, worker `start_index` + `partial_result_path` params, `pause()` / `resume()` / `load_from_store()` / `save_to_store()` / `_persist_job()` methods
+- `src/web/api/execution.py` — `POST /{id}/pause`, `POST /{id}/resume`
+- `src/web/app.py` — FastAPI `lifespan` context manager (startup/shutdown hooks)
+- `.gitignore` — `jobs.json` + `partial_*.json.gz` added
+- `frontend/src/types/job.ts`, `frontend/src/api/jobs.ts`, `frontend/src/hooks/use-jobs.ts` — paused state, pause/resume API + hooks
+- `frontend/src/components/job-state-badge.tsx`, `frontend/src/pages/jobs.tsx` — pause/resume UI
+
+---
+
+## [2.20.0] - April 15, 2026
+
+### Human Review & Parser Annotation Tool
+
+A new first-class workflow for human labelling of model responses, turning every annotated case into a parser test case in waiting. Designed for iterative parser improvement: the human labels where the answer is (or why there isn't one) and the system aggregates labels into actionable artifacts — regex candidates, strategy ordering hints, and failure taxonomy summaries.
+
+#### New `/review` Page — Editorial Two-Column Workspace
+
+- **Entry points** — from the Results page: `Review manually` toolbar button (plugin-gated: enabled only when every selected file shares one plugin), `Verify Manually` per-row dropdown item, and `Improvement Report` toolbar button (enabled when ≥1 selected file has annotations)
+- **Layout** — sticky progress header + two-column body (stimulus ~35%, response ~65%) + sticky classification footer. Keyboard-first and deliberately chrome-light so the annotator reads rather than navigates
+- **Progress** — `N annotated · M / total` header counter; segmented progress bar (emerald fill = saved, slim primary marker = current position); retry badge for unsaved drafts
+- **Match-type presets** — inline filter chips (`All` / `Incorrect only` / `Parse errors` / `Mismatches`) persisted in URL via `?match_types=`
+- **Skip toggles** — `Skip empty` (default ON) and `Skip already-correct` (default OFF), both persisted via `useLocalStorageState`
+- **Deep linking** — `/review?files=a.json.gz,b.json.gz&case_id=xyz&match_types=parse_error,mismatch`. Bare `/review` (no files) redirects to `/results`
+
+#### Annotation Mechanics
+
+- **One-click word marking** — hovering a word in the response shows a primary-tinted underline; clicking commits it as an answer span immediately with auto-detected position and format. No dock round-trip required
+- **Drag-select + sticky dock** — multi-word phrases flow through a persistent dock between the response and note areas; `Mark as Answer` primary action + `⋯` disclosure for Position/Format overrides (both auto-computed by default). Selection survives misclicks — no more vanishing toolbars
+- **Marked-span removal** — clicking an existing `<mark>` removes the annotation; also exposed as removable chips below the response
+- **Parser-match highlight** — the parser-extracted string is rendered inline with an amber dashed underline so annotators can see *why* the parser said what it said; `Crosshair` "Jump to parser match" button scrolls to it with a brief flash
+- **Scroll reset** — response panel always opens at the top on case change (fixes the v1 bug where cases loaded mid-paragraph)
+- **Scroll shadows** — linear-gradient fades at top/bottom of the response container so content continuation is never silently hidden
+
+#### Response Classification
+
+- **Seven response classes** — `hedge`, `gibberish`, `refusal`, `language_error`, `verbose_correct`, `parser_ok`, and **`parser_false_positive`** (new)
+- **`parser_false_positive`** uniquely coexists with answer spans — the span is the evidence for the correct answer, the verdict is the diagnosis. Signals the parser confidently extracted a distractor
+- **Keycap buttons** — `<kbd>` prefix (`1`-`7`) on each classification button; active verdict rendered with `/30` fill, solid border, and a `ring-1 ring-current/40` halo so it's never ambiguous which one is picked
+- **Verdict pill** — compact footer pill (`Current verdict: [Hedge ✕]`) with a one-click × to clear; always visible regardless of whether the buttons row has wrapped off-screen
+- **Spans coexist with verdicts** — the invariant was relaxed so `verbose_correct` + span, `language_error` + span, and `parser_false_positive` + span are all valid. Unlocks cases where the parser grabbed the wrong occurrence of a recoverable answer
+
+#### Parser-Disagreement Awareness
+
+- **Muted "correct" badge** — the match-type chip renders in neutral tones with `· unverified` suffix until the annotator explicitly engages. The green `correct` pill can no longer silently mislead
+- **Strike-through verdict badge** — when `response_class === parser_false_positive`, the match-type chip renders `~~correct~~ → false-positive` in fuchsia
+- **Persistent disagreement callout** — rose-tinted alert between the badge row and the response body appears whenever the annotator's spans don't contain the parser's extracted string; one-click `Flag as false-positive` button. When flagged, turns fuchsia: `✓ Parser false-positive confirmed`
+- **Auto-suggest toast** — fires on the *first* contradicting span only (not every subsequent one) so multi-span cases don't spam notifications
+
+#### Machine Translation (`deep-translator`)
+
+- **Backend module** — `src/web/translation.py` wraps the `deep-translator` PyPI package. Provider switchable via `TRANSLATOR_PROVIDER` env var (`google` default = zero-config, `libre` via `LIBRETRANSLATE_URL` + `LIBRETRANSLATE_API_KEY`, `mymemory` as fallback). Result-cached via `functools.lru_cache` keyed by SHA-256(text) + source + target; short-circuits when source == target
+- **`POST /api/human-review/translate`** — thin endpoint, 400 on empty text, 503 on provider failure
+- **Translation panels** — split components (`TranslationTrigger` + `TranslationContent` + `useTranslationPanel` hook) so the button can live in a compact header while the translated text renders in a dedicated area below the original. Deliberately `select-none` — annotations refer to original char offsets, so the translation must never be an annotation target
+- **Session-wide target language** — 🌐 selector (EN/ES/FR/DE/ZH/UA) in the review header, persisted via `useLocalStorageState`. Auto-hides when source equals target
+- **Caching** — React Query (`staleTime: Infinity`) + backend LRU so toggling panels is free after first fetch. Graceful error surface with inline retry
+
+#### Annotation File Format & Lifecycle
+
+- **Sidecar layout** — gzipped JSON at `{result_dir}/{result_file_stem}_annotations.json.gz`, parallel to the existing judge-file convention. Atomic writes via temp file + `os.replace`
+- **Schema** — `meta` block (plugin, counts, timestamps) + `cases` map keyed by `case_id`. Each case records `annotation.spans[]`, `annotation.response_class`, `annotator_note`, plus parser snapshot (`parser_match_type`, `parser_extracted`, `expected`) so the file is self-describing
+- **Invariant** — at least one of `spans` / `response_class` must be populated; both may coexist (relaxed from pre-release `XOR` rule)
+- **`has_annotations` flag** — surfaced on every `/api/results` summary. Renders a `PenLine` badge next to annotated rows and gates the `Remove annotations` / `Improvement report` actions
+- **`DELETE /api/human-review/annotations/{file}`** — idempotent. Returns `{deleted: true/false}`; the result file itself is untouched. Frontend shows a confirmation dialog before calling
+
+#### Improvement Report
+
+- **Module** — `src/web/human_review_aggregator.py` is a pure-function report builder (no I/O). Testable in isolation
+- **Four sections**:
+  1. **Session summary** — totals: annotated / skipped / parser was correct / parser missed extractable / true unparseable
+  2. **Span analysis** — grouped by `(position, format)`; per group: count, up to 5 example spans, auto-generated regex candidates (longest common word prefix → `anchor\s+(\w+)`; fallback disjunction of top-2 2-word prefixes; capped at 3 candidates), suggested strategy via format → strategy map, `missed_by_existing` flag
+  3. **Ordering hints** — fires when ≥4 cases share `position=end, format=plain` AND the parser missed them → recommend promoting `end_sentences` over `full_text`
+  4. **Response class breakdown** — counts per class plus `parser_missed = number of cases with spans`
+- **`parser_false_positive` in the summary** — counts as `parser_missed_extractable` (the parser landed on a distractor; the real answer is elsewhere)
+- **Modal UI** — `Dialog` on the Results page with `Tabs` (Summary / Spans / Ordering / Classes). Per-regex copy buttons, split `Copy JSON` / `Download JSON` footer buttons. Loading skeleton + graceful error state
+
+#### API Endpoints
+
+All new endpoints under `/api/human-review/`:
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/cases` | Load cases for review. Query params: `file_ids`, `skip_correct`, `skip_empty`, `match_types` |
+| `POST` | `/annotate` | Upsert a single-case annotation atomically. Rejects empty/both-empty payloads (400) and unknown classes (400) |
+| `GET` | `/annotations/{result_file_id}` | Full sidecar payload or `{meta: {}, cases: {}}` when missing |
+| `DELETE` | `/annotations/{result_file_id}` | Idempotent sidecar removal (`{deleted: true/false}`) |
+| `POST` | `/report` | Aggregate annotations into an improvement report |
+| `POST` | `/translate` | Translate arbitrary text via the configured provider |
+
+Router registered in `src/web/api/__init__.py` with `prefix="/human-review"`; route ordering honors the CLAUDE.md rule (specific routes before any `{filename}` catch-alls).
+
+#### Frontend Architecture
+
+- **Pages** — `frontend/src/pages/review.tsx` (lazy-loaded route)
+- **Components** (all under `frontend/src/components/review/`):
+  - `stimulus-panel.tsx` — left column (user prompt + collapsible system prompt with one-line preview)
+  - `response-panel.tsx` — right column with word-level interactive rendering (`classifyChars` + `renderWords`)
+  - `annotation-dock.tsx` — sticky dock for drag-selected pending spans + note textarea
+  - `classification-bar.tsx` — seven keycap-prefixed verdict buttons
+  - `case-progress.tsx` — header with progress bar, filter chips, target-language selector
+  - `verdict-pill.tsx` — compact current-verdict chip
+  - `translation-panel.tsx` — split trigger/content/hook for on-demand translation
+  - `improvement-report-dialog.tsx` — modal with tabbed report
+- **Types** — `frontend/src/types/review.ts` (`ReviewCase`, `Annotation`, `AnnotationSpan`, `ResponseClass`, `ImprovementReport`, `TranslateRequest`, `TranslateResponse`, `DeleteAnnotationsResponse`)
+- **Hooks** — `frontend/src/hooks/use-review.ts` (`useReviewCases`, `useSaveAnnotation`, `useAnnotations`, `useImprovementReport`, `useDeleteAnnotations`, `useTranslation`)
+- **Route** — `/review` lazy-loaded in `frontend/src/App.tsx`; `/review` without `?files=` redirects to `/results`
+
+#### Results Page Integration
+
+- **New toolbar buttons** — `Review manually` (`PenLine` icon, selection-count badge, plugin-gated) and `Improvement Report` (`FileBarChart` icon, gated on `has_annotations`)
+- **New row-menu items** — `Verify Manually` (between `View Details` and `Rerun`) and `Remove Annotations` (destructive, rendered only when `row.original.has_annotations`)
+- **Row badge** — small `PenLine` icon inside a primary-tinted pill next to the model name when the row has annotations
+- **Confirm dialog** — destructive `Dialog` for Remove Annotations lists the filename and irreversibility warning; mirrors the Delete-result flow
+
+#### Keyboard Shortcuts (Review Page)
+
+Only fire when focus is outside form controls and contentEditable regions.
+
+| Key | Action |
+|-----|--------|
+| `←` / `→` | Navigate to previous / next case (Next also saves dirty drafts) |
+| `1` – `7` | Classify as Hedge / Gibberish / Refusal / Language Error / Verbose Correct / Parser OK / Parser False-positive |
+| `Space` or `Enter` | Commit pending drag-selection to the annotation dock |
+| `S` | Explicit Skip (advance without saving) |
+
+#### Tests
+
+- **`tests/test_human_review.py`** — 22 tests covering `_auto_regex` (anchor, disjunction, empty, caps-at-3, single-char), `build_report` sections, `/cases` filtering (empty-skip, correct-skip, `match_types`), annotate round-trip + invariant rejections, `parser_false_positive` coexistence, `has_annotations` flag on the results summary, delete idempotency + 404, translate endpoint (stubbed), empty rejection, same-lang noop
+
+#### Dependencies
+
+- **`deep-translator==1.11.4`** added to `requirements.txt` — thin wrapper around Google / LibreTranslate / MyMemory providers. Zero API key required for the default Google provider; override via `TRANSLATOR_PROVIDER` env
+
+---
+
 ## [2.19.0] - April 14, 2026
 
 ### Backend Code Simplification & Cleanup

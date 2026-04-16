@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router"
 import { type ColumnDef, type Table } from "@tanstack/react-table"
 import { toast } from "sonner"
-import { Ban, Eye, Loader2 } from "lucide-react"
+import { Ban, Eye, Loader2, PauseCircle, PlayCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,21 +10,23 @@ import { Progress } from "@/components/ui/progress"
 import { DataTable } from "@/components/data-table/data-table"
 import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
 import { PageHeader } from "@/components/layout/page-header"
-import { useJobs, useCancelJob } from "@/hooks/use-jobs"
+import { useJobs, useCancelJob, usePauseJob, useResumeJob } from "@/hooks/use-jobs"
 import { formatDuration, formatTimestamp, basename } from "@/lib/utils"
 import type { Job } from "@/types"
 
 const STATE_OPTIONS = [
   { label: "Pending", value: "pending" },
   { label: "Running", value: "running" },
+  { label: "Paused", value: "paused" },
   { label: "Completed", value: "completed" },
   { label: "Failed", value: "failed" },
   { label: "Cancelled", value: "cancelled" },
 ]
 
-const stateBadge: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string }> = {
+const stateBadge: Record<string, { variant: "default" | "secondary" | "destructive" | "outline"; label: string; className?: string }> = {
   pending: { variant: "outline", label: "Pending" },
   running: { variant: "default", label: "Running" },
+  paused: { variant: "outline", label: "Paused", className: "border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300" },
   completed: { variant: "secondary", label: "Completed" },
   failed: { variant: "destructive", label: "Failed" },
   cancelled: { variant: "outline", label: "Cancelled" },
@@ -34,6 +36,8 @@ export default function JobsPage() {
   const nav = useNavigate()
   const { data: jobs = [], isLoading } = useJobs(true)
   const cancelMut = useCancelJob()
+  const pauseMut = usePauseJob()
+  const resumeMut = useResumeJob()
 
   const columns: ColumnDef<Job>[] = [
     {
@@ -77,8 +81,9 @@ export default function JobsPage() {
         const s = row.original.state
         const b = stateBadge[s] ?? stateBadge.pending
         return (
-          <Badge variant={b.variant} className="gap-1">
+          <Badge variant={b.variant} className={`gap-1 ${b.className ?? ""}`}>
             {s === "running" && <Loader2 className="h-3 w-3 animate-spin" />}
+            {s === "paused" && <PauseCircle className="h-3 w-3" />}
             {b.label}
           </Badge>
         )
@@ -89,7 +94,17 @@ export default function JobsPage() {
       id: "progress",
       header: "Progress",
       cell: ({ row }) => {
-        const { state, progress_current, progress_total } = row.original
+        const { state, progress_current, progress_total, paused_at_index } = row.original
+        if (state === "paused") {
+          const idx = paused_at_index ?? progress_current
+          const pct = progress_total > 0 ? (idx / progress_total) * 100 : 0
+          return (
+            <div className="flex min-w-30 items-center gap-2">
+              <Progress value={pct} className="h-2 flex-1 [&>div]:bg-amber-400" />
+              <span className="text-xs text-muted-foreground whitespace-nowrap">{idx}/{progress_total}</span>
+            </div>
+          )
+        }
         if (state !== "running" && state !== "pending") return <span className="text-muted-foreground">-</span>
         const pct = progress_total > 0 ? (progress_current / progress_total) * 100 : 0
         return (
@@ -119,6 +134,44 @@ export default function JobsPage() {
         const job = row.original
         return (
           <div className="flex items-center gap-1">
+            {job.state === "running" && !job.model_name.startsWith("judge:") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-amber-600 hover:text-amber-700"
+                onClick={() => pauseMut.mutate(job.id, {
+                  onSuccess: () => toast.success(`Pausing job for ${job.model_name}…`),
+                  onError: (err) => toast.error(`Pause failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                })}
+                disabled={pauseMut.isPending && pauseMut.variables === job.id}
+                title="Pause Job"
+              >
+                {pauseMut.isPending && pauseMut.variables === job.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PauseCircle className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            )}
+            {job.state === "paused" && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-green-600 hover:text-green-700"
+                onClick={() => resumeMut.mutate(job.id, {
+                  onSuccess: () => toast.success(`Resuming job for ${job.model_name}`),
+                  onError: (err) => toast.error(`Resume failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                })}
+                disabled={resumeMut.isPending && resumeMut.variables === job.id}
+                title="Resume Job"
+              >
+                {resumeMut.isPending && resumeMut.variables === job.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <PlayCircle className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            )}
             {(job.state === "running" || job.state === "pending") && (
               <Button
                 variant="ghost"

@@ -1,5 +1,5 @@
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query"
-import { fetchJobs, fetchJobStatus, runBenchmark, cancelJob } from "@/api/jobs"
+import { fetchJobs, fetchJobStatus, runBenchmark, cancelJob, pauseJob, resumeJob } from "@/api/jobs"
 import type { RunRequest, Job } from "@/types"
 
 export function useJobs(polling = false) {
@@ -35,6 +35,22 @@ export function useCancelJob() {
   const qc = useQueryClient()
   return useMutation({
     mutationFn: (jobId: string) => cancelJob(jobId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+  })
+}
+
+export function usePauseJob() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) => pauseJob(jobId),
+    onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
+  })
+}
+
+export function useResumeJob() {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: (jobId: string) => resumeJob(jobId),
     onSuccess: () => qc.invalidateQueries({ queryKey: ["jobs"] }),
   })
 }

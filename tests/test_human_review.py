@@ -1,0 +1,1445 @@
+"""Tests for the Human Review annotation feature.
+
+Covers:
+  * `_auto_regex` in the aggregator (anchor, disjunction, empty-safety)
+  * `build_report` section shape on a synthetic annotation set
+  * Router invariants (`POST /annotate` 400s on bad invariants)
+  * End-to-end sidecar round-trip
+  * Mixed-plugin `/cases` flag
+"""
+from __future__ import annotations
+
+import gzip
+import json
+import shutil
+from pathlib import Path
+from typing import Any, Dict, List
+
+import pytest
+from fastapi.testclient import TestClient
+
+from src.web.app import app
+from src.web import human_review_aggregator as agg
+from src.web import translation as trans
+from src.web.api import analysis, human_review
+from src.web.api.human_review import _annotation_path
+
+
+client = TestClient(app)
+
+
+# ---------------------------------------------------------------------------
+# _auto_regex
+# ---------------------------------------------------------------------------
+
+
+class TestAutoRegex:
+    def test_empty_examples_returns_empty(self):
+        assert agg._auto_regex([]) == []
+        assert agg._auto_regex(["", "   "]) == []
+
+    def test_common_anchor(self):
+        out = agg._auto_regex(
+            ["you should drive", "you should walk", "you should fly"]
+        )
+        assert out, "expected at least one regex candidate"
+        assert out[0] == r"you\s+should\s+(\w+)"
+
+    def test_disjunction_fallback_no_anchor(self):
+        out = agg._auto_regex(
+            [
+                "i recommend drive",
+                "i recommend walk",
+                "you should run",
+                "you should fly",
+            ]
+        )
+        # Two distinct 2-word prefixes → disjunction.
+        assert any("(?:" in c and "|" in c for c in out), f"expected disjunction, got {out}"
+
+    def test_caps_at_three_candidates(self):
+        examples = [f"some phrase_{i} answer" for i in range(10)]
+        out = agg._auto_regex(examples)
+        assert len(out) <= 3
+
+    def test_ignores_single_char_anchor(self):
+        # "a" alone is not a useful anchor, should fall through.
+        out = agg._auto_regex(["a dog", "a cat"])
+        # Either produces no anchor-form candidate, or picks the bigram fallback.
+        # Crucially: no lone `a\s+(\w+)` pattern.
+        assert all(c != r"a\s+(\w+)" for c in out)
+
+
+# ---------------------------------------------------------------------------
+# build_report
+# ---------------------------------------------------------------------------
+
+
+def _ann_case(
+    case_id: str,
+    spans: List[Dict[str, Any]] = None,
+    response_class: str = None,
+    parser_match_type: str = "parse_error",
+) -> Dict[str, Any]:
+    return {
+        "case_id": case_id,
+        "response_length": 200,
+        "parser_match_type": parser_match_type,
+        "parser_extracted": None,
+        "expected": "drive",
+        "annotation": {
+            "spans": spans or [],
+            "response_class": response_class,
+            "annotator_note": "",
+            "timestamp": "2026-04-15T12:00:00Z",
+        },
+    }
+
+
+def _span(text: str, position: str = "end", fmt: str = "plain") -> Dict[str, Any]:
+    return {
+        "text": text,
+        "char_start": 0,
+        "char_end": len(text),
+        "position": position,
+        "format": fmt,
+    }
+
+
+def test_build_report_produces_four_sections():
+    af = {
+        "meta": {"annotated_count": 6, "skipped_count": 1, "plugin": "carwash"},
+        "cases": {
+            "a": _ann_case("a", spans=[_span("you should drive")]),
+            "b": _ann_case("b", spans=[_span("you should walk")]),
+            "c": _ann_case("c", spans=[_span("you should fly")]),
+            "d": _ann_case("d", spans=[_span("you should drive")]),
+            "e": _ann_case("e", response_class="parser_ok", parser_match_type="correct"),
+            "f": _ann_case("f", response_class="hedge"),
+        },
+    }
+
+    report = agg.build_report([af], source_files=["results_carwash.json.gz"])
+
+    # Section 1: summary
+    s = report["summary"]
+    assert s["total_cases"] == 6
+    assert s["parser_was_correct"] == 1
+    assert s["parser_missed_extractable"] == 4
+    assert s["true_unparseable"] == 1
+
+    # Section 2: one span group at (end, plain) with count=4
+    groups = report["span_groups"]
+    assert len(groups) == 1
+    g = groups[0]
+    assert (g["position"], g["format"]) == ("end", "plain")
+    assert g["count"] == 4
+    assert g["suggested_strategy"] == "last_sentences"
+    assert g["missed_by_existing"] is True
+    # v2.2: with no `before` context in these synthetic spans, the text-pattern
+    # fallback kicks in (legacy behavior) and still produces candidates.
+    assert g["suggested_regex"], "expected at least one regex candidate (text_pattern fallback)"
+    assert any(r["kind"] == "text_pattern" for r in g["suggested_regex"])
+
+    # Section 3: ordering hint fires for ≥4 end/plain + missed
+    assert len(report["ordering_hints"]) == 1
+    assert "end_sentences" in report["ordering_hints"][0]["recommendation"]
+
+    # Section 4: classes
+    c = report["response_classes"]
+    assert c["hedge"] == 1
+    assert c["parser_ok"] == 1
+    assert c["parser_missed"] == 4
+
+
+def test_build_report_handles_empty_inputs():
+    report = agg.build_report([], source_files=[])
+    assert report["summary"]["total_cases"] == 0
+    assert report["span_groups"] == []
+    assert report["ordering_hints"] == []
+
+
+# ---------------------------------------------------------------------------
+# Router invariants + sidecar round-trip
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def fake_result(tmp_path: Path, monkeypatch):
+    """Write a tiny result file into a sandboxed results dir."""
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+
+    data = {
+        "metadata": {},
+        "model_info": {"model_name": "test-model", "provider": "ollama"},
+        "testset_metadata": {"name": "hr_test"},
+        "execution_info": {"duration_seconds": 1.0},
+        "summary_statistics": {},
+        "results": [
+            {
+                "test_id": "carwash_0001",
+                "status": "success",
+                "input": {
+                    "user_prompt": "Walk or drive?",
+                    "system_prompt": "You are pragmatic.",
+                    "task_params": {"task_type": "carwash", "expected_answer": "drive"},
+                    "prompt_metadata": {"language": "en", "user_style": "casual"},
+                },
+                "output": {
+                    "raw_response": "After some thought, you should drive.",
+                    "parsed_answer": None,
+                },
+                "evaluation": {"correct": False, "match_type": "parse_error"},
+            },
+            {
+                "test_id": "carwash_0002",
+                "status": "success",
+                "input": {
+                    "user_prompt": "Walk or drive?",
+                    "system_prompt": "You are pragmatic.",
+                    "task_params": {"task_type": "carwash", "expected_answer": "drive"},
+                    "prompt_metadata": {"language": "en", "user_style": "casual"},
+                },
+                "output": {"raw_response": "", "parsed_answer": None},
+                "evaluation": {"correct": False, "match_type": "parse_error"},
+            },
+        ],
+    }
+    rf = results_dir / "results_test-model_2026-04-15T12-00-00.json.gz"
+    with gzip.open(rf, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+
+    # Patch results-dir lookup for both routers.
+    monkeypatch.setattr(analysis, "_results_dirs", lambda: [results_dir])
+
+    yield rf
+
+    shutil.rmtree(results_dir, ignore_errors=True)
+
+
+def test_cases_endpoint_returns_non_empty_filters_empty(fake_result: Path):
+    res = client.get(
+        f"/api/human-review/cases?file_ids={fake_result.name}&skip_empty=true"
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["total"] == 1  # empty response skipped
+    assert body["mixed_plugins"] is False
+    assert body["plugin"] == "carwash"
+    assert body["cases"][0]["case_id"] == "carwash_0001"
+    assert body["cases"][0]["expected"] == "drive"
+
+
+def test_cases_endpoint_can_disable_skip_empty(fake_result: Path):
+    res = client.get(
+        f"/api/human-review/cases?file_ids={fake_result.name}&skip_empty=false"
+    )
+    assert res.status_code == 200
+    assert res.json()["total"] == 2
+
+
+def test_annotate_roundtrip(fake_result: Path):
+    body = {
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {
+            "spans": [
+                {
+                    "text": "you should drive",
+                    "char_start": 20,
+                    "char_end": 36,
+                    "position": "end",
+                    "format": "plain",
+                }
+            ],
+            "response_class": None,
+            "annotator_note": "",
+        },
+    }
+    res = client.post("/api/human-review/annotate", json=body)
+    assert res.status_code == 200
+
+    # Sidecar file exists + readable
+    ap = _annotation_path(fake_result)
+    assert ap.exists()
+    with gzip.open(ap, "rt", encoding="utf-8") as f:
+        payload = json.load(f)
+    assert payload["meta"]["plugin"] == "carwash"
+    assert payload["meta"]["annotated_count"] == 1
+    assert payload["cases"]["carwash_0001"]["annotation"]["spans"][0]["text"] == "you should drive"
+
+    # /annotations round-trip
+    res2 = client.get(f"/api/human-review/annotations/{fake_result.name}")
+    assert res2.status_code == 200
+    assert "carwash_0001" in res2.json()["cases"]
+
+
+def test_annotate_parser_false_positive_with_span_allowed(fake_result: Path):
+    """v2.20.0 — spans may coexist with a response_class (esp. parser_false_positive)."""
+    body = {
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {
+            "spans": [
+                {
+                    "text": "choose walking",
+                    "char_start": 5,
+                    "char_end": 19,
+                    "position": "end",
+                    "format": "plain",
+                }
+            ],
+            "response_class": "parser_false_positive",
+            "annotator_note": "",
+        },
+    }
+    res = client.post("/api/human-review/annotate", json=body)
+    assert res.status_code == 200
+
+    # Round-trip the case back out.
+    res2 = client.get(f"/api/human-review/annotations/{fake_result.name}")
+    case = res2.json()["cases"]["carwash_0001"]["annotation"]
+    assert case["response_class"] == "parser_false_positive"
+    assert len(case["spans"]) == 1
+
+
+def test_annotate_invariant_neither_populated_rejected(fake_result: Path):
+    body = {
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {"spans": [], "response_class": None, "annotator_note": ""},
+    }
+    res = client.post("/api/human-review/annotate", json=body)
+    assert res.status_code == 400
+
+
+def test_annotate_unknown_response_class_rejected(fake_result: Path):
+    body = {
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {"spans": [], "response_class": "totally_fake", "annotator_note": ""},
+    }
+    res = client.post("/api/human-review/annotate", json=body)
+    assert res.status_code == 400
+
+
+def test_report_endpoint(fake_result: Path):
+    # Create an annotation first.
+    client.post(
+        "/api/human-review/annotate",
+        json={
+            "result_file_id": fake_result.name,
+            "case_id": "carwash_0001",
+            "annotation": {
+                "spans": [
+                    {
+                        "text": "you should drive",
+                        "char_start": 20,
+                        "char_end": 36,
+                        "position": "end",
+                        "format": "plain",
+                    }
+                ],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        },
+    )
+
+    res = client.post(
+        "/api/human-review/report",
+        json={"result_file_ids": [fake_result.name]},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["summary"]["total_cases"] == 1
+    assert body["summary"]["parser_missed_extractable"] == 1
+    assert len(body["span_groups"]) == 1
+
+
+def test_cases_endpoint_match_types_filter(fake_result: Path):
+    """`match_types` query param restricts cases to the requested parser verdicts."""
+    # Both cases have match_type=parse_error, so asking for "mismatch" → 0 results.
+    res = client.get(
+        f"/api/human-review/cases?file_ids={fake_result.name}&skip_empty=false&match_types=mismatch"
+    )
+    assert res.status_code == 200
+    assert res.json()["total"] == 0
+
+    # Requesting "parse_error" returns the expected cases.
+    res2 = client.get(
+        f"/api/human-review/cases?file_ids={fake_result.name}&skip_empty=false&match_types=parse_error"
+    )
+    assert res2.status_code == 200
+    assert res2.json()["total"] == 2
+
+
+def test_build_report_parser_false_positive_counts_as_missed():
+    af = {
+        "meta": {"annotated_count": 1, "skipped_count": 0},
+        "cases": {
+            "a": {
+                "case_id": "a",
+                "response_length": 200,
+                "parser_match_type": "correct",  # parser thought it was right
+                "parser_extracted": "drive",
+                "expected": "drive",
+                "annotation": {
+                    "spans": [
+                        {"text": "choose walking", "char_start": 5, "char_end": 19,
+                         "position": "end", "format": "plain"}
+                    ],
+                    "response_class": "parser_false_positive",
+                    "annotator_note": "",
+                    "timestamp": "2026-04-15T12:00:00Z",
+                },
+            },
+        },
+    }
+    report = agg.build_report([af])
+    assert report["summary"]["parser_missed_extractable"] == 1
+    assert report["summary"]["parser_was_correct"] == 0
+    assert report["response_classes"].get("parser_false_positive") == 1
+
+
+def test_delete_annotations_is_idempotent(fake_result: Path):
+    """DELETE /annotations works whether or not a sidecar exists."""
+    # With no sidecar yet.
+    res = client.delete(f"/api/human-review/annotations/{fake_result.name}")
+    assert res.status_code == 200
+    assert res.json()["deleted"] is False
+
+    # After writing a sidecar via /annotate.
+    client.post(
+        "/api/human-review/annotate",
+        json={
+            "result_file_id": fake_result.name,
+            "case_id": "carwash_0001",
+            "annotation": {"spans": [], "response_class": "parser_ok", "annotator_note": ""},
+        },
+    )
+    ap = _annotation_path(fake_result)
+    assert ap.exists()
+
+    res2 = client.delete(f"/api/human-review/annotations/{fake_result.name}")
+    assert res2.status_code == 200
+    assert res2.json()["deleted"] is True
+    assert not ap.exists()
+
+
+def test_delete_annotations_unknown_file_404(fake_result: Path):
+    res = client.delete("/api/human-review/annotations/not-a-real-file.json.gz")
+    assert res.status_code == 404
+
+
+def test_translate_endpoint_uses_stub(monkeypatch):
+    """`POST /translate` delegates to `src.web.translation.translate`; we stub it
+    to avoid any real network calls during CI."""
+    def fake_translate(text, source_lang=None, target_lang="en"):
+        return trans.TranslationResult(
+            translated=f"[{target_lang}] {text}",
+            provider="test",
+            source_lang=source_lang or "auto",
+            target_lang=target_lang,
+        )
+
+    monkeypatch.setattr(human_review, "translate_text", fake_translate)
+
+    res = client.post(
+        "/api/human-review/translate",
+        json={"text": "hola mundo", "source_lang": "es", "target_lang": "en"},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["translated"] == "[en] hola mundo"
+    assert body["provider"] == "test"
+
+
+def test_translate_rejects_empty(fake_result: Path):
+    res = client.post("/api/human-review/translate", json={"text": "   "})
+    assert res.status_code == 400
+
+
+def test_translation_noop_on_same_lang():
+    """Short-circuit: source == target returns the original text with provider `noop`."""
+    trans.clear_cache()
+    out = trans.translate("hello", source_lang="en", target_lang="en")
+    assert out.translated == "hello"
+    assert out.provider == "noop"
+
+
+def test_has_annotations_flag_on_results_summary(fake_result: Path):
+    # Before any annotation.
+    res = client.get("/api/results")
+    assert res.status_code == 200
+    matching = [r for r in res.json() if r["filename"] == fake_result.name]
+    assert matching and matching[0]["has_annotations"] is False
+
+    # After annotating.
+    client.post(
+        "/api/human-review/annotate",
+        json={
+            "result_file_id": fake_result.name,
+            "case_id": "carwash_0001",
+            "annotation": {"spans": [], "response_class": "parser_ok", "annotator_note": ""},
+        },
+    )
+    res2 = client.get("/api/results")
+    matching2 = [r for r in res2.json() if r["filename"] == fake_result.name]
+    assert matching2 and matching2[0]["has_annotations"] is True
+
+
+# ---------------------------------------------------------------------------
+# v2 enrichment tests (false_positive_rate, breakdowns, confidence, …)
+# ---------------------------------------------------------------------------
+
+
+def _enriched_case(
+    case_id: str,
+    *,
+    spans=None,
+    response_class=None,
+    parser_match_type="parse_error",
+    parser_extracted=None,
+    expected="drive",
+    language="en",
+    user_style=None,
+    system_style=None,
+    parse_strategy="unknown",
+    note="",
+):
+    """Build a v2-shape annotation case record (with enrichment fields)."""
+    return {
+        "case_id": case_id,
+        "response_length": 200,
+        "parser_match_type": parser_match_type,
+        "parser_extracted": parser_extracted,
+        "expected": expected,
+        "language": language,
+        "user_style": user_style,
+        "system_style": system_style,
+        "parse_strategy": parse_strategy,
+        "context_windows": [],
+        "annotation": {
+            "spans": spans or [],
+            "response_class": response_class,
+            "annotator_note": note,
+            "timestamp": "2026-04-15T12:00:00Z",
+        },
+    }
+
+
+def test_v2_format_version_and_top_level_fpr():
+    af = {"meta": {}, "cases": {
+        "ok": _enriched_case("ok", response_class="parser_ok", parser_match_type="correct"),
+        "fp": _enriched_case("fp", response_class="parser_false_positive",
+                             spans=[_span("walking")], parser_match_type="correct",
+                             parser_extracted="drive", expected="walking"),
+    }}
+    report = agg.build_report([af])
+    assert report["format_version"].startswith("2")
+    # Top-level mirrored — agent sees it without drilling into summary
+    assert report["false_positive_rate"] == 0.5  # 1 fp / (1 ok + 1 fp)
+    assert report["summary"]["false_positive_rate"] == 0.5
+    assert report["summary"]["parser_false_positive"] == 1
+    assert report["summary"]["parser_was_correct"] == 1
+
+
+def test_v2_confusion_matrix():
+    af = {"meta": {}, "cases": {
+        # parser said correct, annotator endorsed → true positive
+        "tp": _enriched_case("tp", response_class="parser_ok", parser_match_type="correct"),
+        # parser said correct, annotator flagged as false-positive (the gaslight case)
+        "fp": _enriched_case("fp", response_class="parser_false_positive",
+                             spans=[_span("walking")], parser_match_type="correct"),
+        # parser said parse_error, annotator marked spans → recoverable miss
+        "rm": _enriched_case("rm", spans=[_span("you should drive")], parser_match_type="parse_error"),
+        # parser said parse_error, annotator says hedge → true unparseable
+        "tu": _enriched_case("tu", response_class="hedge", parser_match_type="parse_error"),
+    }}
+    cm = agg.build_report([af])["confusion_matrix"]
+    assert cm["correct"]["parser_ok"] == 1
+    assert cm["correct"]["parser_false_positive"] == 1
+    assert cm["parse_error"]["_with_spans"] == 1
+    assert cm["parse_error"]["hedge"] == 1
+
+
+def test_v2_language_breakdown_and_miss_rate():
+    af = {"meta": {}, "cases": {
+        "ua1": _enriched_case("ua1", language="ua", spans=[_span("прав")], parser_match_type="parse_error"),
+        "ua2": _enriched_case("ua2", language="ua", spans=[_span("прав")], parser_match_type="parse_error"),
+        "ua3": _enriched_case("ua3", language="ua", response_class="parser_ok", parser_match_type="correct"),
+        "en1": _enriched_case("en1", language="en", response_class="parser_ok", parser_match_type="correct"),
+    }}
+    lb = agg.build_report([af])["language_breakdown"]
+    assert lb["ua"]["total"] == 3
+    assert lb["ua"]["miss_rate"] == round(2 / 3, 4)
+    assert lb["en"]["miss_rate"] == 0.0
+
+
+def test_v2_strategy_breakdown_attributes_false_positives():
+    af = {"meta": {}, "cases": {
+        "fs1": _enriched_case("fs1", parse_strategy="first_sentence",
+                              response_class="parser_false_positive",
+                              spans=[_span("walking")], parser_match_type="correct"),
+        "fs2": _enriched_case("fs2", parse_strategy="first_sentence",
+                              response_class="parser_false_positive",
+                              spans=[_span("stay")], parser_match_type="correct"),
+        "fs3": _enriched_case("fs3", parse_strategy="first_sentence",
+                              response_class="parser_ok", parser_match_type="correct"),
+        "bx1": _enriched_case("bx1", parse_strategy="boxed",
+                              response_class="parser_ok", parser_match_type="correct"),
+    }}
+    sb = agg.build_report([af])["strategy_breakdown"]
+    assert sb["first_sentence"]["parser_false_positive"] == 2
+    assert sb["first_sentence"]["parser_ok"] == 1
+    # 2 fp out of 3 verdicts → 0.6667
+    assert sb["first_sentence"]["false_positive_rate"] == round(2 / 3, 4)
+    assert sb["boxed"]["parser_ok"] == 1
+    assert sb["boxed"]["false_positive_rate"] == 0.0
+
+
+def test_v2_answer_when_missed_pairs():
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", response_class="parser_false_positive",
+                            spans=[_span("walking")], parser_match_type="correct",
+                            parser_extracted="drive", expected="walking"),
+        "b": _enriched_case("b", response_class="parser_false_positive",
+                            spans=[_span("walking")], parser_match_type="correct",
+                            parser_extracted="drive", expected="walking"),
+        "c": _enriched_case("c", spans=[_span("you should drive")],
+                            parser_match_type="parse_error", expected="drive"),
+    }}
+    awm = agg.build_report([af])["answer_when_missed"]
+    # by_expected: drive (from c), walking ×2 (from a, b)
+    assert awm["by_expected"].get("walking") == 2
+    assert awm["by_expected"].get("drive") == 1
+    # distractor table only populated for false-positives
+    assert awm["by_extracted_distractor"].get("drive") == 2
+    pairs = awm["expected_distractor_pairs"]
+    assert pairs and pairs[0]["expected"] == "walking"
+    assert pairs[0]["parser_extracted"] == "drive"
+    assert pairs[0]["count"] == 2
+    assert "a" in pairs[0]["example_case_ids"]
+
+
+def test_v2_span_group_confidence_levels():
+    # v2.2: confidence is driven by the top prefix anchor's coverage ratio.
+    # Synthetic spans with no `before` context fall back to text-pattern
+    # candidates — no prefix anchors → low confidence.
+    consistent_anchor = {"meta": {}, "cases": {
+        "a": _enriched_case("a", spans=[_span("you should drive")]),
+        "b": _enriched_case("b", spans=[_span("you should walk")]),
+        "c": _enriched_case("c", spans=[_span("you should fly")]),
+    }}
+    g = agg.build_report([consistent_anchor])["span_groups"][0]
+    # No `before` context means no prefix anchors; but the text-pattern
+    # fallback still produces regex candidates with the expected weighted shape.
+    assert all("pattern" in r and "kind" in r and "support" in r for r in g["suggested_regex"])
+    assert any(r["kind"] == "text_pattern" for r in g["suggested_regex"])
+
+    # Single-span group → low confidence regardless of anchor
+    single = {"meta": {}, "cases": {
+        "a": _enriched_case("a", spans=[_span("you should drive")]),
+    }}
+    g_single = agg.build_report([single])["span_groups"][0]
+    assert g_single["confidence"] == "low"
+
+
+def test_v2_annotator_notes_surfaced():
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", response_class="hedge",
+                            note="Model translated to UA before answering"),
+        "b": _enriched_case("b", response_class="parser_ok", note=""),  # empty filtered out
+    }}
+    notes = agg.build_report([af])["annotator_notes"]
+    assert len(notes) == 1
+    assert notes[0]["case_id"] == "a"
+    assert "translated" in notes[0]["note"]
+    assert notes[0]["verdict"] == "hedge"
+
+
+def test_v2_anchor_frequency_extracts_phrases():
+    # Build cases where the *context windows* hold the anchor phrase, since
+    # anchor_frequency reads from `before` not from the span text itself.
+    cases = {}
+    for i, before in enumerate([
+        "After thought, you should ",
+        "I think you should ",
+        "To summarize, you should ",
+    ]):
+        cases[f"c{i}"] = {
+            "case_id": f"c{i}",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "drive",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "context_windows": [{"text": "drive", "char_start": 0, "char_end": 5,
+                                 "before": before, "after": "."}],
+            "annotation": {
+                "spans": [{"text": "drive", "char_start": 0, "char_end": 5,
+                           "position": "end", "format": "plain"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        }
+    af = {"meta": {}, "cases": cases}
+    rows = agg.build_report([af])["anchor_frequency"]
+    assert rows, "expected at least one anchor"
+    top = rows[0]
+    assert "you should" in top["anchor"]
+    assert top["count"] == 3
+    assert top["languages"] == ["en"]
+
+
+def test_v2_legacy_sidecar_backfilled_from_result_payload(fake_result):
+    """A legacy case dict with no language/strategy fields should pick those up
+    from the source result payload via `result_payloads_by_file`."""
+    legacy_af = {"meta": {"result_file": fake_result.name}, "cases": {
+        "carwash_0001": {
+            "case_id": "carwash_0001",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "drive",
+            # No language/parse_strategy/context_windows — pre-v2.20.1 sidecar
+            "annotation": {
+                "spans": [{"text": "drive", "char_start": 30, "char_end": 35,
+                           "position": "end", "format": "plain"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        },
+    }}
+    # Load the source result so we can supply it for back-fill
+    import gzip as _gz
+    with _gz.open(fake_result, "rt", encoding="utf-8") as f:
+        src_payload = json.load(f)
+    report = agg.build_report(
+        [legacy_af],
+        result_payloads_by_file={fake_result.name: src_payload},
+    )
+    # Language back-filled from prompt_metadata in the result file. In v2.3 a
+    # single-bucket axis gets suppressed via data_quality, so verify that
+    # path instead of inspecting the (now absent) language_breakdown.
+    assert "language_breakdown" not in report
+    assert "language_breakdown" in (report["data_quality"]["suppressed_sections"] or [])
+
+
+def test_v2_endpoint_returns_format_version_2(fake_result):
+    """End-to-end: POST /report returns v2 shape when annotations exist."""
+    client.post("/api/human-review/annotate", json={
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {"spans": [], "response_class": "parser_ok", "annotator_note": ""},
+    })
+    res = client.post("/api/human-review/report",
+                      json={"result_file_ids": [fake_result.name]})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["format_version"].startswith("2")
+    # Core v2 sections present. `language_breakdown` / `config_breakdown` /
+    # `user_style_breakdown` may be omitted in v2.3 when they'd be
+    # single-bucket — they're reported in data_quality.suppressed_sections
+    # instead.
+    for key in ("confusion_matrix", "strategy_breakdown", "answer_when_missed",
+                "anchor_frequency", "annotator_notes", "false_positive_rate",
+                "data_quality", "parser_span_alignment"):
+        assert key in body, f"missing v2 section: {key}"
+
+
+# ---------------------------------------------------------------------------
+# v2.1 — prefix anchors, structural ratios, sentence capture, regex harness
+# ---------------------------------------------------------------------------
+
+
+def _case_with_before(case_id: str, *, before: str, text: str = "drive", after: str = ".",
+                      language: str = "en", position: str = "end", fmt: str = "plain",
+                      sentence: str = "") -> Dict[str, Any]:
+    """Build an enriched case with a pre-baked context window so tests can
+    target the structural-signal / prefix-anchor logic directly."""
+    return {
+        "case_id": case_id,
+        "parser_match_type": "parse_error",
+        "parser_extracted": None,
+        "expected": "drive",
+        "language": language,
+        "parse_strategy": "unknown",
+        "context_windows": [{
+            "text": text, "char_start": 0, "char_end": len(text),
+            "before": before, "after": after, "sentence": sentence,
+        }],
+        "annotation": {
+            "spans": [{
+                "text": text, "char_start": 0, "char_end": len(text),
+                "position": position, "format": fmt,
+            }],
+            "response_class": None,
+            "annotator_note": "",
+        },
+    }
+
+
+def test_v2_1_format_version_is_2_1():
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
+    }}
+    report = agg.build_report([af])
+    # Format version may advance over time (2.1 → 2.2 → …); we just assert
+    # we're still on the v2 family.
+    assert report["format_version"].startswith("2")
+
+
+def test_v2_1_prefix_anchors_per_group():
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="Final answer: ")
+        for i in range(5)
+    }
+    af = {"meta": {}, "cases": cases}
+    g = agg.build_report([af])["span_groups"][0]
+    assert g["prefix_anchors"], "expected prefix_anchors populated"
+    top = g["prefix_anchors"][0]
+    # The trailing colon stays attached because `_tokenize` is
+    # whitespace-split — useful, because it preserves the label shape.
+    assert top["phrase"].startswith("final answer")
+    assert top["count"] == 5
+    assert top["ratio"] == 1.0
+
+
+def test_v2_1_structural_ratios_line_start():
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="Some thought.\n")
+        for i in range(3)
+    }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    assert g["structural_ratios"]["line_start"] == 1.0
+
+
+def test_v2_1_structural_ratios_bold_wrap():
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="Answer is **", after="**.")
+        for i in range(3)
+    }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    assert g["structural_ratios"]["bold_wrap"] == 1.0
+
+
+def test_v2_1_structural_ratios_label_colon():
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="Answer: ")
+        for i in range(3)
+    }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    assert g["structural_ratios"]["label_colon"] == 1.0
+    # "answer" is also a known English answer-label
+    assert g["structural_ratios"]["answer_label_match"] == 1.0
+
+
+def test_v2_1_structural_ratios_answer_label_match_es():
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="La respuesta: ", language="es")
+        for i in range(3)
+    }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    assert g["structural_ratios"]["answer_label_match"] == 1.0
+
+
+def test_v2_1_sentence_captured_from_raw_response():
+    raw = "Some preamble. The answer is walking. Other stuff follows."
+    start = raw.index("walking")
+    end = start + len("walking")
+    spans = [{"text": "walking", "char_start": start, "char_end": end,
+              "position": "end", "format": "plain"}]
+    windows = human_review._extract_context_windows(raw, {"spans": spans})
+    assert len(windows) == 1
+    # Sentence boundaries are consumed, not included — so the trailing `.`
+    # is NOT part of the captured sentence.
+    assert windows[0]["sentence"] == "The answer is walking"
+
+
+def test_v2_1_regex_test_harness_match_rate():
+    # v2.2: regex now anchors on `before` context. With `before="Therefore "`
+    # repeated across 5 cases, the top prefix anchor becomes "therefore" and
+    # the context-anchored regex captures the first word after it.
+    cases = {}
+    for i, verb in enumerate(["drive", "walk", "fly", "run", "stay"]):
+        text = verb
+        cases[f"c{i}"] = {
+            "case_id": f"c{i}",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "drive",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "context_windows": [{
+                "text": text, "char_start": 0, "char_end": len(text),
+                "before": "Therefore ", "after": ".",
+                "sentence": f"Therefore {text}.",
+            }],
+            "annotation": {
+                "spans": [{"text": text, "char_start": 0, "char_end": len(text),
+                           "position": "end", "format": "plain"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    harness = g["regex_test"]
+    assert harness, "expected at least one harness entry"
+    # Context-anchored regex should match all 5 examples via the `therefore`
+    # anchor.
+    ctx_row = next((r for r in harness if r["kind"] == "context_anchor"), None)
+    assert ctx_row is not None
+    assert ctx_row["match_rate"] == 1.0
+    assert ctx_row["matched_count"] == 5
+    assert ctx_row["total"] == 5
+
+
+def test_v2_1_regex_test_harness_handles_bad_regex():
+    # Inject a malformed pattern directly into the harness and verify it emits
+    # -1.0 instead of crashing.
+    examples = [{"text": "drive", "before": "you should ", "after": ".", "sentence": ""}]
+    out = agg._regex_test_harness(
+        examples,
+        [{"pattern": "(unclosed", "kind": "anchor", "support": 1, "anchor_words": None}],
+    )
+    assert len(out) == 1
+    assert out[0]["match_rate"] == -1.0
+    assert out[0]["matched_count"] == 0
+
+
+def test_v2_1_context_window_widened_to_120_chars():
+    raw = "x" * 200 + "drive" + "y" * 200
+    start = raw.index("drive")
+    end = start + len("drive")
+    windows = human_review._extract_context_windows(
+        raw,
+        {"spans": [{"text": "drive", "char_start": start, "char_end": end,
+                     "position": "middle", "format": "plain"}]},
+    )
+    assert len(windows) == 1
+    assert len(windows[0]["before"]) == 120
+    assert len(windows[0]["after"]) == 120
+
+
+# ---------------------------------------------------------------------------
+# v2.2 — context-anchored regex, label taxonomy, model answer distribution,
+# stop-word filter, parser_extracted surfacing
+# ---------------------------------------------------------------------------
+
+
+def test_v2_2_format_version():
+    # Format version is now on a rolling 2.x track — just assert family.
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
+    }}
+    assert agg.build_report([af])["format_version"].startswith("2.")
+
+
+def test_v2_2_model_answer_distribution_strips_markdown():
+    # Annotations mix bare / bold / italic / strikethrough markers around the
+    # same underlying answer ("walk" vs "drive") — the distribution should
+    # collapse them.
+    cases = {}
+    for i, text in enumerate(["Walk", "**walk**", "_Walk_", "~~walk~~", "Drive"]):
+        cases[f"c{i}"] = _case_with_before(f"c{i}", before="So: ", text=text)
+    af = {"meta": {}, "cases": cases}
+    dist = agg.build_report([af])["model_answer_distribution"]
+    assert dist.get("walk") == 4
+    assert dist.get("drive") == 1
+
+
+def test_v2_2_context_anchor_regex_beats_text_pattern():
+    # Ideal scenario for the new generator: a consistent `**Answer:**` prefix
+    # before varying bold-wrapped answers. Context_anchor should emit first
+    # and match 100%.
+    cases = {}
+    for i, verb in enumerate(["walk", "drive", "run", "walk", "fly"]):
+        raw_before = "Some reasoning.\n\n**Answer:** **"
+        raw_after = "**"
+        cases[f"c{i}"] = {
+            "case_id": f"c{i}",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "drive",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "context_windows": [{
+                "text": verb, "char_start": 0, "char_end": len(verb),
+                "before": raw_before, "after": raw_after,
+                "sentence": f"**Answer:** **{verb}**",
+            }],
+            "annotation": {
+                "spans": [{"text": verb, "char_start": 0, "char_end": len(verb),
+                           "position": "end", "format": "bold"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    # First candidate should be the context_anchor with format-aware capture.
+    ctx = next((r for r in g["regex_test"] if r["kind"] == "context_anchor"), None)
+    assert ctx is not None
+    assert ctx["match_rate"] == 1.0
+    # Pattern uses case-insensitive inline flag + bold wrapper around the capture.
+    assert ctx["pattern"].startswith("(?i)")
+    assert r"\*\*" in ctx["pattern"] and "([^*" in ctx["pattern"]
+
+
+def test_v2_2_format_only_safety_net_for_distinctive_formats():
+    # When `before` context is empty but format is bold, we should still emit
+    # a format_only candidate so the parser has *something* to try.
+    cases = {}
+    for i, verb in enumerate(["walk", "drive", "run"]):
+        cases[f"c{i}"] = {
+            "case_id": f"c{i}",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "drive",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "context_windows": [{
+                "text": verb, "char_start": 0, "char_end": len(verb),
+                "before": "", "after": "", "sentence": verb,
+            }],
+            "annotation": {
+                "spans": [{"text": verb, "char_start": 0, "char_end": len(verb),
+                           "position": "end", "format": "bold"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    format_only = next((r for r in g["suggested_regex"] if r["kind"] == "format_only"), None)
+    assert format_only is not None
+    # Format-only bold capture
+    assert r"\*\*" in format_only["pattern"]
+
+
+def test_v2_2_label_taxonomy_breaks_down_labels():
+    cases = {}
+    for i, before in enumerate([
+        "**Answer:** ",
+        "**Answer:** ",
+        "**Recommendation:** ",
+        "**Conclusion:** ",
+    ]):
+        cases[f"c{i}"] = _case_with_before(f"c{i}", before=before)
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    tax = g["label_taxonomy"]
+    labels = {row["label"]: row["count"] for row in tax}
+    assert labels.get("answer") == 2
+    assert labels.get("recommendation") == 1
+    assert labels.get("conclusion") == 1
+
+
+def test_v2_2_stop_word_filter_drops_noise_prefix_anchors():
+    # 4 cases with `before="to "` — "to" is a stop-word and should NOT appear
+    # in prefix_anchors even though it hits the count threshold.
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="better to ")
+        for i in range(4)
+    }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    phrases = [a["phrase"] for a in g["prefix_anchors"]]
+    # Multi-word "better to" is OK; bare "to" is filtered.
+    assert "to" not in phrases
+    assert "better to" in phrases
+
+
+def test_v2_2_parser_extracted_surfaced_in_example_spans():
+    # Case where parser said "drive" but annotator marked "walk" — the report
+    # should surface `parser_extracted` on the example so the agent sees the
+    # disagreement inline.
+    case = _enriched_case(
+        "c1",
+        spans=[_span("walk", position="end", fmt="plain")],
+        parser_extracted="drive",
+        parser_match_type="naive_trap",
+    )
+    af = {"meta": {}, "cases": {"c1": case}}
+    g = agg.build_report([af])["span_groups"][0]
+    example = g["example_spans"][0]
+    assert example["parser_extracted"] == "drive"
+    assert example["parser_match_type"] == "naive_trap"
+
+
+def test_v2_2_autoformat_italic_detection_via_underscores():
+    # Simulate the annotator marking `_Walk_` — no frontend needed here, but
+    # assert that backend validation treats "italic" as a valid format string.
+    # (Backend takes whatever string; we just sanity-check that FORMAT_TO_STRATEGY
+    # maps it to a new strategy.)
+    assert agg.FORMAT_TO_STRATEGY.get("italic") == "italic_keyword"
+    assert agg.FORMAT_TO_STRATEGY.get("strikethrough") == "strikethrough_keyword"
+    assert agg.FORMAT_TO_STRATEGY.get("header") == "header_line"
+
+
+# ---------------------------------------------------------------------------
+# v2.3 — parser-span alignment, capture quality, data quality
+# ---------------------------------------------------------------------------
+
+
+def test_v2_3_is_aligned_semantics():
+    # exact match (case + markdown stripped)
+    assert agg._is_aligned("walk", "Walk")
+    assert agg._is_aligned("**walk**", "walk")
+    # parser captured a single word that appears in the multi-word span
+    assert agg._is_aligned("walk", "Walk to the carwash")
+    # parser captured a multi-word phrase that contains the single-word span
+    assert agg._is_aligned("walk or drive", "walk")
+    # different stems → misaligned (surfacing this is the whole point)
+    assert not agg._is_aligned("walking", "walk")
+    # totally different → misaligned
+    assert not agg._is_aligned("determine", "walk")
+    # empty → False
+    assert not agg._is_aligned(None, "walk")
+    assert not agg._is_aligned("walk", "")
+
+
+def test_v2_3_parser_span_alignment_aligned_and_misaligned():
+    # Two aligned (parser==span), one misaligned (parser latched onto a
+    # distractor), one no_parser_output.
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", spans=[_span("walk")],
+                            parser_extracted="walk", parser_match_type="naive_trap"),
+        "b": _enriched_case("b", spans=[_span("walk")],
+                            parser_extracted="Walk", parser_match_type="naive_trap"),
+        "c": _enriched_case("c", spans=[_span("walk")],
+                            parser_extracted="determine", parser_match_type="mismatch"),
+        "d": _enriched_case("d", spans=[_span("walk")],
+                            parser_extracted=None, parser_match_type="parse_error"),
+    }}
+    report = agg.build_report([af])
+    alignment = report["parser_span_alignment"]
+    assert alignment["aligned_with_parser"] == 2
+    assert alignment["misaligned_with_parser"] == 1
+    assert alignment["no_parser_output"] == 1
+    assert alignment["total_comparable"] == 4
+    assert alignment["alignment_ratio"] == 0.5
+    # The misaligned case must surface in sample_misaligned for the agent
+    samples = alignment["sample_misaligned"]
+    assert len(samples) == 1
+    assert samples[0]["case_id"] == "c"
+    assert samples[0]["parser_extracted"] == "determine"
+
+
+def test_v2_3_summary_splits_parser_missed_into_aligned_and_misaligned():
+    af = {"meta": {}, "cases": {
+        # 2 aligned misses, 1 misaligned, 1 with no parser output
+        "a": _enriched_case("a", spans=[_span("walk")], parser_extracted="walk"),
+        "b": _enriched_case("b", spans=[_span("walk")], parser_extracted="Walk"),
+        "c": _enriched_case("c", spans=[_span("walk")], parser_extracted="determine"),
+        "d": _enriched_case("d", spans=[_span("walk")], parser_extracted=None),
+    }}
+    s = agg.build_report([af])["summary"]
+    assert s["parser_missed_aligned"] == 2
+    assert s["parser_missed_misaligned"] == 1
+    assert s["parser_missed_no_output"] == 1
+    # Legacy monolithic metric still sums correctly.
+    assert s["parser_missed_extractable"] == 4
+
+
+def test_v2_3_regex_harness_capture_quality():
+    # Setup: spans with `Recommendation:` label; regex captures everything
+    # up to the next period. Some captures equal the span exactly (high
+    # capture_exact_rate), others capture more ("Definitively walk to the
+    # carwash") so only capture_contains_rate is high.
+    cases = {}
+    for i, (before, text, after) in enumerate([
+        ("Recommendation: ", "walk", "."),
+        ("Recommendation: ", "walk", "."),
+        ("Recommendation: Definitively ", "walk", " to the carwash."),
+    ]):
+        cases[f"c{i}"] = {
+            "case_id": f"c{i}",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "walk",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "context_windows": [{
+                "text": text, "char_start": 0, "char_end": len(text),
+                "before": before, "after": after,
+                "sentence": f"{before}{text}{after}".strip(),
+            }],
+            "annotation": {
+                "spans": [{"text": text, "char_start": 0, "char_end": len(text),
+                           "position": "end", "format": "label"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    harness = g["regex_test"]
+    assert harness
+    # Labelled-answer regex captures everything until `.` or `\n`.
+    top = harness[0]
+    assert top["match_rate"] == 1.0
+    # All 3 captures contain the annotated span (`walk` is in each).
+    assert top["capture_contains_rate"] == 1.0
+    # Only 2 of 3 are exact — the "Definitively walk to the carwash" capture
+    # is a superset, so capture_exact_rate drops.
+    assert top["capture_exact_rate"] < 1.0
+    assert top["sample_captures"], "expected sample_captures populated"
+    # sample_captures schema
+    sc = top["sample_captures"][0]
+    for key in ("case_id", "captured", "annotated", "exact_match", "aligned"):
+        assert key in sc
+
+
+def test_v2_3_data_quality_warns_when_parse_strategy_unknown():
+    # All cases have parse_strategy='unknown' (the default in _enriched_case).
+    af = {"meta": {}, "cases": {
+        f"c{i}": _enriched_case(f"c{i}", spans=[_span("walk")]) for i in range(10)
+    }}
+    dq = agg.build_report([af])["data_quality"]
+    codes = {w["code"] for w in dq["warnings"]}
+    assert "no_parse_strategy" in codes
+
+
+def test_v2_3_data_quality_suppresses_single_bucket_axes():
+    af = {"meta": {}, "cases": {
+        # All English, all unspecified styles → three axes all single-bucket
+        f"c{i}": _enriched_case(f"c{i}", language="en", spans=[_span("walk")])
+        for i in range(5)
+    }}
+    report = agg.build_report([af])
+    # Suppressed sections don't appear in the payload
+    assert "language_breakdown" not in report
+    assert "config_breakdown" not in report
+    assert "user_style_breakdown" not in report
+    # data_quality has the warnings + suppressed list
+    dq = report["data_quality"]
+    codes = {w["code"] for w in dq["warnings"]}
+    assert {"uniform_language", "uniform_system_style", "uniform_user_style"}.issubset(codes)
+    assert set(dq["suppressed_sections"]) == {
+        "language_breakdown", "config_breakdown", "user_style_breakdown",
+    }
+
+
+def test_v2_3_data_quality_keeps_axis_with_multiple_buckets():
+    # Two languages → language_breakdown preserved; single-bucket axes still
+    # suppressed.
+    af = {"meta": {}, "cases": {
+        "en1": _enriched_case("en1", language="en", spans=[_span("walk")]),
+        "ua1": _enriched_case("ua1", language="ua", spans=[_span("прав")]),
+    }}
+    report = agg.build_report([af])
+    assert "language_breakdown" in report
+    assert set(report["language_breakdown"].keys()) == {"en", "ua"}
+    # No uniform_language warning when axis has variety.
+    codes = {w["code"] for w in report["data_quality"]["warnings"]}
+    assert "uniform_language" not in codes
+
+
+def test_v2_3_data_quality_flags_uniform_expected():
+    af = {"meta": {}, "cases": {
+        f"c{i}": _enriched_case(f"c{i}", expected="drive", spans=[_span("walk")])
+        for i in range(5)
+    }}
+    codes = {
+        w["code"]
+        for w in agg.build_report([af])["data_quality"]["warnings"]
+    }
+    assert "uniform_expected" in codes
+
+
+def test_v2_3_regex_harness_bad_regex_includes_new_fields():
+    # A compile-error regex must still populate the new capture-quality fields
+    # (as zeros), not raise KeyError on the frontend.
+    out = agg._regex_test_harness(
+        [{"text": "walk", "before": "", "after": "", "sentence": "", "case_id": "c1"}],
+        [{"pattern": "(unclosed", "kind": "context_anchor", "support": 1, "anchor_words": None}],
+    )
+    assert out[0]["match_rate"] == -1.0
+    assert out[0]["capture_exact_rate"] == 0.0
+    assert out[0]["capture_contains_rate"] == 0.0
+    assert out[0]["sample_captures"] == []
+
+
+# ---------------------------------------------------------------------------
+# v2.4 — anchor type classification, merged disjunction, low-support filter,
+# model-answer variants
+# ---------------------------------------------------------------------------
+
+
+def test_v2_4_classify_anchor_all_types():
+    # label (colon-terminated)
+    assert agg._classify_anchor("recommendation:") == "label"
+    assert agg._classify_anchor("conclusion：") == "label"  # fullwidth colon
+    # format (markdown / emoji markers)
+    assert agg._classify_anchor("**") == "format"
+    assert agg._classify_anchor("i'd **") == "format"
+    assert agg._classify_anchor("recommendation ✅") == "format"
+    assert agg._classify_anchor("answer →") == "format"
+    # phrase (flowing text)
+    assert agg._classify_anchor("you should") == "phrase"
+    assert agg._classify_anchor("is to") == "phrase"
+    # empty / missing
+    assert agg._classify_anchor("") == "phrase"
+
+
+def test_v2_4_prefix_anchors_carry_type():
+    # Build a group where the `before` context yields a label anchor.
+    cases = {
+        f"c{i}": _case_with_before(f"c{i}", before="Recommendation: ")
+        for i in range(4)
+    }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    assert g["prefix_anchors"], "expected prefix_anchors populated"
+    # The top anchor `recommendation:` is classified as `label`.
+    top = g["prefix_anchors"][0]
+    assert top["type"] == "label"
+
+
+def test_v2_4_prefix_anchors_sort_label_before_phrase_at_equal_count():
+    # Hand-craft cases where a label anchor and a phrase anchor would tie on
+    # count. Stable sort + secondary type-rank should put label first.
+    cases = {}
+    # 3 cases with `Conclusion: ` before → label anchor count=3
+    for i in range(3):
+        cases[f"l{i}"] = _case_with_before(f"l{i}", before="Conclusion: ")
+    # 3 cases with `it is ` before → phrase anchor (`is`) is filtered as
+    # stop-word, so craft a phrase that sticks: `clearly go `.
+    for i in range(3):
+        cases[f"p{i}"] = _case_with_before(f"p{i}", before="clearly go ")
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    # Both anchors should appear; the label anchor should come first.
+    phrases = [(r["phrase"], r["type"]) for r in g["prefix_anchors"]]
+    assert ("conclusion:", "label") in phrases
+    # Find label and phrase indices.
+    label_idx = next(i for i, r in enumerate(g["prefix_anchors"]) if r["type"] == "label")
+    phrase_idx = next(
+        (i for i, r in enumerate(g["prefix_anchors"]) if r["type"] == "phrase"),
+        None,
+    )
+    if phrase_idx is not None:
+        assert label_idx < phrase_idx, f"expected label before phrase in {phrases}"
+
+
+def test_v2_4_merged_disjunction_across_two_labels():
+    # The canonical carwash case: `Recommendation:` and `Conclusion:` split
+    # the group evenly. The merged disjunction should cover both.
+    cases = {}
+    for i in range(3):
+        cases[f"r{i}"] = _case_with_before(f"r{i}", before="Recommendation: ")
+    for i in range(3):
+        cases[f"c{i}"] = _case_with_before(f"c{i}", before="Conclusion: ")
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    merged = next(
+        (r for r in g["regex_test"] if r["kind"] == "merged_label_disjunction"),
+        None,
+    )
+    assert merged is not None, "expected merged_label_disjunction emitted"
+    # Both atoms should appear in participating_atoms.
+    assert set(merged["participating_atoms"]) == {"recommendation", "conclusion"}
+    # Pattern uses the expected disjunction shape.
+    assert "(?:" in merged["pattern"]
+    assert "recommendation" in merged["pattern"].lower()
+    assert "conclusion" in merged["pattern"].lower()
+    # Runs at 100% match rate across the 6 cases.
+    assert merged["match_rate"] == 1.0
+
+
+def test_v2_4_merged_disjunction_skipped_when_single_atom():
+    # Multiple anchor phrases collapse to the same atom → no disjunction.
+    cases = {}
+    for i in range(3):
+        cases[f"a{i}"] = _case_with_before(f"a{i}", before="Recommendation: ")
+    # A second anchor shape that also resolves to atom `recommendation`.
+    for i in range(3):
+        cases[f"b{i}"] = _case_with_before(
+            f"b{i}", before="Best choice. Recommendation: "
+        )
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    merged = [r for r in g["regex_test"] if r["kind"] == "merged_label_disjunction"]
+    assert merged == [], "single-atom groups should not emit disjunction"
+
+
+def test_v2_4_low_support_filter_drops_useless_candidate_keeps_format_only():
+    # Construct a group where the text_pattern fallback would produce a
+    # candidate that matches 0 examples — the filter should drop it.
+    cases = {}
+    for i, (before, text) in enumerate([
+        ("Walking is the right call. So: ", "walking"),
+        ("Doing my best. So: ", "drive"),
+        ("Right. So: ", "fly"),
+    ]):
+        cases[f"c{i}"] = {
+            "case_id": f"c{i}",
+            "parser_match_type": "parse_error",
+            "parser_extracted": None,
+            "expected": "drive",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "context_windows": [{
+                "text": text, "char_start": 0, "char_end": len(text),
+                "before": before, "after": ".", "sentence": f"{before}{text}.",
+            }],
+            "annotation": {
+                "spans": [{"text": text, "char_start": 0, "char_end": len(text),
+                           "position": "end", "format": "bold"}],
+                "response_class": None,
+                "annotator_note": "",
+            },
+        }
+    g = agg.build_report([{"meta": {}, "cases": cases}])["span_groups"][0]
+    # format_only should survive even if its match_rate is low (safety net).
+    assert any(r["kind"] == "format_only" for r in g["regex_test"])
+    # Any candidate kept must satisfy the thresholds.
+    for r in g["regex_test"]:
+        if r["kind"] in {"format_only"} or r["match_rate"] == -1.0:
+            continue
+        assert (
+            r["match_rate"] >= 0.1 or r.get("capture_contains_rate", 0.0) >= 0.1
+        ), f"candidate with no signal slipped through: {r}"
+
+
+def test_v2_4_model_answer_variants_preserves_raw_text():
+    # Same normalized bucket (`walk`) receives multiple raw variants.
+    cases = {}
+    for i, text in enumerate(["Walk", "walk", "WALK", "**Walk**", "Walk to the carwash"]):
+        cases[f"c{i}"] = _case_with_before(f"c{i}", before="So: ", text=text)
+    report = agg.build_report([{"meta": {}, "cases": cases}])
+    variants = report["model_answer_variants"]
+    walk_bucket = variants.get("walk")
+    assert walk_bucket is not None
+    # Raw variants preserve case + markdown.
+    texts = {v["text"]: v["count"] for v in walk_bucket["variants"]}
+    # `**Walk**` and `Walk to the carwash` normalize to different buckets ONLY
+    # if strip_markdown differs — here `**Walk**` strips to "walk" so it
+    # lands in the same bucket, while "Walk to the carwash" is a different
+    # normalized form.
+    assert "Walk" in texts
+    assert "WALK" in texts
+    assert "**Walk**" in texts
+    assert walk_bucket["total"] == sum(texts.values())
+    # Backwards-compat: flat distribution still emits the same counts.
+    assert report["model_answer_distribution"]["walk"] == walk_bucket["total"]
+
+
+def test_v2_4_model_answer_variants_top_limit():
+    # A bucket with >10 distinct raw variants gets capped.
+    cases = {}
+    for i in range(15):
+        variant = "Walk" if i % 2 == 0 else "walk"  # alternate 2 distinct variants
+        cases[f"c{i}"] = _case_with_before(f"c{i}", before="So: ", text=variant + str(i))
+    # Each `variant + str(i)` is a unique raw text, normalized to unique form
+    # too. So this test also confirms variants ≤ 10 cap by truncation when the
+    # bucket shape has many variants. Let me use non-unique normalized form:
+    cases = {}
+    for i in range(15):
+        raw = f"Walk{'!' * (i % 12)}"  # 12 distinct raw forms, all normalize to "walk!..."
+        cases[f"c{i}"] = _case_with_before(f"c{i}", before="So: ", text=raw)
+    variants = agg.build_report([{"meta": {}, "cases": cases}])["model_answer_variants"]
+    # Each normalized bucket's variants list is capped at 10.
+    for bucket in variants.values():
+        assert len(bucket["variants"]) <= 10
+
+
+def test_v2_4_format_version():
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
+    }}
+    assert agg.build_report([af])["format_version"] == "2.4"

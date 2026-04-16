@@ -114,8 +114,14 @@ def parse_answer_via_plugin(response: str, task_type: str, task_params: Dict = N
         parser = plugin.get_parser()
         parsed = parser.parse(response, task_params or {})
 
+        # Returning the full ParsedAnswer (instead of `.value`) so downstream
+        # callers can persist `parse_strategy` and `confidence` into the result
+        # entry. The Human Review aggregator uses `parse_strategy` to attribute
+        # parser_false_positive cases back to the specific strategy that fired.
+        # Callers consuming the legacy `value`-only contract should access
+        # `parsed.value` explicitly.
         if parsed.success:
-            return parsed.value
+            return parsed
         return None
     except Exception as e:
         import logging
@@ -1464,12 +1470,20 @@ def run_testset(
                 if key in prompt_meta and key not in enriched_params:
                     enriched_params[key] = prompt_meta[key]
 
-            # Try plugin-based parsing first (preferred)
-            parsed_answer = parse_answer_via_plugin(raw_response, individual_task_type, enriched_params)
-
-            # Fallback to built-in parser if plugin failed
-            if parsed_answer is None:
+            # Try plugin-based parsing first (preferred). `parse_answer_via_plugin`
+            # now returns the full `ParsedAnswer`; we keep `parsed_answer` as the
+            # raw value for downstream compatibility and capture `parse_strategy`
+            # / `parse_confidence` for the result entry so the Human Review
+            # aggregator can attribute false positives to specific strategies.
+            parsed_result = parse_answer_via_plugin(raw_response, individual_task_type, enriched_params)
+            if parsed_result is None:
                 parsed_answer = parse_answer(raw_response, individual_task_type)
+                parse_strategy = "external"
+                parse_confidence = None
+            else:
+                parsed_answer = parsed_result.value
+                parse_strategy = parsed_result.parse_strategy
+                parse_confidence = parsed_result.confidence
 
             # Get expected answer based on task type
             if individual_task_type == "linda_fallacy":
@@ -1505,6 +1519,8 @@ def run_testset(
                 "output": {
                     "raw_response": raw_response,
                     "parsed_answer": parsed_answer,
+                    "parse_strategy": parse_strategy,
+                    "parse_confidence": parse_confidence,
                     "tokens_generated": response_data.get("tokens_generated", 0)
                 },
                 "tokens": {

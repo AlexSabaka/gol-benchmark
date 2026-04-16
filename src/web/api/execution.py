@@ -94,3 +94,24 @@ async def cancel_job(job_id: str):
     if job_manager.cancel(job_id):
         return {"status": "cancelled", "job_id": job_id}
     raise HTTPException(400, f"Cannot cancel job {job_id} (may already be finished)")
+
+
+@router.post("/{job_id}/pause")
+async def pause_job(job_id: str):
+    """Signal a running job to pause cooperatively after the current test case."""
+    if job_manager.get_status(job_id) is None:
+        raise HTTPException(404, f"Job not found: {job_id}")
+    if job_manager.pause(job_id):
+        return {"status": "pausing", "job_id": job_id}
+    raise HTTPException(400, f"Cannot pause job {job_id} (must be in running state)")
+
+
+@router.post("/{job_id}/resume")
+async def resume_job(job_id: str):
+    """Resume a paused job from its checkpoint. Returns the new job_id."""
+    if job_manager.get_status(job_id) is None:
+        raise HTTPException(404, f"Job not found: {job_id}")
+    new_job_id = job_manager.resume(job_id)
+    if new_job_id is None:
+        raise HTTPException(400, f"Cannot resume job {job_id} (must be in paused state)")
+    return {"status": "pending", "job_id": job_id, "new_job_id": new_job_id}

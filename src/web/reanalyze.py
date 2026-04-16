@@ -155,6 +155,12 @@ def reanalyze_result_file(filepath: Path) -> dict:
         r["evaluation"] = write_eval
         if new_eval.get("_parsed_value") is not None:
             r["output"]["parsed_answer"] = new_eval["_parsed_value"]
+        # Persist strategy + confidence so the Human Review aggregator can
+        # attribute parser_false_positive cases to the strategy that fired.
+        if new_eval.get("_parse_strategy") is not None:
+            r["output"]["parse_strategy"] = new_eval["_parse_strategy"]
+        if new_eval.get("_confidence") is not None:
+            r["output"]["parse_confidence"] = new_eval["_confidence"]
 
     # Recalculate summary statistics
     new_accuracy = correct_count / total_evaluated if total_evaluated > 0 else 0

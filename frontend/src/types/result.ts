@@ -24,6 +24,7 @@ export interface ResultSummary {
   user_styles: string[]
   system_styles: string[]
   created: string
+  has_annotations?: boolean
   error?: string
 }
 

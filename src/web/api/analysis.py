@@ -77,6 +77,18 @@ def _load_result(filepath: Path) -> dict:
         return json.load(f)
 
 
+def _annotation_sidecar_exists(filepath: Path) -> bool:
+    """Check whether a `_annotations.json.gz` sidecar exists next to a result file."""
+    name = filepath.name
+    if name.endswith(".json.gz"):
+        stem = name[: -len(".json.gz")]
+    elif name.endswith(".json"):
+        stem = name[: -len(".json")]
+    else:
+        stem = filepath.stem
+    return (filepath.parent / f"{stem}_annotations.json.gz").exists()
+
+
 def _summarize_result(filepath: Path) -> dict:
     """Quick summary without loading all individual results."""
     try:
@@ -122,6 +134,7 @@ def _summarize_result(filepath: Path) -> dict:
             "user_styles": user_styles,
             "system_styles": system_styles,
             "created": time.ctime(filepath.stat().st_mtime),
+            "has_annotations": _annotation_sidecar_exists(filepath),
         }
     except Exception as exc:
         return {"filename": filepath.name, "error": str(exc)}

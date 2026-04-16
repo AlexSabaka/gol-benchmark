@@ -1,4 +1,6 @@
 """FastAPI application — serves API endpoints and React SPA."""
+import os
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI
@@ -7,12 +9,30 @@ from fastapi.staticfiles import StaticFiles
 
 from src import __version__
 from src.web.api import api_router
+from src.web.job_store import JobStore
+from src.web.jobs import job_manager
 
 _WEB_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _WEB_DIR.resolve().parent.parent
 _SPA_DIR = _PROJECT_ROOT / "frontend" / "dist"
 
-app = FastAPI(title="GoL Benchmark", version=__version__)
+# Job persistence — path configurable via GOL_JOBS_FILE env var.
+_jobs_file = Path(os.environ.get("GOL_JOBS_FILE", str(_PROJECT_ROOT / "jobs.json")))
+_job_store = JobStore(_jobs_file)
+
+# Wire store into the singleton manager so it can persist/load jobs.
+job_manager._store = _job_store
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load historical jobs on startup; save all jobs on shutdown."""
+    job_manager.load_from_store()
+    yield
+    job_manager.save_to_store()
+
+
+app = FastAPI(title="GoL Benchmark", version=__version__, lifespan=lifespan)
 
 # --- API routes ---------------------------------------------------------------
 app.include_router(api_router, prefix="/api")

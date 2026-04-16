@@ -4,11 +4,14 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 import {
   BarChart3,
+  Eraser,
   Eye,
+  FileBarChart,
   FileText,
   LineChart,
   Loader2,
   MoreHorizontal,
+  PenLine,
   RefreshCw,
   RotateCcw,
   Scale,
@@ -19,6 +22,7 @@ import {
 import { DataTable } from "@/components/data-table/data-table"
 import { GroupedGridSection } from "@/components/grouped-grid-section"
 import { JudgeSetupSheet } from "@/components/judge-setup-sheet"
+import { ImprovementReportDialog } from "@/components/review/improvement-report-dialog"
 import { PageHeader } from "@/components/layout/page-header"
 import { languageFilterOptions } from "@/components/language-filter-chip"
 import { PageFacetFilter } from "@/components/page-facet-filter"
@@ -54,6 +58,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip"
 import { useAnalyzeResults, useDeleteResult, useGenerateReport, useReanalyzeResult, useResult, useResults } from "@/hooks/use-results"
+import { useDeleteAnnotations } from "@/hooks/use-review"
 import { useTestsets } from "@/hooks/use-testsets"
 import { langFlags } from "@/lib/language-flags"
 import { makeStorageKey, useLocalStorageState } from "@/lib/local-storage"
@@ -220,6 +225,9 @@ export default function ResultsPage() {
   const [rerunTarget, setRerunTarget] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [judgeOpen, setJudgeOpen] = useState(false)
+  const [reportOpen, setReportOpen] = useState(false)
+  const [removeAnnotationsTarget, setRemoveAnnotationsTarget] = useState<string | null>(null)
+  const deleteAnnotationsMutation = useDeleteAnnotations()
   const [searchTerm, setSearchTerm] = useLocalStorageState<string>(makeStorageKey(storageScope, "search"), "")
   const [modelFilter, setModelFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "model-filter"), [])
   const [taskFilter, setTaskFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "task-filter"), [])
@@ -261,6 +269,33 @@ export default function ResultsPage() {
   }, [languageFilter, modelFilter, results, searchTerm, systemStyleFilter, taskFilter, userStyleFilter])
 
   const filteredFilenames = useMemo(() => filteredResults.map((summary) => summary.filename), [filteredResults])
+
+  // ── Human-review gating ──────────────────────────────────────────────
+  // "Review manually" is enabled only when every selected file belongs to the
+  // same plugin, so regex/ordering heuristics in the aggregator stay coherent.
+  const selectedSummaries = useMemo(
+    () => (results ?? []).filter((r) => selected.has(r.filename)),
+    [results, selected],
+  )
+  const selectedPluginsSet = useMemo(() => {
+    const set = new Set<string>()
+    for (const r of selectedSummaries) (r.task_types ?? []).forEach((t) => set.add(t))
+    return set
+  }, [selectedSummaries])
+  const reviewEnabled = selected.size > 0 && selectedPluginsSet.size === 1
+  const reviewTooltip = selected.size === 0
+    ? "Select at least one result file"
+    : selectedPluginsSet.size !== 1
+      ? "Select files from the same plugin to review"
+      : "Open the annotation workspace"
+  const annotatedFiles = useMemo(
+    () => selectedSummaries.filter((r) => !!r.has_annotations).map((r) => r.filename),
+    [selectedSummaries],
+  )
+  const reportEnabled = annotatedFiles.length > 0
+  const reportTooltip = reportEnabled
+    ? `Aggregate ${annotatedFiles.length} annotated file${annotatedFiles.length === 1 ? "" : "s"}`
+    : "Annotate at least one selected result file first"
   const allFilteredSelected = filteredFilenames.length > 0 && filteredFilenames.every((filename) => selected.has(filename))
   const someFilteredSelected = filteredFilenames.some((filename) => selected.has(filename)) && !allFilteredSelected
   const showFlatOrGroupedTable = viewMode === "table" || groupBy === "none"
@@ -448,7 +483,24 @@ export default function ResultsPage() {
     {
       accessorKey: "model_name",
       header: "Model",
-      cell: ({ row }) => <span className="text-xs font-medium">{row.original.model_name}</span>,
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs font-medium">{row.original.model_name}</span>
+          {row.original.has_annotations && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <span
+                  className="inline-flex h-4 w-4 items-center justify-center rounded-full border border-primary/40 bg-primary/10 text-primary"
+                  aria-label="Has annotations"
+                >
+                  <PenLine className="h-2.5 w-2.5" />
+                </span>
+              </TooltipTrigger>
+              <TooltipContent>Annotated — open Improvement report to aggregate</TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+      ),
     },
     {
       accessorKey: "task_types",
@@ -537,10 +589,21 @@ export default function ResultsPage() {
             <DropdownMenuItem onClick={() => setDetailTarget(row.original.filename)}>
               <Eye className="mr-2 h-3.5 w-3.5" /> View Details
             </DropdownMenuItem>
+            <DropdownMenuItem onClick={() => nav(`/review?files=${row.original.filename}`)}>
+              <PenLine className="mr-2 h-3.5 w-3.5" /> Verify Manually
+            </DropdownMenuItem>
             <DropdownMenuItem onClick={() => openRerun(row.original)}>
               <RotateCcw className="mr-2 h-3.5 w-3.5" /> Rerun with Params
             </DropdownMenuItem>
             <DropdownMenuSeparator />
+            {row.original.has_annotations && (
+              <DropdownMenuItem
+                variant="destructive"
+                onClick={() => setRemoveAnnotationsTarget(row.original.filename)}
+              >
+                <Eraser className="mr-2 h-3.5 w-3.5" /> Remove Annotations
+              </DropdownMenuItem>
+            )}
             <DropdownMenuItem
               variant="destructive"
               onClick={async () => {
@@ -607,6 +670,38 @@ export default function ResultsPage() {
                 </Button>
               </TooltipTrigger>
               <TooltipContent>LLM Judge</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="relative h-8 w-8"
+                  onClick={() => nav(`/review?files=${Array.from(selected).join(",")}`)}
+                  disabled={!reviewEnabled}
+                >
+                  <PenLine className="h-4 w-4" />
+                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Review manually — {reviewTooltip}</TooltipContent>
+            </Tooltip>
+
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="outline"
+                  size="icon"
+                  className="relative h-8 w-8"
+                  onClick={() => setReportOpen(true)}
+                  disabled={!reportEnabled}
+                >
+                  <FileBarChart className="h-4 w-4" />
+                  {annotatedFiles.length > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{annotatedFiles.length}</span>}
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>Improvement report — {reportTooltip}</TooltipContent>
             </Tooltip>
 
             <Separator orientation="vertical" className="mx-1 h-6" />
@@ -878,6 +973,46 @@ export default function ResultsPage() {
       </Sheet>
 
       <JudgeSetupSheet open={judgeOpen} onOpenChange={setJudgeOpen} selectedFiles={Array.from(selected)} />
+      <ImprovementReportDialog open={reportOpen} onOpenChange={setReportOpen} fileIds={annotatedFiles} />
+
+      <Dialog
+        open={removeAnnotationsTarget !== null}
+        onOpenChange={(v) => !v && setRemoveAnnotationsTarget(null)}
+      >
+        <DialogContent className="max-w-md">
+          <DialogHeader>
+            <DialogTitle>Remove annotations?</DialogTitle>
+            <DialogDescription>
+              This deletes the annotation sidecar file for{" "}
+              <span className="font-mono">{removeAnnotationsTarget}</span>. The result file itself is untouched, but all human-reviewed spans, notes, and verdicts will be lost. This cannot be undone.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setRemoveAnnotationsTarget(null)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              disabled={deleteAnnotationsMutation.isPending}
+              onClick={async () => {
+                if (!removeAnnotationsTarget) return
+                try {
+                  await deleteAnnotationsMutation.mutateAsync(removeAnnotationsTarget)
+                  toast.success("Annotations removed")
+                  setRemoveAnnotationsTarget(null)
+                } catch (err) {
+                  toast.error(`Remove failed: ${err instanceof Error ? err.message : "unknown"}`)
+                }
+              }}
+            >
+              {deleteAnnotationsMutation.isPending && (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              )}
+              Delete annotations
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }

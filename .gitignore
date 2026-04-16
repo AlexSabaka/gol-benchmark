@@ -227,6 +227,10 @@ __marimo__/
 # Project specific ignores
 known_patterns/
 
+# Runtime job history (may contain plaintext API keys — do not commit)
+jobs.json
+partial_*.json.gz
+
 # Data directory - ignore contents but keep structure
 data/conways_life/
 

@@ -101,9 +101,11 @@ gol_eval/
 │   ├── benchmarks/        # Legacy (only linda_eval.py remains — used by linda plugin)
 │   ├── web/               # FastAPI REST API backend (serves React SPA at /)
 │   │   ├── app.py         # FastAPI app factory, SPA routing
-│   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis, judge)
+│   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis, judge, human-review)
 │   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor) — submit() + submit_judge()
 │   │   ├── judge.py       # LLM-as-a-Judge worker (run_judge_worker, default prompts)
+│   │   ├── human_review_aggregator.py # Human-review improvement-report builder (span grouping, auto-regex, ordering hints)
+│   │   ├── translation.py # deep-translator wrapper (Google/LibreTranslate/MyMemory) with LRU cache
 │   │   └── reanalyze.py   # Reanalysis utilities (re-parse/re-evaluate results)
 │   ├── visualization/     # Charts, analysis, reporting
 │   └── utils/             # Logging, model discovery
@@ -113,9 +115,9 @@ gol_eval/
 │   │   ├── api/           # Typed API client layer
 │   │   ├── hooks/         # React Query hooks with auto-refresh
 │   │   ├── types/         # TypeScript interfaces
-│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute (landing + execute/simple-wizard.tsx + execute/matrix-wizard.tsx), Jobs, Results, Charts, Reports, Judge
+│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute (landing + execute/simple-wizard.tsx + execute/matrix-wizard.tsx), Jobs, Results, Charts, Reports, Judge, Review
 │   │   ├── lib/           # Utilities (chart-colors, model-sizes, credential-store, favorite-models, language-flags)
-│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, wizard (StepButton/StepFooter), model-selection (ModelList/Ollama/OpenAI/HF), param-override-modal, judge-setup-sheet, language-filter-chip, prompt-style-badge
+│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, wizard (StepButton/StepFooter), model-selection (ModelList/Ollama/OpenAI/HF), review (stimulus/response panels, annotation-dock, classification-bar, case-progress, verdict-pill, translation-panel, improvement-report-dialog), param-override-modal, judge-setup-sheet, language-filter-chip, prompt-style-badge
 │   ├── vite.config.ts     # base: "/", proxy /api → :8000
 │   └── dist/              # Production build output
 │
@@ -171,6 +173,12 @@ gol_eval/
 | [src/evaluation/TestEvaluator.py](src/evaluation/TestEvaluator.py) | Grid comparison and accuracy calculation |
 | [src/engine/GameOfLifeEngine.py](src/engine/GameOfLifeEngine.py) | Conway's Game of Life rules |
 | [src/engine/MathExpressionGenerator.py](src/engine/MathExpressionGenerator.py) | Expression tree generation |
+| **Human Review (v2.20.0) + Improvement Report (v2.1–v2.4)** | |
+| [src/web/api/human_review.py](src/web/api/human_review.py) | `/api/human-review/*` router: `GET /cases`, `POST /annotate`, GET + DELETE `/annotations/{id}`, `POST /report`, `POST /translate` |
+| [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) | Pure-function improvement-report builder. Key helpers: `_span_analysis` (per-group rollup), `_context_anchored_regex` + `_merged_label_disjunction` (v2.4 regex generators, replace legacy `_auto_regex`), `_filter_candidates` (low-support cut), `_parser_span_alignment` (aligned / misaligned / no-output split), `_regex_test_harness` (capture quality + sample captures), `_data_quality` (warnings + suppressed-sections), `_model_answer_stats` (distribution + raw variants). `REPORT_FORMAT_VERSION = "2.4"` |
+| [src/web/translation.py](src/web/translation.py) | `deep-translator` wrapper with LRU cache; provider via `TRANSLATOR_PROVIDER` env (google / libre / mymemory) |
+| [frontend/src/pages/review.tsx](frontend/src/pages/review.tsx) | `/review` wizard — two-column workspace with keyboard-first annotation |
+| [frontend/src/components/review/improvement-report-dialog.tsx](frontend/src/components/review/improvement-report-dialog.tsx) | Improvement-report modal: 9 tabs (Summary / Spans / Strategy / Languages / Misses / Answers / Anchors / Ordering / Classes / Notes), data-quality banner, parser-span alignment callout, expandable span-group cards with structural signals / prefix anchors (type-chipped) / regex test rows (capture quality pill + sample captures) |
 
 ---
 
@@ -269,7 +277,41 @@ Audit incorrect model responses via a judge LLM:
 - `frontend/package.json` is the npm source of truth — kept in sync manually when cutting releases
 - **All locations to update when bumping version**: `src/__init__.py`, `frontend/package.json` (+`package-lock.json`), `.github/copilot-instructions.md`, CHANGELOG.md, CLAUDE.md footer
 
-### 10. Plugin Task Type List — Single Source of Truth (v2.19.0+)
+### 11. Human Review & Annotation (v2.20.0 + Improvement Report v2.1 → v2.4)
+
+Human annotation workflow for parser diagnosis and improvement. Every labelled response becomes a parser test case in waiting. The **Improvement Report** aggregates annotations into a JSON artifact whose explicit purpose is to seed a coding-agent task refactoring plugin parsers — so its shape is agent-facing and has iterated fast.
+
+**Workspace + sidecars (stable since v2.20.0):**
+
+- Backend router [src/web/api/human_review.py](src/web/api/human_review.py) (`/api/human-review/*`): `GET /cases`, `POST /annotate`, `GET|DELETE /annotations/{id}`, `POST /report`, `POST /translate`
+- Aggregator module [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) — pure-function, no I/O — computes the full report shape from sidecar payloads (+ optional source-result-payload backfill for legacy sidecars)
+- Translation [src/web/translation.py](src/web/translation.py) — `deep-translator` wrapper, `TRANSLATOR_PROVIDER` env (`google` default, `libre`, `mymemory`), LRU-cached
+- Sidecars: gzipped JSON at `{result_stem}_annotations.json.gz`, atomic `temp + os.replace`; `has_annotations` flag surfaces on `/api/results` summaries
+- Response classes (7): `hedge`, `gibberish`, `refusal`, `language_error`, `verbose_correct`, `parser_ok`, **`parser_false_positive`** (uniquely coexists with spans — span is the evidence, verdict is the diagnosis)
+- Annotation invariant (relaxed in v2.20.0): ≥1 of `spans` / `response_class`; both may coexist
+- Format: `bold` / `italic` / `strikethrough` / `header` / `boxed` / `label` / `plain` / `other` (italic/strike/header added in v2.2)
+- Frontend `/review` ([pages/review.tsx](frontend/src/pages/review.tsx)): two-column editorial workspace; keyboard shortcuts `←/→` navigate, `1`–`7` classify, `S` skip, `Space`/`Enter` commit drag-selection
+
+**Improvement Report schema — `format_version` rolls forward additively:**
+
+| Version | Additions |
+|---------|-----------|
+| `"2"` (v2.20.0) | `summary`, `span_groups`, `ordering_hints`, `response_classes`, `confusion_matrix`, `language_breakdown` / `config_breakdown` / `user_style_breakdown`, `strategy_breakdown`, `answer_when_missed`, `anchor_frequency`, `annotator_notes`, `false_positive_rate` |
+| `"2.1"` | Span examples gain `sentence` (containing-sentence extract); each span group gains `structural_ratios` (`line_start` / `paragraph_start` / `list_marker` / `label_colon` / `bold_wrap` / `quote_wrap` / `answer_label_match`), `prefix_anchors` (trailing N-gram phrases of `before`), `regex_test` harness with `match_rate` / `matched_count` / `total`. Context window widened from 24 → **120 chars** |
+| `"2.2"` | **Context-anchored regex generator** — replaces span-text LCP as primary regex shape. Emits `context_anchor` / `format_only` / `text_pattern` kinds. Span examples gain `parser_extracted` + `parser_match_type` (inline parser-vs-annotator diff). Per-group `label_taxonomy` breaks down `answer_label_match` into specific label words. `model_answer_distribution` (markdown-stripped histogram of annotated spans) |
+| `"2.3"` | Top-level **`parser_span_alignment`** — `aligned_with_parser` / `misaligned_with_parser` / `no_parser_output` split, resolving the "parser_missed: N" framing when `parser_extracted` is actually aligned with the annotated span. Summary gains `parser_missed_aligned` / `parser_missed_misaligned` / `parser_missed_no_output`. Regex harness gains `capture_exact_rate` / `capture_contains_rate` / `sample_captures` (capture quality ≠ match rate). Top-level **`data_quality.warnings[]` + `suppressed_sections[]`** — auto-detects `no_parse_strategy`, `uniform_language` / `uniform_system_style` / `uniform_user_style`, `uniform_expected`. Single-bucket axis breakdowns are **omitted from output** and reported as suppressed |
+| `"2.4"` | **Merged label disjunction** — when a group has ≥2 distinct label-type atoms, emits `(?i)(?:atom1\|atom2)\s*[:：]\s*{capture}` as highest-priority candidate (`kind: "merged_label_disjunction"`, `participating_atoms`). Prefix anchors gain **`type`**: `label` / `format` / `phrase` (label > format > phrase at equal count). Post-harness **low-support filter** drops candidates with `match_rate < 0.1 AND capture_contains_rate < 0.1` and `support < 2 AND support/group_size < 0.1` (always keeps `format_only`). New **`model_answer_variants`** preserves raw text variants per normalized bucket (top 10) so the agent sees `Walk` / `WALK` / `**Walk**` / `Walk to the carwash` separately under `walk` |
+
+**Key agent-facing distinctions (future-you, read this):**
+
+- **`match_rate` vs `capture_contains_rate`** — "regex fires" is *not* "regex extracts the right answer." A pattern like `(?i)recommendation:\s*([^.\n]+?)(?:[.\n]|$)` can match 100% and capture `Definitively walk to the carwash` — agent-useful only if `capture_contains_rate` is also high.
+- **Parser alignment ≠ parser correctness** — v2.3 split. `aligned_with_parser` means `parser_extracted` matches the annotated span (even when model was wrong). `parser_missed_extractable` alone is misleading; always pair with `parser_span_alignment`.
+- **Markdown-stripped buckets collapse case + wrappers but NOT stems** — `walk` and `walking` are separate buckets on purpose; surfacing that difference is the agent's signal to add stemming.
+- **Single-bucket axes auto-suppress** — if every annotated case shares one language/style/expected answer, `language_breakdown` etc. are omitted (reported in `data_quality.suppressed_sections`). Don't assume a missing field means a bug.
+
+**One-click word marking** + drag-select + sticky annotation dock + parser-match highlight (amber dashed underline) + persistent parser-disagreement callout + 🌐 translation panels (`select-none` — translated text is never an annotation target).
+
+### 12. Plugin Task Type List — Single Source of Truth (v2.19.0+)
 
 `PluginRegistry.list_task_types()` is the canonical list of active plugin task types — **do not maintain separate hardcoded lists**.
 
@@ -277,6 +319,19 @@ Audit incorrect model responses via a judge LLM:
 - `src/web/reanalyze.py` — `_TASK_TYPE_SUFFIXES` is derived from the registry at import time
 - Adding a new plugin in `src/plugins/` automatically propagates to all task-type inference and badge detection with no other changes required
 - `_LEGACY_TASK_TYPES = ["fancy_unicode"]` — the only manually maintained list; for task types removed from the plugin system that may still appear in old result files
+
+### 13. Job Persistence & Pause/Resume (v2.21.0+)
+
+All job I/O is confined to **`src/web/job_store.py`** (`JobStore` class) — the single place to swap when upgrading to NoSQL/Redis. To change the backend, only `job_store.py` changes.
+
+- **Storage**: `jobs.json` at project root (path configurable via `GOL_JOBS_FILE` env var)
+- **Lifespan**: `src/web/app.py` lifespan context manager calls `job_manager.load_from_store()` on startup and `save_to_store()` on shutdown; each terminal transition also persists immediately
+- **Startup recovery**: PENDING/RUNNING jobs found in store → set to FAILED ("Interrupted by server restart"); PAUSED jobs survive and remain resumable
+- **Pause**: `POST /api/jobs/{id}/pause` — sets `pause_requested` flag in shared dict; worker finishes current test case, saves `partial_<job_id>.json.gz`, returns `"paused"` status with checkpoint index
+- **Resume**: `POST /api/jobs/{id}/resume` — paused job → CANCELLED (superseded), new job submitted from `paused_at_index`; inherits all execution params; merges partial + new results into final file, deletes partial on completion
+- **Job states**: `pending` → `running` → `completed` / `failed` / `cancelled` / **`paused`** (PAUSED is not terminal — it can be resumed)
+- **Judge jobs**: support cancel only — multi-file batching makes checkpointing significantly more complex
+- **Credentials caveat**: `api_key` / `api_base` are stored in `jobs.json` — see TECHDEBT TD-085
 
 ---
 
@@ -432,6 +487,7 @@ Audit incorrect model responses via a judge LLM:
 ### Environment Variables
 
 - **`GOL_LOG_FILE`** — log file path (default: `gol_eval.log`); configured in `src/utils/logger.py`
+- **`GOL_JOBS_FILE`** — job history JSON path (default: `jobs.json` at project root); configured in `src/web/app.py`
 
 ### Difficulty Levels
 
@@ -491,7 +547,35 @@ Audit incorrect model responses via a judge LLM:
 
 10. **Long testset filenames can exceed filesystem limits**
     - `path_manager.py` truncates task list if >120 chars → `N_tasks`, total filename capped at 240 chars
-    - Without truncation, configs with many task types could produce filenames too long for some filesystems
+    - Without truncation, configs with many test types could produce filenames too long for some filesystems
+
+11. **`jobs.json` is a runtime artifact — add to `.gitignore`**
+    - Created at server startup if not present; accumulates all job history across restarts
+    - Contains `api_key` / `api_base` in plaintext if non-Ollama providers were used — do not commit (see TECHDEBT TD-085)
+    - `partial_<job_id>.json.gz` files in the results dir are intermediate pause checkpoints; orphaned if server crashes between pause signal and worker exit (see TECHDEBT TD-087)
+    - If `jobs.json` becomes corrupt the server starts cleanly — store returns `[]` on parse error and logs a warning
+
+12. **Annotation invariant is relaxed** (v2.20.0)
+    - Pre-v2.20.0 rule was `spans XOR response_class`; that was too strict
+    - Current rule: at least one of `spans` / `response_class` must be populated — **both may coexist**
+    - Load-bearing case: `parser_false_positive` carries both the evidence (span) and the diagnosis (class). `verbose_correct` + span also makes sense (parser grabbed the wrong occurrence of a correct answer buried in verbose reasoning)
+    - Backend enforces this in `POST /api/human-review/annotate`; frontend classification buttons no longer wipe spans
+
+13. **Translation panels must be `select-none`** (v2.20.0)
+    - Annotation spans refer to char offsets in the *original* response string
+    - If the translated text were selectable, annotators could mark offsets that refer to the translation — span coordinates would then be meaningless when the annotation is re-read
+    - Enforced in `components/review/translation-panel.tsx` — do not remove
+
+14. **Improvement report: `match_rate` ≠ capture quality** (Improvement Report v2.3+)
+    - `regex_test[].match_rate` means "this regex fires on the example context," NOT "this regex captures the right token"
+    - Always pair with `capture_exact_rate` / `capture_contains_rate` — a pattern with match_rate 1.0 and capture_contains_rate 0.3 fires correctly but grabs the wrong substring (classic case: `(?i)recommendation:\s*([^.\n]+?)(?:[.\n]|$)` matches but captures `Definitively walk to the carwash` instead of `walk`)
+    - Frontend `CaptureQualityPill` tones on `capture_contains_rate`; backend sorts harness rows by `match_rate` first but the agent should read both. Green-pill (≥0.8) on both is a drop-in regex; anything else needs post-processing or anchor refinement
+
+15. **Improvement report: uniform-axis breakdowns are suppressed, not missing** (Improvement Report v2.3+)
+    - When every annotated case shares one language / system_style / user_style / expected answer, the corresponding `language_breakdown` / `config_breakdown` / `user_style_breakdown` is **omitted from the JSON** (not emitted as empty)
+    - The absence is reported in `data_quality.suppressed_sections` + a `uniform_*` warning code
+    - Frontend `DataQualityBanner` surfaces this; downstream consumers should check `data_quality.warnings` before assuming a missing section is a bug
+    - Related: `parser_missed_extractable: 100` can be misleading — always pair with top-level `parser_span_alignment` (a fully aligned `parser_extracted` still lands in `parser_missed_extractable` when the annotator used spans-only workflow instead of marking `parser_ok`)
 
 ### Import Patterns
 
@@ -794,11 +878,23 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-14*
-*Version: 2.19.0*
+*Last updated: 2026-04-16*
+*Version: 2.21.0*
 
 **Recent key additions:**
 
+- **Improvement Report v2.4** — `format_version: "2.4"`, agent-facing seed artifact for parser refactor work. Context-anchored regex generator replaces legacy span-text LCP (locates via `before` prefix + format-aware capture); merged label disjunction synthesizes across multiple `Label:` anchors into one pattern (carwash: `recommendation:` + `conclusion:` → single ~100% regex); regex candidates carry weighted `kind` (`merged_label_disjunction` > `context_anchor` > `format_only` > `text_pattern`) with `support` + post-harness low-support filtering
+- **Capture quality metrics (v2.3)** — `regex_test[]` rows now carry `capture_exact_rate` / `capture_contains_rate` / `sample_captures` so `match_rate` is never read in isolation; frontend `CaptureQualityPill` tones on capture quality
+- **Parser-span alignment (v2.3)** — top-level `parser_span_alignment` splits "parser missed" into `aligned` / `misaligned` / `no_output`, corrects the "parser_missed: 100" misleading headline when parser_extracted is actually correct but annotator didn't mark `parser_ok`
+- **Data quality warnings + auto-suppression (v2.3)** — `data_quality.warnings[]` flags `no_parse_strategy`, `uniform_language`/`uniform_system_style`/`uniform_user_style`/`uniform_expected`; single-bucket axis breakdowns are **omitted from the JSON** (not emitted empty); frontend surfaces as collapsible amber banner
+- **Span context enrichment (v2.1 → v2.2)** — context windows widened 24 → 120 chars, each span example carries a `sentence` field + `parser_extracted` + `parser_match_type` (inline parser-vs-annotator diff); per-group `structural_ratios` (line_start / label_colon / bold_wrap / answer_label_match / …), `prefix_anchors` with `type` (label / format / phrase), `label_taxonomy` (specific label-word counts)
+- **Model answer distribution + variants** — `model_answer_distribution` (normalized histogram) + `model_answer_variants` (raw text forms per normalized bucket) so the agent sees both "model mostly says walk" and "it writes `Walk` / `WALK` / `**Walk**` / `Walk to the carwash`"
+- **New span formats: italic / strikethrough / header** — frontend `autoFormat` detects `_walk_` / `*walk*` / `~~walk~~` / `# heading`; backend `FORMAT_TO_STRATEGY` maps to `italic_keyword` / `strikethrough_keyword` / `header_line`
+- **Modal UX polish** — dialog auto-fits content up to `min(95vw, 1200px)` (no more truncated tabs); 9 tabs kept on one row via horizontal scroll; Summary grid balanced to 4×2 with a `Parser accuracy` card; SpanGroupCard expansion reveals structural signals chips, prefix anchors table (type-chipped), and regex test rows with capture quality + click-to-expand sample captures
+- **Human Review & Annotation** (`/review`, v2.20.0) — two-column editorial workspace for human labelling of model responses; 7 response classes including `parser_false_positive` which uniquely coexists with answer spans; one-click word-marking with hover affordance; drag-select with sticky annotation dock; parser-match highlight + "Jump to parser match"; persistent parser-disagreement callout; session-wide target-language preference
+- **Annotation sidecars** — gzipped JSON (`{stem}_annotations.json.gz`) next to result files; atomic temp+rename writes; `has_annotations` flag surfaced on every result summary → `PenLine` badge on annotated rows; DELETE endpoint is idempotent
+- **Machine translation** — `deep-translator` wrapper with LRU cache; provider configurable via `TRANSLATOR_PROVIDER` env var (default `google`, zero-config); read-only translation panels (select-none preserves span offsets); language selector in Review header
+- **Invariant relaxation** — spans and `response_class` may now coexist (pre-v2.20.0 was `spans XOR response_class`); unlocks `verbose_correct` + span and `parser_false_positive` + span workflows
 - **Execute page unified** — `/execute` landing with "Simple run" / "Matrix run" tiles; `?mode=simple|matrix` deep-links; lazy-loaded sub-wizards (`pages/execute/simple-wizard.tsx`, `pages/execute/matrix-wizard.tsx`); `/matrix-execution` redirects via `<Navigate />`
 - **Matrix Exec wizard** — 5-step flow: Setup → Axes → Models → Settings → Review; reuses `StepButton`/`StepFooter` primitives
 - **Shared component extraction** — `components/wizard/` (StepButton, StepFooter) + `components/model-selection/` (ModelList, OllamaSection, OpenAIEndpointSection, HuggingFaceSection); removes ~300 lines of duplication
@@ -812,5 +908,6 @@ pytest tests/
 - **LLM-as-a-Judge** — `/judge` page; verdicts: `true_incorrect`, `false_negative`, `parser_failure`; Markdown export
 - **Multilingual content** — deep localization + grammatical gender across all 19 plugins
 - **React SPA** — Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui
+- **Job persistence + pause/resume** — `src/web/job_store.py` single-place JSON backend (swap for NoSQL without touching other files); `PAUSED` state with checkpoint index; resume continues from `paused_at_index`, merging partial results; history survives server restarts; `GOL_JOBS_FILE` env var configures path
 
 *For questions or issues: Check [README.md](README.md) or create an issue*

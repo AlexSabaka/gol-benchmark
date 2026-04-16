@@ -19,6 +19,7 @@ const ResultsPage = lazy(() => import("@/pages/results"))
 const ChartsPage = lazy(() => import("@/pages/charts"))
 const ReportsPage = lazy(() => import("@/pages/reports"))
 const JudgePage = lazy(() => import("@/pages/judge"))
+const ReviewPage = lazy(() => import("@/pages/review"))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -55,6 +56,7 @@ export default function App() {
                 <Route path="charts" element={<Suspense fallback={<PageLoader />}><ChartsPage /></Suspense>} />
                 <Route path="reports" element={<Suspense fallback={<PageLoader />}><ReportsPage /></Suspense>} />
                 <Route path="judge" element={<Suspense fallback={<PageLoader />}><JudgePage /></Suspense>} />
+                <Route path="review" element={<Suspense fallback={<PageLoader />}><ReviewPage /></Suspense>} />
                 <Route path="*" element={<NotFound />} />
               </Route>
             </Routes>

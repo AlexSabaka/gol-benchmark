@@ -1,6 +1,6 @@
 // ── Job types ──
 
-export type JobState = "pending" | "running" | "completed" | "failed" | "cancelled"
+export type JobState = "pending" | "running" | "paused" | "completed" | "failed" | "cancelled"
 
 export interface Job {
   id: string
@@ -14,6 +14,8 @@ export interface Job {
   error?: string
   created_at: number
   elapsed_seconds?: number
+  paused_at_index?: number | null
+  partial_result_path?: string | null
 }
 
 export interface RunRequest {
