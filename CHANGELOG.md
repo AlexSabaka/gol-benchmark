@@ -2,6 +2,48 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.22.1] - April 16, 2026
+
+### encoding_cipher — Parser Overhaul (annotation-data-driven)
+
+Refactor seeded by 117 manually annotated cases across 12 result files (`encoding_cipher_summary.json`). Pre-refactor correct rate: **43.6%** (51/117). The annotation summary identified 5 span groups, each with concrete regex evidence, and surfaced 3 root-cause failure modes: missing high-value strategies, two buggy existing strategies, and absent pre-processing.
+
+#### New decode_only strategies
+
+- **`_try_context_anchored_bold`** — highest priority; covers annotation Groups B/D/E (33 combined cases). Four patterns anchored on `plaintext is: **...**` (100% capture-exact per annotation harness), `decodes to: **...**` (80-90%), `decoded plaintext is: **...**`, and `reveals: **...**`. Uses `re.search` (first match) — these labels appear once, not repeatedly.
+- **`_try_blockquote_after_label`** — covers Group A (29 cases): `**Decoded plaintext (ROT13):**\n\n> text`. Three sub-patterns: bold label + newline + blockquote, inline bold label + blockquote, non-bold label + blockquote. Strips residual `>` markers from capture; 10-char minimum guard.
+- **`_try_italic_phrase`** — covers long-tail italic format (3 cases). Anchored variant requires decoded label on previous line; unanchored variant only fires when no substantial bold spans exist (prevents shadowing bold strategies).
+- **`_try_bold_plaintext`** — broad fallback: last `**bold phrase**` of 10+ chars that isn't a section header (`Step N:`, `Final Answer:`, `Decoded plaintext`, etc.). Module-level `_BOLD_HEADER_RE` exclusion set.
+
+#### Fixed strategies
+
+- **`_try_quoted_text`** — anchored `we get: "..."` pattern tried first (covers Group C, 10 cases); bare fallback minimum length raised 2 → 15, `\n` excluded from character class to prevent cross-line captures that pulled in validation-section quotes in step-by-step responses.
+- **`_try_labelled_answer`** — removed `|output` from the answer-labels alternation (was firing on `output:` lines in analytical step-by-step responses, causing misaligned captures); multi-line bold variant now uses `re.search` (first match) instead of `re_search_last` (found section headers later in the response); added `>?\s*` to the capture to strip blockquote prefix.
+
+#### Pre-processing
+
+- `strip_verification_tail(response)` now called at the top of `_parse_decode` before any strategy runs. Removes "Step N: Validation" and similar tail sections that were polluting quote- and label-based strategies in analytical responses.
+
+#### Strategy chain (decode_only, revised order)
+
+```text
+context_anchored_bold → blockquote_after_label → code_block → quoted_text
+  → labelled_answer → italic_phrase → bold_plaintext → full_response
+```
+
+Each strategy has its own confidence value; the `full_response` fallback retains 0.50.
+
+#### Generator: emit `parse_strategy`
+
+`task_params["parse_strategy"] = enc_type` added to the generator. All cases previously carried `parse_strategy="unknown"`, suppressing `strategy_breakdown` in improvement reports. New runs will carry `"base64"`, `"caesar"`, or `"morse"`.
+
+#### Modified files
+
+- [src/plugins/encoding_cipher/parser.py](src/plugins/encoding_cipher/parser.py) — 4 new strategy functions, 2 fixed, `strip_verification_tail` import + call, revised `_parse_decode` chain
+- [src/plugins/encoding_cipher/generator.py](src/plugins/encoding_cipher/generator.py) — `parse_strategy` added to `task_params.update({...})`
+
+---
+
 ## [2.22.0] - April 16, 2026
 
 ### Improvement Report v2.5 — Tactical Cut

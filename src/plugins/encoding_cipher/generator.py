@@ -421,6 +421,7 @@ class EncodingCipherGenerator(TestCaseGenerator):
                 "plaintext": plaintext,
                 "encoded_text": encoded_text,
                 "message_length": message_length,
+                "parse_strategy": enc_type,  # enables strategy_breakdown in improvement reports
             })
 
             cases.append(TestCase(
