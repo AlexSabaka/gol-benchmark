@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
-import { AlertTriangle, CheckCircle2, Crosshair } from "lucide-react"
+import { AlertTriangle, CheckCircle2, Copy, Crosshair, Languages } from "lucide-react"
+import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { AnnotationSpan, ResponseClass, ReviewCase } from "@/types"
 import { AnnotationDock, autoFormat, autoPosition, type PendingSpan } from "./annotation-dock"
-import { TranslationContent, TranslationTrigger, useTranslationPanel } from "./translation-panel"
+import { chunkResponse, type TranslateChunk } from "./translate-chunks"
+import { ChunkGutter } from "./chunk-gutter"
 
 interface Props {
   caseData: ReviewCase
@@ -21,6 +23,9 @@ interface Props {
   responseClass: ResponseClass | null
   /** Session-wide target language for the Translate button. */
   targetLang: string
+  /** Session-wide peek-translate toggle (chunked gutter + hover popover). */
+  peekTranslateOn: boolean
+  onTogglePeekTranslate: () => void
   onSetPending: (next: PendingSpan | null) => void
   onCommitPending: () => void
   /** Immediate add (no pending / dock). Used by word-level click-to-mark. */
@@ -89,6 +94,14 @@ interface RenderWordsArgs {
   parserHint: string
   onWordClick: (start: number, end: number, text: string) => void
   onRemoveSpan: (index: number) => void
+  /**
+   * When provided, output is wrapped in `<span data-chunk-idx="…">` elements
+   * aligned with each chunk's range. The refs in `chunkRefsOut` are populated
+   * with the wrapper DOM nodes so ChunkGutter can measure their bounding
+   * boxes. `display: inline` keeps layout identical to the unchunked render.
+   */
+  chunks?: TranslateChunk[]
+  chunkRefsOut?: React.RefObject<(HTMLSpanElement | null)[]>
 }
 
 /**
@@ -106,19 +119,69 @@ interface RenderWordsArgs {
  * "Answer spans" chip row below.
  */
 function renderWords(args: RenderWordsArgs) {
-  const { text, owner, parserHighlightRef, flashing, parserHint, onWordClick, onRemoveSpan } = args
-  const out: React.ReactNode[] = []
-  let i = 0
-  let parserRefAttached = false
+  const { text, owner, parserHighlightRef, flashing, parserHint, onWordClick, onRemoveSpan, chunks, chunkRefsOut } = args
+  // `parserAttached` is shared across chunk boundaries so the parser-match ref
+  // attaches exactly once to the first matching word, regardless of chunking.
+  const parserAttached = { value: false }
 
-  while (i < text.length) {
+  if (chunks && chunks.length > 0) {
+    const out: React.ReactNode[] = []
+    let cursor = 0
+    if (chunkRefsOut) chunkRefsOut.current = new Array(chunks.length).fill(null)
+    chunks.forEach((chunk, idx) => {
+      if (chunk.start > cursor) {
+        out.push(<span key={`gap-${cursor}`}>{text.slice(cursor, chunk.start)}</span>)
+      }
+      out.push(
+        <span
+          key={`chunk-${chunk.start}`}
+          data-chunk-idx={idx}
+          ref={(el) => {
+            if (chunkRefsOut) chunkRefsOut.current[idx] = el
+          }}
+        >
+          {renderRange(text, owner, chunk.start, chunk.end, parserHighlightRef, parserAttached, flashing, parserHint, onWordClick, onRemoveSpan)}
+        </span>,
+      )
+      cursor = chunk.end
+    })
+    if (cursor < text.length) {
+      out.push(
+        <span key={`tail-${cursor}`}>
+          {renderRange(text, owner, cursor, text.length, parserHighlightRef, parserAttached, flashing, parserHint, onWordClick, onRemoveSpan)}
+        </span>,
+      )
+    }
+    return out
+  }
+
+  return renderRange(text, owner, 0, text.length, parserHighlightRef, parserAttached, flashing, parserHint, onWordClick, onRemoveSpan)
+}
+
+/** Walk `text[start..end)` and emit the word/non-word runs with interactive
+ *  affordances. Mutates `parserAttached.value` so the parser-match ref is
+ *  attached exactly once across sequential calls (chunked render path). */
+function renderRange(
+  text: string,
+  owner: Int32Array,
+  start: number,
+  end: number,
+  parserHighlightRef: React.RefObject<HTMLSpanElement | null>,
+  parserAttached: { value: boolean },
+  flashing: boolean,
+  parserHint: string,
+  onWordClick: (start: number, end: number, text: string) => void,
+  onRemoveSpan: (index: number) => void,
+): React.ReactNode[] {
+  const out: React.ReactNode[] = []
+  let i = start
+
+  while (i < end) {
     const runStartsWord = isWordChar(text[i])
     let j = i
-    while (j < text.length && isWordChar(text[j]) === runStartsWord) j++
+    while (j < end && isWordChar(text[j]) === runStartsWord) j++
     const chunk = text.slice(i, j)
     const runStart = i
-    // Determine the dominant owner for this run (words: consistency required;
-    // non-words: pick the majority, but we only use it for decoration).
     const firstOwner = owner[runStart] ?? OWN_PLAIN
     let consistent = true
     for (let k = runStart + 1; k < j; k++) {
@@ -126,7 +189,6 @@ function renderWords(args: RenderWordsArgs) {
     }
 
     if (!runStartsWord) {
-      // Non-word: render as plain text but preserve mark/parser-match decoration.
       if (consistent && firstOwner >= 0) {
         out.push(
           <span key={runStart} className="border-b-2 border-primary bg-primary/15">
@@ -146,7 +208,6 @@ function renderWords(args: RenderWordsArgs) {
       continue
     }
 
-    // Word token. Three interactive flavors depending on owner:
     if (consistent && firstOwner >= 0) {
       const spanIdx = firstOwner
       out.push(
@@ -163,8 +224,8 @@ function renderWords(args: RenderWordsArgs) {
         </mark>,
       )
     } else if (consistent && firstOwner === OWN_PARSER) {
-      const isFirstParserWord = !parserRefAttached
-      if (isFirstParserWord) parserRefAttached = true
+      const isFirstParserWord = !parserAttached.value
+      if (isFirstParserWord) parserAttached.value = true
       out.push(
         <span
           key={runStart}
@@ -194,7 +255,6 @@ function renderWords(args: RenderWordsArgs) {
         </span>,
       )
     } else {
-      // Mixed-owner word (rare: ragged span boundary). Render plain.
       out.push(<span key={runStart}>{chunk}</span>)
     }
     i = j
@@ -250,6 +310,8 @@ export function ResponsePanel({
   pending,
   responseClass,
   targetLang,
+  peekTranslateOn,
+  onTogglePeekTranslate,
   onSetPending,
   onCommitPending,
   onAddSpan,
@@ -262,14 +324,14 @@ export function ResponsePanel({
 }: Props) {
   const responseRef = useRef<HTMLDivElement | null>(null)
   const parserHighlightRef = useRef<HTMLSpanElement | null>(null)
+  const chunkRefs = useRef<(HTMLSpanElement | null)[]>([])
   const [flashing, setFlashing] = useState(false)
-  const [translateOpen, setTranslateOpen] = useState(false)
-  const { sameLang: translationSameLang, query: translationQuery } = useTranslationPanel(
-    caseData.raw_response,
-    caseData.language,
-    targetLang,
-    translateOpen,
-  )
+
+  const sameLang = useMemo(() => {
+    const src = (caseData.language || "").toLowerCase()
+    const tgt = (targetLang || "en").toLowerCase()
+    return !!src && src === tgt
+  }, [caseData.language, targetLang])
 
   const parserMatch = useMemo(
     () => findParserMatch(caseData.raw_response, caseData.parsed_answer),
@@ -281,15 +343,30 @@ export function ResponsePanel({
     [caseData.raw_response, spans, parserMatch],
   )
 
-  // Reset scroll to top whenever the case changes. This prevents the bug where
-  // the response panel opens mid-paragraph and hides the actual lead material.
-  // Also collapse the translation panel so the annotator starts clean on each case.
+  // Chunking is cheap (pure string ops) but still skip it when the feature is
+  // off OR the source/target languages match — both paths have zero use for
+  // gutter bars.
+  const chunks = useMemo(
+    () => (peekTranslateOn && !sameLang ? chunkResponse(caseData.raw_response) : []),
+    [peekTranslateOn, sameLang, caseData.raw_response],
+  )
+
+  // Reset scroll to top whenever the case changes. Prevents the response
+  // panel opening mid-paragraph and hiding the lead.
   useEffect(() => {
     const el = responseRef.current
     if (el) el.scrollTop = 0
     setFlashing(false)
-    setTranslateOpen(false)
   }, [caseData.case_id])
+
+  const handleCopyResponse = useCallback(async () => {
+    try {
+      await navigator.clipboard.writeText(caseData.raw_response)
+      toast.success("Response copied")
+    } catch (err) {
+      toast.error(`Copy failed: ${err instanceof Error ? err.message : "unknown"}`)
+    }
+  }, [caseData.raw_response])
 
   const handleJumpToParserMatch = useCallback(() => {
     const el = parserHighlightRef.current
@@ -377,13 +454,36 @@ export function ResponsePanel({
           </Badge>
         )}
         <div className="ml-auto flex items-center gap-1">
-          {!translationSameLang && caseData.raw_response && (
-            <TranslationTrigger
-              open={translateOpen}
-              onToggle={() => setTranslateOpen((v) => !v)}
-              sourceLang={caseData.language}
-              targetLang={targetLang}
-            />
+          {caseData.raw_response && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCopyResponse}
+              className="h-6 gap-1 px-1.5 text-[11px] text-muted-foreground hover:text-foreground"
+              title="Copy raw response to clipboard"
+            >
+              <Copy className="h-3 w-3" />
+              Copy
+            </Button>
+          )}
+          {!sameLang && caseData.raw_response && (
+            <Button
+              variant={peekTranslateOn ? "secondary" : "ghost"}
+              size="sm"
+              onClick={onTogglePeekTranslate}
+              className={`h-6 gap-1 px-1.5 text-[11px] ${
+                peekTranslateOn ? "text-sky-700 dark:text-sky-400" : "text-muted-foreground hover:text-foreground"
+              }`}
+              title={
+                peekTranslateOn
+                  ? "Hide peek-translate bars"
+                  : `Peek-translate to ${(targetLang || "en").toUpperCase()} · hover gutter bars`
+              }
+              aria-pressed={peekTranslateOn}
+            >
+              <Languages className="h-3 w-3" />
+              Translate
+            </Button>
           )}
           {parserMatch && (
             <Button
@@ -454,7 +554,9 @@ export function ResponsePanel({
         <div
           ref={responseRef}
           onMouseUp={handleMouseUp}
-          className="h-full select-text overflow-y-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background p-4 font-mono text-sm leading-relaxed"
+          className={`relative h-full select-text overflow-y-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background font-mono text-sm leading-relaxed ${
+            chunks.length > 0 ? "py-4 pl-8 pr-4" : "p-4"
+          }`}
         >
           {caseData.raw_response ? (
             renderWords({
@@ -465,16 +567,23 @@ export function ResponsePanel({
               parserHint: stringifyAnswer(caseData.parsed_answer),
               onWordClick: handleWordClick,
               onRemoveSpan,
+              chunks: chunks.length > 0 ? chunks : undefined,
+              chunkRefsOut: chunks.length > 0 ? chunkRefs : undefined,
             })
           ) : (
             <span className="text-muted-foreground">(empty response)</span>
           )}
+          {chunks.length > 0 && (
+            <ChunkGutter
+              chunks={chunks}
+              containerRef={responseRef}
+              chunkElementRefs={chunkRefs}
+              sourceLang={caseData.language}
+              targetLang={targetLang}
+            />
+          )}
         </div>
       </div>
-
-      {translateOpen && !translationSameLang && (
-        <TranslationContent query={translationQuery} targetLang={targetLang} />
-      )}
 
       {spans.length > 0 && (
         <div className="flex flex-wrap items-center gap-1.5">

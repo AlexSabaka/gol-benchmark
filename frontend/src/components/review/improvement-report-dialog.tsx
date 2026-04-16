@@ -15,13 +15,13 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useImprovementReport } from "@/hooks/use-review"
 import { languageLabel } from "@/components/language-filter-chip"
 import type {
-  AnchorFrequencyRow,
   AnnotatorNote,
   AxisBucket,
   DataQuality,
   ExpectedDistractorPair,
   ImprovementReport,
   LabelTaxonomyRow,
+  LongTailGroup,
   ModelAnswerBucket,
   ParserSpanAlignment,
   PrefixAnchor,
@@ -116,37 +116,51 @@ function ReportBody({ report }: { report: ImprovementReport }) {
         <TabsList className="flex-nowrap overflow-x-auto justify-start">
           <TabsTrigger value="summary" className="whitespace-nowrap shrink-0">Summary</TabsTrigger>
           <TabsTrigger value="spans" className="whitespace-nowrap shrink-0">
-            Spans ({report.span_groups.length})
+            Spans ({report.span_groups.length}
+            {report.long_tail_groups && report.long_tail_groups.length > 0 ? ` + ${report.long_tail_groups.length}` : ""})
           </TabsTrigger>
-          <TabsTrigger value="strategy" className="whitespace-nowrap shrink-0">
-            Strategy ({Object.keys(report.strategy_breakdown ?? {}).length})
-          </TabsTrigger>
+          {report.strategy_breakdown && (
+            <TabsTrigger value="strategy" className="whitespace-nowrap shrink-0">
+              Strategy ({Object.keys(report.strategy_breakdown).length})
+            </TabsTrigger>
+          )}
           <TabsTrigger value="languages" className="whitespace-nowrap shrink-0">Languages</TabsTrigger>
-          <TabsTrigger value="misses" className="whitespace-nowrap shrink-0">Misses</TabsTrigger>
+          {report.answer_when_missed && (
+            <TabsTrigger value="misses" className="whitespace-nowrap shrink-0">Misses</TabsTrigger>
+          )}
           <TabsTrigger value="answers" className="whitespace-nowrap shrink-0">
             Answers ({Object.keys(report.model_answer_distribution ?? {}).length})
           </TabsTrigger>
-          <TabsTrigger value="anchors" className="whitespace-nowrap shrink-0">
-            Anchors ({(report.anchor_frequency ?? []).length})
-          </TabsTrigger>
-          <TabsTrigger value="ordering" className="whitespace-nowrap shrink-0">
-            Ordering ({report.ordering_hints.length})
-          </TabsTrigger>
-          <TabsTrigger value="classes" className="whitespace-nowrap shrink-0">Classes</TabsTrigger>
-          <TabsTrigger value="notes" className="whitespace-nowrap shrink-0">
-            Notes ({(report.annotator_notes ?? []).length})
-          </TabsTrigger>
+          {report.ordering_hints && report.ordering_hints.length > 0 && (
+            <TabsTrigger value="ordering" className="whitespace-nowrap shrink-0">
+              Ordering ({report.ordering_hints.length})
+            </TabsTrigger>
+          )}
+          {report.summary.response_class_counts &&
+            Object.keys(report.summary.response_class_counts).length > 0 && (
+            <TabsTrigger value="classes" className="whitespace-nowrap shrink-0">Classes</TabsTrigger>
+          )}
+          {report.annotator_notes && report.annotator_notes.length > 0 && (
+            <TabsTrigger value="notes" className="whitespace-nowrap shrink-0">
+              Notes ({report.annotator_notes.length})
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="summary" className="mt-3">
           <SummaryTab report={report} />
         </TabsContent>
         <TabsContent value="spans" className="mt-3">
-          <SpansTab groups={report.span_groups} />
+          <SpansTab
+            groups={report.span_groups}
+            longTail={report.long_tail_groups ?? []}
+          />
         </TabsContent>
-        <TabsContent value="strategy" className="mt-3">
-          <StrategyTab strategies={report.strategy_breakdown ?? {}} />
-        </TabsContent>
+        {report.strategy_breakdown && (
+          <TabsContent value="strategy" className="mt-3">
+            <StrategyTab strategies={report.strategy_breakdown} />
+          </TabsContent>
+        )}
         <TabsContent value="languages" className="mt-3">
           <BreakdownTab
             label="Language"
@@ -166,27 +180,33 @@ function ReportBody({ report }: { report: ImprovementReport }) {
             />
           </div>
         </TabsContent>
-        <TabsContent value="misses" className="mt-3">
-          <MissesTab data={report.answer_when_missed} />
-        </TabsContent>
+        {report.answer_when_missed && (
+          <TabsContent value="misses" className="mt-3">
+            <MissesTab data={report.answer_when_missed} />
+          </TabsContent>
+        )}
         <TabsContent value="answers" className="mt-3">
           <ModelAnswersTab
             distribution={report.model_answer_distribution ?? {}}
             variants={report.model_answer_variants}
           />
         </TabsContent>
-        <TabsContent value="anchors" className="mt-3">
-          <AnchorsTab rows={report.anchor_frequency ?? []} />
-        </TabsContent>
-        <TabsContent value="ordering" className="mt-3">
-          <OrderingTab report={report} />
-        </TabsContent>
-        <TabsContent value="classes" className="mt-3">
-          <ClassesTab classes={report.response_classes} />
-        </TabsContent>
-        <TabsContent value="notes" className="mt-3">
-          <NotesTab notes={report.annotator_notes ?? []} />
-        </TabsContent>
+        {report.ordering_hints && report.ordering_hints.length > 0 && (
+          <TabsContent value="ordering" className="mt-3">
+            <OrderingTab hints={report.ordering_hints} />
+          </TabsContent>
+        )}
+        {report.summary.response_class_counts &&
+          Object.keys(report.summary.response_class_counts).length > 0 && (
+          <TabsContent value="classes" className="mt-3">
+            <ClassesTab classes={report.summary.response_class_counts} />
+          </TabsContent>
+        )}
+        {report.annotator_notes && report.annotator_notes.length > 0 && (
+          <TabsContent value="notes" className="mt-3">
+            <NotesTab notes={report.annotator_notes} />
+          </TabsContent>
+        )}
       </Tabs>
 
       <div className="flex justify-end gap-2 border-t pt-3">
@@ -442,8 +462,14 @@ function ParserSpanAlignmentCallout({ alignment }: { alignment: ParserSpanAlignm
   )
 }
 
-function SpansTab({ groups }: { groups: SpanGroup[] }) {
-  if (groups.length === 0) {
+function SpansTab({
+  groups,
+  longTail,
+}: {
+  groups: SpanGroup[]
+  longTail: LongTailGroup[]
+}) {
+  if (groups.length === 0 && longTail.length === 0) {
     return <div className="py-8 text-center text-sm text-muted-foreground">No annotated spans yet.</div>
   }
   return (
@@ -451,6 +477,66 @@ function SpansTab({ groups }: { groups: SpanGroup[] }) {
       {groups.map((g, i) => (
         <SpanGroupCard key={i} group={g} />
       ))}
+      {longTail.length > 0 && <LongTailGroupsBlock groups={longTail} />}
+    </div>
+  )
+}
+
+// v2.5 — compact rendering of statistically-useless groups (count < 4). One
+// row each, expandable to the single retained example span. Kept visually
+// distinct (dimmed header + smaller typography) so the agent reads full
+// groups first.
+function LongTailGroupsBlock({ groups }: { groups: LongTailGroup[] }) {
+  return (
+    <div className="rounded-md border border-dashed border-border/60 bg-muted/20 p-2.5">
+      <div className="mb-1.5 text-[10px] font-medium uppercase tracking-wider text-muted-foreground">
+        Long-tail groups ({groups.length}) — count &lt; 4, low signal
+      </div>
+      <div className="space-y-1">
+        {groups.map((g, i) => (
+          <LongTailRow key={i} group={g} />
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function LongTailRow({ group }: { group: LongTailGroup }) {
+  const [open, setOpen] = useState(false)
+  const hasExample = group.example !== null
+  return (
+    <div className="rounded border border-border/40 bg-background/50">
+      <button
+        type="button"
+        onClick={() => hasExample && setOpen((v) => !v)}
+        disabled={!hasExample}
+        className="flex w-full items-center gap-2 px-2 py-1 text-left text-[11px] disabled:cursor-default"
+      >
+        {hasExample ? (
+          <span className="w-3 text-muted-foreground">{open ? "▾" : "▸"}</span>
+        ) : (
+          <span className="w-3" />
+        )}
+        <Badge variant="outline" className="text-[10px] uppercase">
+          {group.position} / {group.format}
+        </Badge>
+        <span className="font-mono tabular-nums text-muted-foreground">
+          ×{group.count}
+        </span>
+      </button>
+      {open && group.example && (
+        <div className="border-t border-border/40 px-2 pb-1.5 pt-1 text-[11px]">
+          <div className="font-mono text-foreground">
+            "{group.example.text}"
+          </div>
+          <div className="mt-0.5 text-muted-foreground">
+            <span className="opacity-60">{group.example.case_id}</span>
+            {group.example.language && (
+              <span className="ml-2 opacity-60">· {group.example.language}</span>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
@@ -831,8 +917,9 @@ function CaptureSampleRow({ sample }: { sample: RegexCaptureSample }) {
   )
 }
 
-function OrderingTab({ report }: { report: ImprovementReport }) {
-  if (report.ordering_hints.length === 0) {
+function OrderingTab({ hints }: { hints: ImprovementReport["ordering_hints"] }) {
+  const rows = hints ?? []
+  if (rows.length === 0) {
     return (
       <div className="py-8 text-center text-sm text-muted-foreground">
         No ordering hints — your parser seems to be scanning in the right direction.
@@ -841,7 +928,7 @@ function OrderingTab({ report }: { report: ImprovementReport }) {
   }
   return (
     <div className="space-y-2">
-      {report.ordering_hints.map((h, i) => (
+      {rows.map((h, i) => (
         <div
           key={i}
           className="rounded-md border border-amber-500/40 bg-amber-500/5 p-3 text-sm"
@@ -1061,32 +1148,6 @@ function FreqTable({ label, entries, tone }: { label: string; entries: [string, 
           </div>
         ))}
       </div>
-    </div>
-  )
-}
-
-function AnchorsTab({ rows }: { rows: AnchorFrequencyRow[] }) {
-  if (rows.length === 0) {
-    return (
-      <div className="py-8 text-center text-sm text-muted-foreground">
-        No common anchor phrases found yet — annotate more cases for cross-context patterns.
-      </div>
-    )
-  }
-  return (
-    <div className="max-h-[50vh] space-y-1 overflow-y-auto pr-1">
-      {rows.map((r, i) => (
-        <div key={i} className="flex items-center gap-2 rounded border border-border/60 px-2 py-1.5 text-xs">
-          <span className="font-mono text-foreground">"{r.anchor}"</span>
-          <span className="ml-auto font-mono tabular-nums">×{r.count}</span>
-          <span className="text-[10px] text-muted-foreground">
-            {r.languages.join(", ").toUpperCase()}
-          </span>
-          <span className="text-[10px] text-muted-foreground/70 truncate max-w-40">
-            → {r.spans_seen_in.join(", ")}
-          </span>
-        </div>
-      ))}
     </div>
   )
 }

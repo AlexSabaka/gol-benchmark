@@ -51,6 +51,17 @@ function parserMatchesAnySpan(parsed: unknown, spans: AnnotationSpan[]): boolean
   return spans.some((s) => s.text.toLowerCase().includes(needle) || needle.includes(s.text.toLowerCase()))
 }
 
+/**
+ * Composite key for draft / saved / unsaved state. Earlier versions keyed by
+ * `case_id` alone, which collides when the annotator opens multiple result
+ * files at once and two cases share the same `case_id` (e.g. carwash_0001
+ * exists in both a UA and a DE result file) — drafts from one file would leak
+ * into the other. The `result_file_id::case_id` pairing restores uniqueness.
+ */
+function caseKey(c: ReviewCase | undefined | null): string {
+  return c ? `${c.result_file_id}::${c.case_id}` : ""
+}
+
 export default function ReviewPage() {
   const [searchParams, setSearchParams] = useSearchParams()
   const filesParam = searchParams.get("files") || ""
@@ -103,6 +114,10 @@ function ReviewWorkspace({
     makeStorageKey("review-page", "target-lang"),
     "en",
   )
+  // Session-wide toggle for the peek-translate gutter (chunked, hover-to-peek).
+  // Deliberately NOT persisted to localStorage — reset on reload is expected;
+  // persists across case navigation within a single session.
+  const [peekTranslateOn, setPeekTranslateOn] = useState(false)
 
   // ── Match-type filter from URL (preset keys map to match_types lists) ──
   const matchTypes = useMemo(() => {
@@ -162,7 +177,7 @@ function ReviewWorkspace({
       const next = new Set(prev)
       for (const c of cases) {
         if (c.existing_annotation && (c.existing_annotation.spans.length > 0 || c.existing_annotation.response_class)) {
-          next.add(c.case_id)
+          next.add(caseKey(c))
         }
       }
       return next
@@ -175,21 +190,22 @@ function ReviewWorkspace({
   const commitHandlerRef = useRef<(() => void) | null>(null)
 
   const activeCase = cases[activeIndex]
+  const activeKey = caseKey(activeCase)
   const activeDraft: DraftAnnotation = useMemo(() => {
     if (!activeCase) return { spans: [], response_class: null, note: "", dirty: false }
-    return drafts[activeCase.case_id] ?? emptyDraft(activeCase.existing_annotation)
-  }, [activeCase, drafts])
+    return drafts[activeKey] ?? emptyDraft(activeCase.existing_annotation)
+  }, [activeCase, activeKey, drafts])
 
   const updateDraft = useCallback(
     (patch: Partial<DraftAnnotation> | ((prev: DraftAnnotation) => DraftAnnotation)) => {
       if (!activeCase) return
       setDrafts((prev) => {
-        const current = prev[activeCase.case_id] ?? emptyDraft(activeCase.existing_annotation)
+        const current = prev[activeKey] ?? emptyDraft(activeCase.existing_annotation)
         const next = typeof patch === "function" ? patch(current) : { ...current, ...patch }
-        return { ...prev, [activeCase.case_id]: { ...next, dirty: true } }
+        return { ...prev, [activeKey]: { ...next, dirty: true } }
       })
     },
-    [activeCase],
+    [activeCase, activeKey],
   )
 
   // ── Annotator verified: has the human engaged with the parser's claim? ──
@@ -264,7 +280,7 @@ function ReviewWorkspace({
     (code: ResponseClass) => {
       if (!activeCase) return
       setDrafts((prev) => {
-        const current = prev[activeCase.case_id] ?? emptyDraft(activeCase.existing_annotation)
+        const current = prev[activeKey] ?? emptyDraft(activeCase.existing_annotation)
         // Spans + verdict are both valid evidence — keep them. The backend
         // invariant permits coexistence, and many realistic cases need both
         // (e.g. `verbose_correct` where the parser grabbed the wrong token
@@ -272,7 +288,7 @@ function ReviewWorkspace({
         // pinpoints where, the verdict explains the failure mode).
         return {
           ...prev,
-          [activeCase.case_id]: {
+          [activeKey]: {
             ...current,
             response_class: code,
             dirty: true,
@@ -280,7 +296,7 @@ function ReviewWorkspace({
         }
       })
     },
-    [activeCase],
+    [activeCase, activeKey],
   )
 
   const commitPending = useCallback(() => {
@@ -301,6 +317,7 @@ function ReviewWorkspace({
     async (draft: DraftAnnotation, target: ReviewCase): Promise<boolean> => {
       const annotation = buildAnnotation(draft)
       if (!annotation) return true // nothing to save; treat as success
+      const key = caseKey(target)
       try {
         await saveMutation.mutateAsync({
           result_file_id: target.result_file_id,
@@ -309,18 +326,18 @@ function ReviewWorkspace({
         })
         setUnsaved((prev) => {
           const next = new Set(prev)
-          next.delete(target.case_id)
+          next.delete(key)
           return next
         })
         setSavedIds((prev) => {
-          if (prev.has(target.case_id)) return prev
+          if (prev.has(key)) return prev
           const next = new Set(prev)
-          next.add(target.case_id)
+          next.add(key)
           return next
         })
         return true
       } catch (err) {
-        setUnsaved((prev) => new Set(prev).add(target.case_id))
+        setUnsaved((prev) => new Set(prev).add(key))
         toast.error(`Save failed — kept in buffer to retry. ${err instanceof Error ? err.message : ""}`)
         return false
       }
@@ -333,7 +350,7 @@ function ReviewWorkspace({
       if (cases.length === 0) return
       const clamped = Math.max(0, Math.min(cases.length - 1, nextIdx))
       if (activeCase) {
-        const draft = drafts[activeCase.case_id]
+        const draft = drafts[activeKey]
         if (draft?.dirty && buildAnnotation(draft)) {
           await saveDraft(draft, activeCase)
         }
@@ -341,7 +358,7 @@ function ReviewWorkspace({
       setActiveIndex(clamped)
       setPending(null)
     },
-    [cases.length, activeCase, drafts, saveDraft, setActiveIndex],
+    [cases.length, activeCase, activeKey, drafts, saveDraft, setActiveIndex],
   )
 
   const goNext = useCallback(() => goToIndex(activeIndex + 1), [activeIndex, goToIndex])
@@ -490,6 +507,8 @@ function ReviewWorkspace({
               pending={pending}
               responseClass={activeDraft.response_class}
               targetLang={targetLang}
+              peekTranslateOn={peekTranslateOn}
+              onTogglePeekTranslate={() => setPeekTranslateOn((v) => !v)}
               onSetPending={setPending}
               onCommitPending={commitPending}
               onAddSpan={handleAddSpan}

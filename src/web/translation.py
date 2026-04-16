@@ -53,10 +53,15 @@ def _normalize_lang(lang: Optional[str]) -> str:
     if not lang:
         return "auto"
     low = lang.lower()
-    # Map our internal tag `ua` → standard `uk` that translation providers
-    # expect; `zh` stays as-is (most providers accept it).
+    # Internal → provider-friendly tag remap. `ua` → `uk` (Ukrainian ISO 639-1);
+    # `zh` on its own is ambiguous for Google/MyMemory (they want a script
+    # variant) — default to Simplified (`zh-CN`) since that's how our testsets
+    # are generated. If a user explicitly asks for Traditional, they'll pass
+    # `zh-tw` which already lower-cases correctly for the providers.
     if low == "ua":
         return "uk"
+    if low == "zh":
+        return "zh-CN"
     return low
 
 

@@ -96,6 +96,9 @@ export interface ReportSummary {
   parser_missed_aligned?: number       // parser extracted correctly but annotator used spans-only
   parser_missed_misaligned?: number    // true parser failure — extracted wrong token
   parser_missed_no_output?: number     // parse_error with empty extracted value
+  // v2.5 — folded in from the deleted top-level `response_classes` section.
+  // Only non-zero buckets are emitted, so consumers render a dense list.
+  response_class_counts?: Record<string, number>
 }
 
 export interface SpanExample {
@@ -276,13 +279,6 @@ export interface AnswerWhenMissed {
   expected_distractor_pairs: ExpectedDistractorPair[]
 }
 
-export interface AnchorFrequencyRow {
-  anchor: string
-  count: number
-  languages: string[]
-  spans_seen_in: string[]
-}
-
 export interface AnnotatorNote {
   case_id: string
   language: string
@@ -290,12 +286,19 @@ export interface AnnotatorNote {
   note: string
 }
 
+// v2.5 — compact stub for statistically-useless span groups (count < 4).
+export interface LongTailGroup {
+  position: SpanPosition
+  format: SpanFormat
+  count: number
+  example: SpanExample | null
+}
+
 export interface ImprovementReport {
   format_version?: string
   source_files: string[]
   summary: ReportSummary
   false_positive_rate?: number
-  confusion_matrix?: Record<string, Record<string, number>>
   language_breakdown?: Record<string, AxisBucket>
   config_breakdown?: Record<string, AxisBucket>
   user_style_breakdown?: Record<string, AxisBucket>
@@ -309,9 +312,9 @@ export interface ImprovementReport {
   parser_span_alignment?: ParserSpanAlignment
   data_quality?: DataQuality
   span_groups: SpanGroup[]
-  anchor_frequency?: AnchorFrequencyRow[]
-  ordering_hints: OrderingHint[]
-  response_classes: Record<string, number>
+  // v2.5 — collapsed low-count groups; absent when no such groups exist.
+  long_tail_groups?: LongTailGroup[]
+  ordering_hints?: OrderingHint[]
   annotator_notes?: AnnotatorNote[]
 }
 

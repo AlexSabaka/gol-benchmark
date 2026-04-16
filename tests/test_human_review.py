@@ -145,8 +145,8 @@ def test_build_report_produces_four_sections():
     assert len(report["ordering_hints"]) == 1
     assert "end_sentences" in report["ordering_hints"][0]["recommendation"]
 
-    # Section 4: classes
-    c = report["response_classes"]
+    # Section 4: response classes folded into summary (v2.5)
+    c = report["summary"]["response_class_counts"]
     assert c["hedge"] == 1
     assert c["parser_ok"] == 1
     assert c["parser_missed"] == 4
@@ -156,7 +156,9 @@ def test_build_report_handles_empty_inputs():
     report = agg.build_report([], source_files=[])
     assert report["summary"]["total_cases"] == 0
     assert report["span_groups"] == []
-    assert report["ordering_hints"] == []
+    # v2.5 — empty ordering_hints / annotator_notes are omitted entirely.
+    assert "ordering_hints" not in report
+    assert "annotator_notes" not in report
 
 
 # ---------------------------------------------------------------------------
@@ -400,7 +402,7 @@ def test_build_report_parser_false_positive_counts_as_missed():
     report = agg.build_report([af])
     assert report["summary"]["parser_missed_extractable"] == 1
     assert report["summary"]["parser_was_correct"] == 0
-    assert report["response_classes"].get("parser_false_positive") == 1
+    assert report["summary"]["response_class_counts"].get("parser_false_positive") == 1
 
 
 def test_delete_annotations_is_idempotent(fake_result: Path):
@@ -546,25 +548,6 @@ def test_v2_format_version_and_top_level_fpr():
     assert report["summary"]["parser_was_correct"] == 1
 
 
-def test_v2_confusion_matrix():
-    af = {"meta": {}, "cases": {
-        # parser said correct, annotator endorsed → true positive
-        "tp": _enriched_case("tp", response_class="parser_ok", parser_match_type="correct"),
-        # parser said correct, annotator flagged as false-positive (the gaslight case)
-        "fp": _enriched_case("fp", response_class="parser_false_positive",
-                             spans=[_span("walking")], parser_match_type="correct"),
-        # parser said parse_error, annotator marked spans → recoverable miss
-        "rm": _enriched_case("rm", spans=[_span("you should drive")], parser_match_type="parse_error"),
-        # parser said parse_error, annotator says hedge → true unparseable
-        "tu": _enriched_case("tu", response_class="hedge", parser_match_type="parse_error"),
-    }}
-    cm = agg.build_report([af])["confusion_matrix"]
-    assert cm["correct"]["parser_ok"] == 1
-    assert cm["correct"]["parser_false_positive"] == 1
-    assert cm["parse_error"]["_with_spans"] == 1
-    assert cm["parse_error"]["hedge"] == 1
-
-
 def test_v2_language_breakdown_and_miss_rate():
     af = {"meta": {}, "cases": {
         "ua1": _enriched_case("ua1", language="ua", spans=[_span("прав")], parser_match_type="parse_error"),
@@ -660,40 +643,6 @@ def test_v2_annotator_notes_surfaced():
     assert notes[0]["verdict"] == "hedge"
 
 
-def test_v2_anchor_frequency_extracts_phrases():
-    # Build cases where the *context windows* hold the anchor phrase, since
-    # anchor_frequency reads from `before` not from the span text itself.
-    cases = {}
-    for i, before in enumerate([
-        "After thought, you should ",
-        "I think you should ",
-        "To summarize, you should ",
-    ]):
-        cases[f"c{i}"] = {
-            "case_id": f"c{i}",
-            "parser_match_type": "parse_error",
-            "parser_extracted": None,
-            "expected": "drive",
-            "language": "en",
-            "parse_strategy": "unknown",
-            "context_windows": [{"text": "drive", "char_start": 0, "char_end": 5,
-                                 "before": before, "after": "."}],
-            "annotation": {
-                "spans": [{"text": "drive", "char_start": 0, "char_end": 5,
-                           "position": "end", "format": "plain"}],
-                "response_class": None,
-                "annotator_note": "",
-            },
-        }
-    af = {"meta": {}, "cases": cases}
-    rows = agg.build_report([af])["anchor_frequency"]
-    assert rows, "expected at least one anchor"
-    top = rows[0]
-    assert "you should" in top["anchor"]
-    assert top["count"] == 3
-    assert top["languages"] == ["en"]
-
-
 def test_v2_legacy_sidecar_backfilled_from_result_payload(fake_result):
     """A legacy case dict with no language/strategy fields should pick those up
     from the source result payload via `result_payloads_by_file`."""
@@ -739,14 +688,17 @@ def test_v2_endpoint_returns_format_version_2(fake_result):
     assert res.status_code == 200
     body = res.json()
     assert body["format_version"].startswith("2")
-    # Core v2 sections present. `language_breakdown` / `config_breakdown` /
-    # `user_style_breakdown` may be omitted in v2.3 when they'd be
-    # single-bucket — they're reported in data_quality.suppressed_sections
-    # instead.
-    for key in ("confusion_matrix", "strategy_breakdown", "answer_when_missed",
-                "anchor_frequency", "annotator_notes", "false_positive_rate",
-                "data_quality", "parser_span_alignment"):
-        assert key in body, f"missing v2 section: {key}"
+    # Core v2.5 sections that must always be present. Axis breakdowns +
+    # `answer_when_missed` + `strategy_breakdown` + `annotator_notes` /
+    # `ordering_hints` may be omitted — data_quality.suppressed_sections
+    # or empty-omit logic explains why (see test_v2_5_* for specifics).
+    for key in ("summary", "false_positive_rate",
+                "data_quality", "parser_span_alignment",
+                "span_groups", "model_answer_distribution"):
+        assert key in body, f"missing v2.5 section: {key}"
+    # v2.5 — the three dropped sections must NOT appear at top level.
+    for deleted in ("confusion_matrix", "anchor_frequency", "response_classes"):
+        assert deleted not in body, f"{deleted} should be deleted in v2.5"
 
 
 # ---------------------------------------------------------------------------
@@ -1213,9 +1165,12 @@ def test_v2_3_data_quality_suppresses_single_bucket_axes():
     dq = report["data_quality"]
     codes = {w["code"] for w in dq["warnings"]}
     assert {"uniform_language", "uniform_system_style", "uniform_user_style"}.issubset(codes)
-    assert set(dq["suppressed_sections"]) == {
+    # v2.5 also suppresses `strategy_breakdown` (all parse_strategy='unknown')
+    # and `answer_when_missed.by_expected` (uniform expected). Assert the
+    # axis suppressions are present rather than exact-match.
+    assert {
         "language_breakdown", "config_breakdown", "user_style_breakdown",
-    }
+    }.issubset(set(dq["suppressed_sections"]))
 
 
 def test_v2_3_data_quality_keeps_axis_with_multiple_buckets():
@@ -1442,4 +1397,153 @@ def test_v2_4_format_version():
     af = {"meta": {}, "cases": {
         "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
     }}
-    assert agg.build_report([af])["format_version"] == "2.4"
+    # v2.5 bumped the version — keep the test as a floor (`2.x` family).
+    assert agg.build_report([af])["format_version"].startswith("2.")
+
+
+# ---------------------------------------------------------------------------
+# v2.5 — suppressions, deletions, long-tail collapse
+# ---------------------------------------------------------------------------
+
+
+def test_v2_5_format_version_is_2_5():
+    af = {"meta": {}, "cases": {
+        "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
+    }}
+    assert agg.build_report([af])["format_version"] == "2.5"
+
+
+def test_v2_5_suppresses_strategy_breakdown_under_no_parse_strategy():
+    # All cases parse_strategy='unknown' (the default) → no_parse_strategy fires.
+    af = {"meta": {}, "cases": {
+        f"c{i}": _enriched_case(f"c{i}", spans=[_span("walk")], parser_match_type="parse_error")
+        for i in range(10)
+    }}
+    report = agg.build_report([af])
+    assert "strategy_breakdown" not in report
+    warnings = [w["code"] for w in report["data_quality"]["warnings"]]
+    assert "no_parse_strategy" in warnings
+    assert "strategy_breakdown" in report["data_quality"]["suppressed_sections"]
+
+
+def test_v2_5_suppresses_answer_when_missed_by_expected_under_uniform_expected():
+    # All cases share expected="drive" → uniform_expected fires.
+    af = {"meta": {}, "cases": {
+        f"c{i}": _enriched_case(f"c{i}", expected="drive", spans=[_span("walk")])
+        for i in range(4)
+    }}
+    report = agg.build_report([af])
+    assert "answer_when_missed" not in report
+    warnings = [w["code"] for w in report["data_quality"]["warnings"]]
+    assert "uniform_expected" in warnings
+    assert "answer_when_missed.by_expected" in report["data_quality"]["suppressed_sections"]
+
+
+def test_v2_5_drops_anchor_frequency_top_level():
+    af = {"meta": {}, "cases": {
+        f"c{i}": _enriched_case(f"c{i}", spans=[_span("walk")]) for i in range(4)
+    }}
+    report = agg.build_report([af])
+    assert "anchor_frequency" not in report
+
+
+def test_v2_5_drops_confusion_matrix_top_level():
+    af = {"meta": {}, "cases": {
+        "tp": _enriched_case("tp", response_class="parser_ok", parser_match_type="correct"),
+        "fp": _enriched_case("fp", response_class="parser_false_positive",
+                             spans=[_span("walking")], parser_match_type="correct"),
+    }}
+    report = agg.build_report([af])
+    assert "confusion_matrix" not in report
+
+
+def test_v2_5_response_class_counts_moved_to_summary():
+    af = {"meta": {}, "cases": {
+        "ok": _enriched_case("ok", response_class="parser_ok", parser_match_type="correct"),
+        "fp": _enriched_case("fp", response_class="parser_false_positive",
+                             spans=[_span("walking")], parser_match_type="correct"),
+        "h":  _enriched_case("h", response_class="hedge"),
+    }}
+    report = agg.build_report([af])
+    # v2.5 — top-level section is gone.
+    assert "response_classes" not in report
+    # Folded into summary, only non-zero buckets emitted.
+    counts = report["summary"]["response_class_counts"]
+    assert counts["parser_ok"] == 1
+    assert counts["parser_false_positive"] == 1
+    assert counts["hedge"] == 1
+    assert counts["parser_missed"] == 1  # span-bearing case
+    # Zero-valued classes absent from the folded dict.
+    assert "gibberish" not in counts
+    assert "refusal" not in counts
+
+
+def test_v2_5_long_tail_groups_collapse_under_count_4():
+    # Build 4 distinct (position, format) groups: two rich (4 & 6 cases) and
+    # two long-tail (3 & 1 cases).
+    cases = {}
+    # Rich group 1: 6 cases at (end, plain)
+    for i in range(6):
+        cases[f"rich1_{i}"] = _case_with_before(
+            f"rich1_{i}", before="Answer: ", text="walk",
+        )
+    # Rich group 2: 4 cases at (end, bold)
+    for i in range(4):
+        cases[f"rich2_{i}"] = _case_with_before(
+            f"rich2_{i}", before="Conclusion: ", text=f"drive{i}", fmt="bold",
+        )
+    # Long-tail 1: 3 cases at (middle, italic)
+    for i in range(3):
+        cases[f"tail1_{i}"] = _case_with_before(
+            f"tail1_{i}", before="x ", text=f"hop{i}", position="middle", fmt="italic",
+        )
+    # Long-tail 2: 1 case at (start, header)
+    cases["tail2_0"] = _case_with_before(
+        "tail2_0", before="", text="fly", position="start", fmt="header",
+    )
+    report = agg.build_report([{"meta": {}, "cases": cases}])
+    # Rich groups retain full structure.
+    assert len(report["span_groups"]) == 2
+    for g in report["span_groups"]:
+        assert g["count"] >= 4
+        assert "structural_ratios" in g
+        assert "prefix_anchors" in g
+        assert "regex_test" in g
+    # Long-tail groups collapsed, preserve only position/format/count + 1 example.
+    assert "long_tail_groups" in report
+    ltg = report["long_tail_groups"]
+    assert len(ltg) == 2
+    for g in ltg:
+        assert set(g.keys()) == {"position", "format", "count", "example"}
+        assert g["count"] < 4
+        # structural_ratios / prefix_anchors / regex_test NOT carried through.
+        assert "structural_ratios" not in g
+        assert "prefix_anchors" not in g
+        assert "regex_test" not in g
+
+
+def test_v2_5_empty_ordering_hints_and_annotator_notes_omitted():
+    af = {"meta": {}, "cases": {
+        # parser_ok case — no spans, no notes, no ordering hint triggers.
+        "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
+    }}
+    report = agg.build_report([af])
+    assert "ordering_hints" not in report
+    assert "annotator_notes" not in report
+
+
+def test_v2_5_non_empty_ordering_and_notes_are_preserved():
+    # 4 end-plain missed spans trigger the ordering-hint rule; one note present.
+    af = {"meta": {}, "cases": {}}
+    for i in range(4):
+        af["cases"][f"c{i}"] = _enriched_case(
+            f"c{i}", spans=[_span("you should drive")], parser_match_type="parse_error",
+        )
+    af["cases"]["n"] = _enriched_case(
+        "n", response_class="hedge", note="annotator saw weird framing",
+    )
+    report = agg.build_report([af])
+    assert "ordering_hints" in report
+    assert len(report["ordering_hints"]) >= 1
+    assert "annotator_notes" in report
+    assert any("weird framing" in n["note"] for n in report["annotator_notes"])

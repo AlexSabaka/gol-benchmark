@@ -5,25 +5,32 @@ optionally the source result-file payloads they came from), produces the
 report sections consumed by the Improvement Report dialog and by downstream
 coding agents tasked with parser refactors.
 
-Output schema (`format_version: "2"`):
+Output schema (`format_version: "2.5"`):
 
   {
-    "format_version": "2",
+    "format_version": "2.5",
     "source_files": [...],
-    "summary": {...},                 # totals + false_positive_rate
+    "summary": {...},                 # totals + false_positive_rate + response_class_counts
     "false_positive_rate": float,     # mirrored at top-level for prominence
-    "confusion_matrix": {...},        # parser_match_type × annotator_verdict
-    "language_breakdown": {...},      # per-language verdict counts + miss_rate
-    "config_breakdown": {...},        # per-system_style verdict counts
-    "user_style_breakdown": {...},    # per-user_style verdict counts
-    "strategy_breakdown": {...},      # per-parse_strategy verdict counts
-    "answer_when_missed": {...},      # by_expected / by_extracted_distractor
-    "span_groups": [...],             # (position, format) groups + confidence
-    "anchor_frequency": [...],        # cross-group N-gram phrases preceding answers
-    "ordering_hints": [...],          # qualitative parser-strategy hints
-    "response_classes": {...},        # raw verdict counts
-    "annotator_notes": [...],         # human meta-pattern observations
+    "parser_span_alignment": {...},   # aligned / misaligned / no_output split
+    "data_quality": {...},            # warnings + suppressed_sections
+    "model_answer_distribution": {...},
+    "model_answer_variants": {...},   # raw text variants per normalized bucket
+    "span_groups": [...],             # rich (position, format) groups — count ≥ 4
+    "long_tail_groups": [...],        # v2.5: collapsed groups with count < 4
+    "answer_when_missed": {...},      # suppressed under `uniform_expected`
+    "strategy_breakdown": {...},      # suppressed under `no_parse_strategy`
+    "language_breakdown": {...},      # suppressed under `uniform_language`
+    "config_breakdown": {...},        # suppressed under `uniform_system_style`
+    "user_style_breakdown": {...},    # suppressed under `uniform_user_style`
+    "ordering_hints": [...],          # omitted when empty
+    "annotator_notes": [...],         # omitted when empty
   }
+
+v2.5 dropped `confusion_matrix`, top-level `anchor_frequency`, top-level
+`response_classes` (folded into `summary.response_class_counts`). All
+suppressions are recorded in `data_quality.suppressed_sections` so consumers
+can distinguish "absent because empty" from "absent because noise".
 
 Backwards-compat: legacy annotation sidecars (pre-v2.20.1) lack the per-case
 metadata fields (`language`, `parse_strategy`, `context_windows`, etc.). When
@@ -99,6 +106,12 @@ _PARSER_MATCH_TYPES = ("correct", "parse_error", "mismatch", "localized_match", 
 _CONTEXT_WINDOW_CHARS = 120
 _SENTENCE_BOUNDARIES = set(".!?\n")
 
+# v2.5 — span groups below this count are statistically useless for pattern
+# derivation (single-digit sample, typically 1–3 cases). Collapsed into a
+# compact `long_tail_groups` stub so the agent still sees they exist without
+# having to wade through per-group rollups that carry no signal.
+_LONG_TAIL_THRESHOLD = 4
+
 # A 3-word maximum for the cross-group anchor frequency — keeps the table
 # scannable and avoids over-fitting to a single example phrase.
 _ANCHOR_MAX_WORDS = 3
@@ -121,7 +134,7 @@ def _answer_label_re(language: str) -> re.Pattern:
     return compiled
 
 
-REPORT_FORMAT_VERSION = "2.4"
+REPORT_FORMAT_VERSION = "2.5"
 
 
 # ---------------------------------------------------------------------------
@@ -1497,6 +1510,40 @@ def _span_analysis(span_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
     return out
 
 
+def _split_long_tail(
+    span_groups: List[Dict[str, Any]],
+) -> Tuple[List[Dict[str, Any]], List[Dict[str, Any]]]:
+    """v2.5 — partition span groups into rich (count ≥ threshold) + long-tail
+    (count < threshold). Long-tail entries drop per-group rollups and keep
+    only `position` / `format` / `count` plus a single representative example,
+    since n ≤ 3 carries no statistical signal for structural_ratios /
+    prefix_anchors / regex_test.
+
+    Guard: the collapse only applies when at least one rich group exists.
+    When every group is below threshold, those small groups ARE the signal
+    (small sessions, focused testsets) and collapsing them would erase the
+    entire report. The "long tail" concept requires a head to compare against.
+    """
+    has_rich = any(g.get("count", 0) >= _LONG_TAIL_THRESHOLD for g in span_groups)
+    if not has_rich:
+        return list(span_groups), []
+
+    rich: List[Dict[str, Any]] = []
+    long_tail: List[Dict[str, Any]] = []
+    for g in span_groups:
+        if g.get("count", 0) >= _LONG_TAIL_THRESHOLD:
+            rich.append(g)
+            continue
+        examples = g.get("example_spans") or []
+        long_tail.append({
+            "position": g["position"],
+            "format": g["format"],
+            "count": g.get("count", 0),
+            "example": examples[0] if examples else None,
+        })
+    return rich, long_tail
+
+
 def _ordering_hints(span_groups: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     hints: List[Dict[str, str]] = []
     for g in span_groups:
@@ -1584,10 +1631,16 @@ def _anchor_frequency(span_records: List[Dict[str, Any]]) -> List[Dict[str, Any]
 # ---------------------------------------------------------------------------
 
 
-def _response_class_breakdown(
+def _response_class_counts(
     annotation_files: List[Dict[str, Any]],
     result_idx: Dict[Tuple[str, str], Dict[str, Any]],
 ) -> Dict[str, int]:
+    """v2.5 — folded into `summary.response_class_counts`. Returns only the
+    non-zero buckets so downstream `Object.entries()` consumers render a
+    dense list without filtering. The synthetic `parser_missed` bucket
+    (count of cases that carry spans) is preserved since it's the only
+    number not otherwise present in `summary`.
+    """
     counts: Dict[str, int] = {cls: 0 for cls in _RESPONSE_CLASSES}
     parser_missed = 0
     for _, case in _iter_enriched_cases(annotation_files, result_idx):
@@ -1599,7 +1652,7 @@ def _response_class_breakdown(
         if spans:
             parser_missed += 1
     counts["parser_missed"] = parser_missed
-    return counts
+    return {k: v for k, v in counts.items() if v > 0}
 
 
 def _data_quality(
@@ -1646,6 +1699,10 @@ def _data_quality(
                 "parser strategies. Emit parse_strategy from your plugin parser."
             ),
         })
+        # v2.5 — without parse_strategy the breakdown collapses to a single
+        # `unknown` row carrying no signal. Suppress it so the JSON stays
+        # dense and the agent isn't tempted to read it.
+        suppressed_sections.append("strategy_breakdown")
 
     # Suppress single-bucket axis breakdowns — they repeat the session-level
     # totals and clutter the JSON.
@@ -1674,6 +1731,10 @@ def _data_quality(
                 "`answer_when_missed.by_expected` carries no signal."
             ),
         })
+        # v2.5 — `by_expected` tautologically reports `{single_answer: N}` and
+        # the sibling distractor/pair blocks go empty; report that the whole
+        # section is suppressed rather than emitting an inert stub.
+        suppressed_sections.append("answer_when_missed.by_expected")
 
     return {
         "warnings": warnings,
@@ -1726,8 +1787,19 @@ def build_report(
     result_idx = _result_index(result_payloads_by_file)
 
     summary, false_positive_rate = _session_summary(annotation_files, result_idx)
+    # v2.5 — fold non-zero response-class counts into summary instead of a
+    # separate top-level section. Sibling numbers live in `summary` already;
+    # this keeps the class breakdown where agents already look.
+    response_class_counts = _response_class_counts(annotation_files, result_idx)
+    if response_class_counts:
+        summary["response_class_counts"] = response_class_counts
+
     span_records = _collect_span_records(annotation_files, result_idx)
-    span_groups = _span_analysis(span_records)
+    span_groups_all = _span_analysis(span_records)
+    # v2.5 — groups with count < 4 are statistically useless; move them to a
+    # compact `long_tail_groups` section so the agent still sees what was
+    # observed but isn't swamped by low-signal per-group rollups.
+    span_groups, long_tail_groups = _split_long_tail(span_groups_all)
 
     # Compute every axis breakdown first so data_quality can decide which to
     # suppress.
@@ -1751,6 +1823,9 @@ def build_report(
         annotation_files, result_idx,
     )
 
+    ordering_hints = _ordering_hints(span_groups_all)
+    annotator_notes = _collect_notes(annotation_files, result_idx)
+
     report: Dict[str, Any] = {
         "format_version": REPORT_FORMAT_VERSION,
         "source_files": list(source_files or []),
@@ -1762,20 +1837,36 @@ def build_report(
         "parser_span_alignment": _parser_span_alignment(annotation_files, result_idx),
         # v2.3 — data quality diagnostics + list of suppressed sections.
         "data_quality": data_quality,
-        "confusion_matrix": _confusion_matrix(annotation_files, result_idx),
-        "strategy_breakdown": _strategy_breakdown(annotation_files, result_idx),
-        "answer_when_missed": _answer_when_missed(annotation_files, result_idx),
         # v2.2 — histogram of what the MODEL actually chose.
         # v2.4 — also emit raw variants per normalized bucket so the agent
         # sees case / markdown / phrasing variation inside each answer class.
         "model_answer_distribution": model_answer_distribution,
         "model_answer_variants": model_answer_variants,
         "span_groups": span_groups,
-        "anchor_frequency": _anchor_frequency(span_records),
-        "ordering_hints": _ordering_hints(span_groups),
-        "response_classes": _response_class_breakdown(annotation_files, result_idx),
-        "annotator_notes": _collect_notes(annotation_files, result_idx),
     }
+
+    # v2.5 — `answer_when_missed.by_expected` collapses to a single tautology
+    # under `uniform_expected`; skip the whole section in that case since the
+    # sibling distractor/pair blocks also go empty.
+    if "answer_when_missed.by_expected" not in suppressed:
+        report["answer_when_missed"] = _answer_when_missed(annotation_files, result_idx)
+
+    # v2.5 — only emit when the block carries signal. `no_parse_strategy`
+    # flattens the breakdown to one `unknown` row; data_quality marks it
+    # suppressed and we honour that here.
+    if "strategy_breakdown" not in suppressed:
+        report["strategy_breakdown"] = _strategy_breakdown(annotation_files, result_idx)
+
+    # v2.5 — long-tail groups only shown when present.
+    if long_tail_groups:
+        report["long_tail_groups"] = long_tail_groups
+
+    # v2.5 — ordering_hints / annotator_notes now omit-when-empty. Keeps the
+    # JSON free of inert `[]` entries the retrospective called out.
+    if ordering_hints:
+        report["ordering_hints"] = ordering_hints
+    if annotator_notes:
+        report["annotator_notes"] = annotator_notes
 
     # Single-bucket axis breakdowns get omitted from the output; data_quality
     # warnings explain why. Keeps the JSON signal-dense.

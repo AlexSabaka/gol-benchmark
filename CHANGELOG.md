@@ -2,6 +2,61 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.22.0] - April 16, 2026
+
+### Improvement Report v2.5 — Tactical Cut
+
+Post-carwash-refactor retrospective ([docs/improvement_report_v2.5_plan.md](docs/improvement_report_v2.5_plan.md)) graded the v2.4 artifact as "genuinely useful but over-emitted" — of ~20 top-level keys, 6 carried the load while ~8 were ignored outright (redundant, dead, or inert). v2.5 is the tactical cut: delete/suppress the noise, keep every load-bearing signal intact. Zero new computed fields; net JSON size drops ~30% on production reports.
+
+`format_version` bumped from `"2.4"` → `"2.5"`. Structural additions (`priority_actions`, `parser_fingerprint`, per-group alignment splits, cascade hints, conflicts surfaces) are deferred to a future v2.6 round pending sanity-check against a second plugin's report.
+
+#### Deletions from the payload
+
+- **`confusion_matrix` deleted** — the parser-match-type × response-class grid duplicated numbers already in `summary`; frontend never rendered it; the retrospective confirmed it "never shaped a decision"
+- **Top-level `anchor_frequency` deleted** — fully subsumed by per-group `prefix_anchors`. Cross-group aggregation dropped grouping context, making it *less* actionable for parser-refactor work, not more
+- **Top-level `response_classes` deleted** — folded into `summary.response_class_counts` (only non-zero buckets emitted). The synthetic `parser_missed` bucket (cases carrying spans) is preserved since it's the only number not otherwise present in `summary`
+
+#### Suppressions (via existing `data_quality.suppressed_sections` mechanism)
+
+- **`strategy_breakdown` suppressed under `no_parse_strategy`** — when ≥90% of cases have `parse_strategy="unknown"` the block collapses to a single `{unknown: {...}}` row that carries no attribution signal
+- **`answer_when_missed.by_expected` suppressed under `uniform_expected`** — when all cases share one expected answer the block reports `{single_answer: N}` with empty sibling distractor/pair fields — tautological
+
+Both suppressions are reported in `data_quality.suppressed_sections` + their respective warning codes so consumers can distinguish "absent because empty" from "absent because noise".
+
+#### New section: `long_tail_groups`
+
+- Span groups with `count < 4` collapse into compact `{position, format, count, example}` stubs — no `structural_ratios` / `prefix_anchors` / `regex_test` / `label_taxonomy` since n ≤ 3 carries no statistical signal for those computations
+- **Guarded**: collapse fires only when at least one group has `count ≥ 4`. When every group is below threshold (small sessions, focused testsets) those small groups *are* the signal and remain in `span_groups` untouched. The "long tail" concept requires a head
+- Preserved fields per long-tail row: `position`, `format`, `count`, single `example` (first from the group's `example_spans`)
+
+#### Empty-omit for `ordering_hints` / `annotator_notes`
+
+- Previously emitted as `[]` when empty; v2.5 omits the keys entirely so the JSON stays dense. Feature-detect on the consumer side (treat absence as "nothing to report")
+
+#### Frontend
+
+- **Anchors tab removed** (`frontend/src/components/review/improvement-report-dialog.tsx`). Tab count drops from 10 to 9 max; individual tabs also hide when their underlying data is absent (Strategy, Misses, Ordering, Classes, Notes all feature-detect)
+- **Classes tab** rewired to read `report.summary.response_class_counts` (replacing the deleted `report.response_classes`). Tab hides entirely when no non-zero counts exist
+- **Spans tab** renders `LongTailGroupsBlock` — a dimmed, dashed-border trailing section below the full `SpanGroupCard` list. One compact row per long-tail group, expandable to reveal its single retained example. Tab label updates to `Spans (N + M)` where N is rich groups, M is long-tail
+- **Type cleanup** — `AnchorFrequencyRow` removed from exports; `LongTailGroup` added; `ImprovementReport.response_classes` removed (folded into `summary.response_class_counts`); `confusion_matrix` removed from interface
+
+#### Test suite
+
+- **9 new v2.5 tests** cover format-version bump, each suppression rule, each deletion, the folded `response_class_counts` shape, long-tail collapse behaviour including the rich-guard invariant, and empty-omit for hints/notes
+- **3 existing tests updated or removed** where they referenced deleted sections: `test_v2_confusion_matrix` deleted; `test_v2_anchor_frequency_extracts_phrases` deleted; `test_build_report_produces_four_sections` and `test_build_report_parser_false_positive_counts_as_missed` updated to read `summary.response_class_counts`
+- **Endpoint smoke test** (`test_v2_endpoint_returns_format_version_2`) now asserts the three deleted sections are absent at top level
+- 75/75 tests green
+
+#### Files modified
+
+- [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) — `REPORT_FORMAT_VERSION = "2.5"`; `_split_long_tail` helper added; `_response_class_counts` replaces `_response_class_breakdown` (returns non-zero only); `_data_quality` extended to emit `strategy_breakdown` + `answer_when_missed.by_expected` suppressions; `build_report` assembles the report conditionally with deletions and empty-omits
+- [frontend/src/types/review.ts](frontend/src/types/review.ts) — `LongTailGroup` added; `Summary.response_class_counts` added; `AnchorFrequencyRow` / `confusion_matrix` / top-level `response_classes` removed
+- [frontend/src/types/index.ts](frontend/src/types/index.ts) — re-export map updated
+- [frontend/src/components/review/improvement-report-dialog.tsx](frontend/src/components/review/improvement-report-dialog.tsx) — Anchors tab removed; Classes tab rewired; Spans tab renders long-tail block; per-tab feature detection
+- [tests/test_human_review.py](tests/test_human_review.py) — 9 new tests + 3 existing tests adapted to v2.5
+
+---
+
 ## [2.21.0] - April 16, 2026
 
 ### Improvement Report — Agent-Facing Seed Artifact (v2.1 → v2.4 additive iterations)

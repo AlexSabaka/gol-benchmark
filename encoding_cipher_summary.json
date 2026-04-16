@@ -1,0 +1,1843 @@
+{
+  "format_version": "2.5",
+  "source_files": [
+    "results_gpt-oss_20b-cloud_20260411_104454.json.gz",
+    "results_gemma3_27b-cloud_20260411_104421.json.gz",
+    "results_gemma3_27b-cloud_20260411_104340.json.gz",
+    "results_gpt-oss_20b-cloud_20260411_104327.json.gz",
+    "results_gemma3_27b-cloud_20260411_104253.json.gz",
+    "results_gemma3_27b-cloud_20260411_104218.json.gz",
+    "results_gpt-oss_20b-cloud_20260411_104134.json.gz",
+    "results_gemma3_27b-cloud_20260411_104025.json.gz",
+    "results_gpt-oss_20b-cloud_20260411_103859.json.gz",
+    "results_gemma3_27b-cloud_20260411_103743.json.gz",
+    "results_gpt-oss_20b-cloud_20260411_103650.json.gz",
+    "results_gpt-oss_20b-cloud_20260411_103428.json.gz"
+  ],
+  "summary": {
+    "total_cases": 117,
+    "annotated": 117,
+    "skipped": 0,
+    "parser_was_correct": 51,
+    "parser_false_positive": 0,
+    "parser_missed_extractable": 65,
+    "true_unparseable": 1,
+    "false_positive_rate": 0,
+    "parser_missed_aligned": 3,
+    "parser_missed_misaligned": 19,
+    "parser_missed_no_output": 43,
+    "response_class_counts": {
+      "gibberish": 1,
+      "parser_ok": 51,
+      "parser_missed": 70
+    }
+  },
+  "false_positive_rate": 0,
+  "parser_span_alignment": {
+    "total_comparable": 70,
+    "aligned_with_parser": 7,
+    "misaligned_with_parser": 19,
+    "no_parser_output": 44,
+    "alignment_ratio": 0.1,
+    "sample_misaligned": [
+      {
+        "case_id": "encoding_cipher_42_0004",
+        "parser_extracted": "s a ROT13 cipher! Applying the shift, the message decodes to:\n\n**The adventure here depends much on the personality The battlefield secret.** \n\nROT13 is a simple substitution cipher where each letter is replaced by the letter 13 positions down the alphabet. It",
+        "annotated_spans": [
+          "The adventure here depends much on the personality The battlefield secret."
+        ],
+        "parser_match_type": "wrong_decode"
+      },
+      {
+        "case_id": "encoding_cipher_42_0006",
+        "parser_extracted": "s a ROT13 cipher! Applying the shift, the message decodes to:\n\n**The thinking very about the steps to find the way home I believe called willingly the.**\n\n(A bit fragmented, but that",
+        "annotated_spans": [
+          "The thinking very about the steps to find the way home I believe called willingly the."
+        ],
+        "parser_match_type": "wrong_decode"
+      },
+      {
+        "case_id": "encoding_cipher_42_0007",
+        "parser_extracted": "s a ROT13 cipher! Applying the shift, the message decodes to:\n\n**The answer although stuck would shine on the lucky stars.** \n\nROT13 is symmetrical – shifting 13 letters forward *or* backward results in the original text. It",
+        "annotated_spans": [
+          "The answer although stuck would shine on the lucky stars."
+        ],
+        "parser_match_type": "wrong_decode"
+      },
+      {
+        "case_id": "encoding_cipher_42_0000",
+        "parser_extracted": "becomes",
+        "annotated_spans": [
+          "Hello world the sunshine on a warm happy day Flowers bloom quickly."
+        ],
+        "parser_match_type": "wrong_decode"
+      },
+      {
+        "case_id": "encoding_cipher_42_0005",
+        "parser_extracted": "Hello world",
+        "annotated_spans": [
+          "Hello world is over the rainbow at last The algorithm begins a search of wonderful possibilities ahead The discovery key."
+        ],
+        "parser_match_type": "wrong_decode"
+      }
+    ]
+  },
+  "data_quality": {
+    "warnings": [
+      {
+        "code": "no_parse_strategy",
+        "detail": "117/117 cases have parse_strategy='unknown'. Strategy_breakdown can't attribute false-positives to specific parser strategies. Emit parse_strategy from your plugin parser."
+      },
+      {
+        "code": "uniform_language",
+        "detail": "all cases share a single language (en). language_breakdown suppressed — add variety to the testset to unlock this axis."
+      },
+      {
+        "code": "uniform_user_style",
+        "detail": "all cases share a single user_style (casual). user_style_breakdown suppressed — add variety to the testset to unlock this axis."
+      }
+    ],
+    "suppressed_sections": [
+      "strategy_breakdown",
+      "language_breakdown",
+      "user_style_breakdown"
+    ]
+  },
+  "model_answer_distribution": {
+    "the ancient lighthouse stood alone on the rocky cliff.": 8,
+    "the cartographer drew detailed maps of the coastline a single candle.": 5,
+    "frost covered the orchard in a thin white veil fireflies drifted.": 3,
+    "the cartographer drew detailed maps of the coastline. the blacksmith forged.": 3,
+    "the navigator relied on the stars to find the way home. a single candle illuminated the.": 3,
+    "the cartographer drew detailed maps of the coastline the blacksmith forged.": 2,
+    "the ancient lighthouse stands alone on the rocky cliffs.": 2,
+    "a procession of lanterns wound through the narrow streets.": 2,
+    "a procession of lanterns wound through the narrow streets frost covered the orchard in a thin white veil the ancient.": 2,
+    "the navigator relied on the stars to find the way home a single candle illuminated the": 2,
+    "a procession of lanterns would through the narrow streets frost covered the orchard in a thin white veil the ancient.": 2,
+    "the glassblower shaped a delicate crustal vessel. fireflies during twilight through the summer meadow. the navigator relied.": 2,
+    "a singing candle illuminated the dusty manuscript the astonomer charted a.": 2,
+    "a procession of lanterns wound through the narrow streets  \nfrost covered the orchard in a thin white veil  \nthe ancient.": 1,
+    "the glassblower shaped a delicate cryptal vessel of fireflies drifted lazily through the summer meadow. the navigator reli ed.": 1,
+    "the crator drew detailed maps of the coastline the blacksmith forged": 1,
+    "> denser fog rolled in from the harbour at dusk.  \n> the blacksmith forged a blade of exceptional quality.  \n> the cargotrapher drew.": 1,
+    "> the navigator relied on the stars to find the way home a single candle illuminated the": 1,
+    "hello world the morning on a thin thread shines flowers driving events.": 1,
+    "a cerebral contest which includes the special effects robert cornered the support on a huge thing truly. the capture.": 1,
+    "a cerebral issue of mental health about hurting the nearby sheriff.": 1,
+    "the university campus a vibrant feeling offers sversyvrf events and activities throughout the summer season. the alternative arrival.": 1,
+    "the adventure here depends much on the personality the battlefield secret.": 1,
+    "there are golden keys to open the shadows of death the battlefield secrets a battle of importance daily gur pageencounter read.": 1,
+    "the thinking very about the steps to find the way home i believe called willingly the.": 1,
+    "the answer although stuck would shine on the lucky stars.": 1,
+    "a secret message revealing the stark contrast. the statistics suggest a.": 1,
+    "the department made changes about the security of the controversial a matter again": 1,
+    "hello world the sunshine on a warm happy day flowers bloom quickly.": 1,
+    "a solution to puzzles always involves the happy dance. practice makes the perfect push of a good mental help. the applause.": 1,
+    "a solution to puzzles should always involve the hidden message.": 1,
+    "the quick brown fox jumps over the lazy dog. this message is complete.": 1,
+    "the quick brown fox jumps over the lazy dog. the masterpiece unfolds.": 1,
+    "hello world is over the rainbow at last the algorithm begins a search of wonderful possibilities ahead the discovery key.": 1,
+    "now understand world is the crazy as time the key until i reveal truth about the.": 1,
+    "the computer science world loves open source code.": 1,
+    "a simple puzzle requires the user attention. the discovery really helps h.": 1,
+    "now understandably could collapse the use of the usefulness i usually dislike.": 1,
+    "the glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow the navigator reiled.": 1,
+    "the navigator relied on the stars to find the way home a single candle illuminate the.": 1,
+    "the cartographer drew a detailed map of the coastline. a single candle.": 1,
+    "a question of lanterns would through the narrow streets. first covered the orchard in a thin white veil. the ancient.": 1,
+    "a question of lanterns would through the narrow streets.": 1,
+    "the glassblower shaped a delicate crustal vessel. hieroglyphs directed notably through the summer meadow. the navigator relied.": 1,
+    "a single candle illuminated the dusty manuscript. the astronomer charted a.": 1,
+    "the cartographer drew detailed maps of the coastline. a single candle.": 1,
+    "> the glassblower shaped a delicate crystal vessel.  \n> fireflies drifted lazy through the summer meadow.  \n> the navigator relied.": 1,
+    "the cartographer drew detailed maps of the castle in e a single candle.": 1,
+    "the glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow the navigator relied.": 1,
+    "dense fog rolled in from the harbour at dusk the blacksmith forged a blade of exceptional quality the cartographer drew.": 1,
+    "a procession of lanterns wound thorough the narrow streets frost covered the orchard in a thin white veil the ancient.": 1,
+    "> dense fog rolled in from the harbour at dusk.  \n> the blacksmith forged a blade of exceptional quality.  \n> the cartographer drew.": 1,
+    "a single candle illuminated the dusty manuscript the astronomer charted a": 1
+  },
+  "model_answer_variants": {
+    "the ancient lighthouse stood alone on the rocky cliff.": {
+      "total": 8,
+      "variants": [
+        {
+          "text": "The ancient lighthouse stood alone on the rocky cliff.",
+          "count": 8
+        }
+      ]
+    },
+    "the cartographer drew detailed maps of the coastline a single candle.": {
+      "total": 5,
+      "variants": [
+        {
+          "text": "The cartographer drew detailed maps of the coastline A single candle.",
+          "count": 5
+        }
+      ]
+    },
+    "frost covered the orchard in a thin white veil fireflies drifted.": {
+      "total": 3,
+      "variants": [
+        {
+          "text": "Frost covered the orchard in a thin white veil Fireflies drifted.",
+          "count": 2
+        },
+        {
+          "text": "Frost covered the orchard in a thin white veil fireflies drifted.",
+          "count": 1
+        }
+      ]
+    },
+    "the cartographer drew detailed maps of the coastline. the blacksmith forged.": {
+      "total": 3,
+      "variants": [
+        {
+          "text": "The cartographer drew detailed maps of the coastline. The blacksmith forged.",
+          "count": 3
+        }
+      ]
+    },
+    "the navigator relied on the stars to find the way home. a single candle illuminated the.": {
+      "total": 3,
+      "variants": [
+        {
+          "text": "The navigator relied on the stars to find the way home. A single candle illuminated the.",
+          "count": 3
+        }
+      ]
+    },
+    "the cartographer drew detailed maps of the coastline the blacksmith forged.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "The cartographer drew detailed maps of the coastline The blacksmith forged.",
+          "count": 2
+        }
+      ]
+    },
+    "the ancient lighthouse stands alone on the rocky cliffs.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "The ancient lighthouse stands alone on the rocky cliffs.",
+          "count": 2
+        }
+      ]
+    },
+    "a procession of lanterns wound through the narrow streets.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "A procession of lanterns wound through the narrow streets.",
+          "count": 2
+        }
+      ]
+    },
+    "a procession of lanterns wound through the narrow streets frost covered the orchard in a thin white veil the ancient.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "A procession of lanterns wound through the narrow streets Frost covered the orchard in a thin white veil The ancient.",
+          "count": 2
+        }
+      ]
+    },
+    "the navigator relied on the stars to find the way home a single candle illuminated the": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "The navigator relied on the stars to find the way home A single candle illuminated the",
+          "count": 2
+        }
+      ]
+    },
+    "a procession of lanterns would through the narrow streets frost covered the orchard in a thin white veil the ancient.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "A procession of lanterns would through the narrow streets Frost covered the orchard in a thin white veil The ancient.",
+          "count": 2
+        }
+      ]
+    },
+    "the glassblower shaped a delicate crustal vessel. fireflies during twilight through the summer meadow. the navigator relied.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "The glassblower shaped a delicate crustal vessel. Fireflies during twilight through the summer meadow. The navigator relied.",
+          "count": 2
+        }
+      ]
+    },
+    "a singing candle illuminated the dusty manuscript the astonomer charted a.": {
+      "total": 2,
+      "variants": [
+        {
+          "text": "A singing candle illuminated the dusty manuscript The astonomer charted a.",
+          "count": 2
+        }
+      ]
+    },
+    "a procession of lanterns wound through the narrow streets  \nfrost covered the orchard in a thin white veil  \nthe ancient.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A procession of lanterns wound through the narrow streets  \nFrost covered the orchard in a thin white veil  \nThe ancient.",
+          "count": 1
+        }
+      ]
+    },
+    "the glassblower shaped a delicate cryptal vessel of fireflies drifted lazily through the summer meadow. the navigator reli ed.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The glassblower shaped a delicate cryptal vessel of fireflies drifted lazily through the summer meadow. The navigator reli ed.",
+          "count": 1
+        }
+      ]
+    },
+    "the crator drew detailed maps of the coastline the blacksmith forged": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The crator drew detailed maps of the coastline The blacksmith forged",
+          "count": 1
+        }
+      ]
+    },
+    "> denser fog rolled in from the harbour at dusk.  \n> the blacksmith forged a blade of exceptional quality.  \n> the cargotrapher drew.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "> Denser fog rolled in from the harbour at dusk.  \n> The blacksmith forged a blade of exceptional quality.  \n> The cargotrapher drew.",
+          "count": 1
+        }
+      ]
+    },
+    "> the navigator relied on the stars to find the way home a single candle illuminated the": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "> The navigator relied on the stars to find the way home A single candle illuminated the",
+          "count": 1
+        }
+      ]
+    },
+    "hello world the morning on a thin thread shines flowers driving events.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "**Hello world the morning on a thin thread shines Flowers driving events.**",
+          "count": 1
+        }
+      ]
+    },
+    "a cerebral contest which includes the special effects robert cornered the support on a huge thing truly. the capture.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "**A cerebral contest which includes the special effects Robert cornered the support on a huge thing truly. The capture.**",
+          "count": 1
+        }
+      ]
+    },
+    "a cerebral issue of mental health about hurting the nearby sheriff.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "**A cerebral issue of mental health about hurting the nearby sheriff.**",
+          "count": 1
+        }
+      ]
+    },
+    "the university campus a vibrant feeling offers sversyvrf events and activities throughout the summer season. the alternative arrival.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+          "count": 1
+        }
+      ]
+    },
+    "the adventure here depends much on the personality the battlefield secret.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The adventure here depends much on the personality The battlefield secret.",
+          "count": 1
+        }
+      ]
+    },
+    "there are golden keys to open the shadows of death the battlefield secrets a battle of importance daily gur pageencounter read.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "There are golden keys to open the shadows of death The battlefield secrets a battle of importance daily Gur pageencounter read.",
+          "count": 1
+        }
+      ]
+    },
+    "the thinking very about the steps to find the way home i believe called willingly the.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The thinking very about the steps to find the way home I believe called willingly the.",
+          "count": 1
+        }
+      ]
+    },
+    "the answer although stuck would shine on the lucky stars.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The answer although stuck would shine on the lucky stars.",
+          "count": 1
+        }
+      ]
+    },
+    "a secret message revealing the stark contrast. the statistics suggest a.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A secret message revealing the stark contrast. The statistics suggest a.",
+          "count": 1
+        }
+      ]
+    },
+    "the department made changes about the security of the controversial a matter again": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The department made changes about the security of the controversial A matter again",
+          "count": 1
+        }
+      ]
+    },
+    "hello world the sunshine on a warm happy day flowers bloom quickly.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "Hello world the sunshine on a warm happy day Flowers bloom quickly.",
+          "count": 1
+        }
+      ]
+    },
+    "a solution to puzzles always involves the happy dance. practice makes the perfect push of a good mental help. the applause.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+          "count": 1
+        }
+      ]
+    },
+    "a solution to puzzles should always involve the hidden message.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A solution to puzzles should always involve the hidden message.",
+          "count": 1
+        }
+      ]
+    },
+    "the quick brown fox jumps over the lazy dog. this message is complete.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The quick brown fox jumps over the lazy dog. This message is complete.",
+          "count": 1
+        }
+      ]
+    },
+    "the quick brown fox jumps over the lazy dog. the masterpiece unfolds.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The quick brown fox jumps over the lazy dog. The masterpiece unfolds.",
+          "count": 1
+        }
+      ]
+    },
+    "hello world is over the rainbow at last the algorithm begins a search of wonderful possibilities ahead the discovery key.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "Hello world is over the rainbow at last The algorithm begins a search of wonderful possibilities ahead The discovery key.",
+          "count": 1
+        }
+      ]
+    },
+    "now understand world is the crazy as time the key until i reveal truth about the.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "Now understand world is the crazy as time the key until I reveal truth about the.",
+          "count": 1
+        }
+      ]
+    },
+    "the computer science world loves open source code.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The computer science world loves open source code.",
+          "count": 1
+        }
+      ]
+    },
+    "a simple puzzle requires the user attention. the discovery really helps h.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A simple puzzle requires the user attention. The discovery really helps h.",
+          "count": 1
+        }
+      ]
+    },
+    "now understandably could collapse the use of the usefulness i usually dislike.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "Now understandably could collapse the use of the usefulness I usually dislike.",
+          "count": 1
+        }
+      ]
+    },
+    "the glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow the navigator reiled.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow The navigator reiled.",
+          "count": 1
+        }
+      ]
+    },
+    "the navigator relied on the stars to find the way home a single candle illuminate the.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The navigator relied on the stars to find the way home a single candle illuminate the.",
+          "count": 1
+        }
+      ]
+    },
+    "the cartographer drew a detailed map of the coastline. a single candle.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The cartographer drew a detailed map of the coastline. A single candle.",
+          "count": 1
+        }
+      ]
+    },
+    "a question of lanterns would through the narrow streets. first covered the orchard in a thin white veil. the ancient.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A question of lanterns would through the narrow streets. First covered the orchard in a thin white veil. The ancient.",
+          "count": 1
+        }
+      ]
+    },
+    "a question of lanterns would through the narrow streets.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A question of lanterns would through the narrow streets.",
+          "count": 1
+        }
+      ]
+    },
+    "the glassblower shaped a delicate crustal vessel. hieroglyphs directed notably through the summer meadow. the navigator relied.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The glassblower shaped a delicate crustal vessel. Hieroglyphs directed notably through the summer meadow. The navigator relied.",
+          "count": 1
+        }
+      ]
+    },
+    "a single candle illuminated the dusty manuscript. the astronomer charted a.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A single candle illuminated the dusty manuscript. The astronomer charted a.",
+          "count": 1
+        }
+      ]
+    },
+    "the cartographer drew detailed maps of the coastline. a single candle.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The cartographer drew detailed maps of the coastline. A single candle.",
+          "count": 1
+        }
+      ]
+    },
+    "> the glassblower shaped a delicate crystal vessel.  \n> fireflies drifted lazy through the summer meadow.  \n> the navigator relied.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "> The glassblower shaped a delicate crystal vessel.  \n> Fireflies drifted lazy through the summer meadow.  \n> The navigator relied.",
+          "count": 1
+        }
+      ]
+    },
+    "the cartographer drew detailed maps of the castle in e a single candle.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The cartographer drew detailed maps of the castle in E A single candle.",
+          "count": 1
+        }
+      ]
+    },
+    "the glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow the navigator relied.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "The glassblower shaped a delicate crystal vessel Fireflies drifted lazily through the summer meadow The navigator relied.",
+          "count": 1
+        }
+      ]
+    },
+    "dense fog rolled in from the harbour at dusk the blacksmith forged a blade of exceptional quality the cartographer drew.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "Dense fog rolled in from the harbour at dusk the blacksmith forged a blade of exceptional quality the cartographer drew.",
+          "count": 1
+        }
+      ]
+    },
+    "a procession of lanterns wound thorough the narrow streets frost covered the orchard in a thin white veil the ancient.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A procession of lanterns wound thorough the narrow streets Frost covered the orchard in a thin white veil the ancient.",
+          "count": 1
+        }
+      ]
+    },
+    "> dense fog rolled in from the harbour at dusk.  \n> the blacksmith forged a blade of exceptional quality.  \n> the cartographer drew.": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "> Dense fog rolled in from the harbour at dusk.  \n> The blacksmith forged a blade of exceptional quality.  \n> The cartographer drew.",
+          "count": 1
+        }
+      ]
+    },
+    "a single candle illuminated the dusty manuscript the astronomer charted a": {
+      "total": 1,
+      "variants": [
+        {
+          "text": "A single candle illuminated the dusty manuscript The astronomer charted a",
+          "count": 1
+        }
+      ]
+    }
+  },
+  "span_groups": [
+    {
+      "position": "start",
+      "format": "plain",
+      "count": 29,
+      "languages": [
+        "en"
+      ],
+      "example_spans": [
+        {
+          "text": "A procession of lanterns wound through the narrow streets  \nFrost covered the orchard in a thin white veil  \nThe ancient.",
+          "before": "",
+          "after": "",
+          "sentence": "A procession of lanterns wound through the narrow streets  \nFrost covered the orchard in a thin white veil  \nThe ancient.",
+          "case_id": "encoding_cipher_42_0001",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The glassblower shaped a delicate cryptal vessel of fireflies drifted lazily through the summer meadow. The navigator reli ed.",
+          "before": "**Decoded plaintext (ROT13):**\n\n> ",
+          "after": "",
+          "sentence": "> The glassblower shaped a delicate cryptal vessel of fireflies drifted lazily through the summer meadow. The navigator reli ed.",
+          "case_id": "encoding_cipher_42_0003",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "> Denser fog rolled in from the harbour at dusk.  \n> The blacksmith forged a blade of exceptional quality.  \n> The cargotrapher drew.",
+          "before": "**Decoded plaintext (ROT‑13):**\n\n",
+          "after": "",
+          "sentence": "> Denser fog rolled in from the harbour at dusk.  \n> The blacksmith forged a blade of exceptional quality.  \n> The cargotrapher drew.",
+          "case_id": "encoding_cipher_42_0005",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "> The navigator relied on the stars to find the way home A single candle illuminated the",
+          "before": "**Decoded plaintext (ROT13):**\n\n",
+          "after": "",
+          "sentence": "> The navigator relied on the stars to find the way home A single candle illuminated the",
+          "case_id": "encoding_cipher_42_0006",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "**Hello world the morning on a thin thread shines Flowers driving events.**",
+          "before": "That's a ROT13 cipher! Applying the shift, the message decodes to:\n\n",
+          "after": "\n\nROT13 is symmetrical – shifting 13 letters forward is the same as shifting 13 letters backward, making the decoding qu",
+          "sentence": "**Hello world the morning on a thin thread shines Flowers driving events.**",
+          "case_id": "encoding_cipher_42_0000",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        }
+      ],
+      "suggested_strategy": "last_sentences",
+      "suggested_regex": [
+        {
+          "pattern": "(?i)\\*\\*decoded\\s+plaintext\\*\\*\\s+>\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 11,
+          "anchor_phrase": "**decoded plaintext** >",
+          "anchor_words": [
+            "**decoded",
+            "plaintext**",
+            ">"
+          ]
+        },
+        {
+          "pattern": "(?i)plaintext\\s+\\(rot13\\):\\*\\*\\s+>\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 4,
+          "anchor_phrase": "plaintext (rot13):** >",
+          "anchor_words": [
+            "plaintext",
+            "(rot13):**",
+            ">"
+          ]
+        },
+        {
+          "pattern": "(?i)(?:the\\s+cartographer|the\\s+ancient)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 10,
+          "anchor_phrase": null,
+          "anchor_words": null
+        }
+      ],
+      "confidence": "medium",
+      "missed_by_existing": false,
+      "structural_ratios": {
+        "line_start": 0.3103,
+        "paragraph_start": 0.2414,
+        "list_marker": 0,
+        "label_colon": 0.069,
+        "bold_wrap": 0,
+        "quote_wrap": 0.0345,
+        "answer_label_match": 0
+      },
+      "prefix_anchors": [
+        {
+          "phrase": "**decoded plaintext** >",
+          "count": 11,
+          "ratio": 0.3793,
+          "type": "phrase"
+        },
+        {
+          "phrase": "plaintext (rot13):** >",
+          "count": 4,
+          "ratio": 0.1379,
+          "type": "phrase"
+        },
+        {
+          "phrase": "message decodes to:",
+          "count": 2,
+          "ratio": 0.069,
+          "type": "label"
+        },
+        {
+          "phrase": "**decoded plaintext:** >",
+          "count": 2,
+          "ratio": 0.069,
+          "type": "phrase"
+        },
+        {
+          "phrase": "**plaintext** >",
+          "count": 2,
+          "ratio": 0.069,
+          "type": "phrase"
+        }
+      ],
+      "regex_test": [
+        {
+          "pattern": "(?i)\\*\\*decoded\\s+plaintext\\*\\*\\s+>\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 11,
+          "anchor_phrase": "**decoded plaintext** >",
+          "anchor_words": [
+            "**decoded",
+            "plaintext**",
+            ">"
+          ],
+          "match_rate": 0.4138,
+          "matched_count": 12,
+          "total": 29,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.4138,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0000",
+              "captured": "Frost",
+              "annotated": "Frost covered the orchard in a thin white veil Fireflies drifted.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The",
+              "annotated": "The glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow The navigator reiled.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0006",
+              "captured": "The",
+              "annotated": "The navigator relied on the stars to find the way home a single candle illuminate the.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)(?:the\\s+cartographer|the\\s+ancient)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 10,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 0.4138,
+          "matched_count": 12,
+          "total": 29,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.3448,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0004",
+              "captured": "drew",
+              "annotated": "The cartographer drew detailed maps of the coastline The blacksmith forged.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "lighthouse",
+              "annotated": "The ancient lighthouse stood alone on the rocky cliff.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0009",
+              "captured": "drew",
+              "annotated": "The cartographer drew a detailed map of the coastline. A single candle.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)plaintext\\s+\\(rot13\\):\\*\\*\\s+>\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 4,
+          "anchor_phrase": "plaintext (rot13):** >",
+          "anchor_words": [
+            "plaintext",
+            "(rot13):**",
+            ">"
+          ],
+          "match_rate": 0.1724,
+          "matched_count": 5,
+          "total": 29,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.1724,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The",
+              "annotated": "The glassblower shaped a delicate cryptal vessel of fireflies drifted lazily through the summer meadow. The navigator reli ed.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0006",
+              "captured": "The",
+              "annotated": "> The navigator relied on the stars to find the way home A single candle illuminated the",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The",
+              "annotated": "The glassblower shaped a delicate crystal vessel Fireflies drifted lazily through the summer meadow The navigator relied.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        }
+      ],
+      "label_taxonomy": []
+    },
+    {
+      "position": "middle",
+      "format": "bold",
+      "count": 15,
+      "languages": [
+        "en"
+      ],
+      "example_spans": [
+        {
+          "text": "A secret message revealing the stark contrast. The statistics suggest a.",
+          "before": "Ah, a ROT13 cipher! That's a simple one. Shifting each letter 13 places reveals:\n\n**",
+          "after": "** \n\nIt appears to be an incomplete thought! Perhaps part of a larger puzzle.\n\n\n\n",
+          "sentence": "**A secret message revealing the stark contrast. The statistics suggest a.**",
+          "case_id": "encoding_cipher_42_0008",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "Hello world the sunshine on a warm happy day Flowers bloom quickly.",
+          "before": "ely, that means 'A' becomes 'H', 'B' becomes 'I', and so on. Applying that reverse shift...\n\nThe decoded message is:\n\n**",
+          "after": "** \n\nThat felt right on the first pass – a common phrase and a natural image. No need for exhaustive checking!\n\n\n\n",
+          "sentence": "**Hello world the sunshine on a warm happy day Flowers bloom quickly.**",
+          "case_id": "encoding_cipher_42_0000",
+          "language": "en",
+          "parser_extracted": "becomes",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+          "before": "a shift of 7... intuitively, that means shifting each letter *back* 7 places. Applying that, the message decodes to:\n\n**",
+          "after": "** \n\nIt feels confidently decoded – the resulting sentence makes perfect sense! No need for exhaustive checking.\n\n\n\n",
+          "sentence": "**A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.**",
+          "case_id": "encoding_cipher_42_0001",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "A solution to puzzles should always involve the hidden message.",
+          "before": "a shift of 7... intuitively, that means shifting each letter *back* 7 places. Applying that, the message decodes to:\n\n**",
+          "after": "** \n\nIt feels right – a common sentiment about puzzles! No need for exhaustive character-by-character work; the overall ",
+          "sentence": "**A solution to puzzles should always involve the hidden message.**",
+          "case_id": "encoding_cipher_42_0002",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The quick brown fox jumps over the lazy dog. This message is complete.",
+          "before": "a shift of 7... intuitively, that means shifting each letter *back* 7 places. Applying that, the message decodes to:\n\n**",
+          "after": "** \n\nIt's a classic pangram! No need for complex analysis – the length and structure immediately suggested a common phra",
+          "sentence": "**The quick brown fox jumps over the lazy dog. This message is complete.**",
+          "case_id": "encoding_cipher_42_0003",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        }
+      ],
+      "suggested_strategy": "bold_keyword",
+      "suggested_regex": [
+        {
+          "pattern": "(?i)decodes\\s+to:\\s*\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "context_anchor",
+          "support": 12,
+          "anchor_phrase": "decodes to:",
+          "anchor_words": [
+            "decodes",
+            "to:"
+          ]
+        },
+        {
+          "pattern": "(?i)\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "format_only",
+          "support": 15,
+          "anchor_phrase": null,
+          "anchor_words": null
+        },
+        {
+          "pattern": "(?i)(?:hello\\s+world|a\\s+solution)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 4,
+          "anchor_phrase": null,
+          "anchor_words": null
+        }
+      ],
+      "confidence": "high",
+      "missed_by_existing": false,
+      "structural_ratios": {
+        "line_start": 0,
+        "paragraph_start": 0,
+        "list_marker": 0,
+        "label_colon": 0,
+        "bold_wrap": 1,
+        "quote_wrap": 0,
+        "answer_label_match": 0
+      },
+      "prefix_anchors": [
+        {
+          "phrase": "decodes to: **",
+          "count": 12,
+          "ratio": 0.8,
+          "type": "format"
+        }
+      ],
+      "regex_test": [
+        {
+          "pattern": "(?i)\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "format_only",
+          "support": 15,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 1,
+          "matched_count": 15,
+          "total": 15,
+          "capture_exact_rate": 1,
+          "capture_contains_rate": 1,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0008",
+              "captured": "A secret message revealing the stark contrast. The statistics suggest a.",
+              "annotated": "A secret message revealing the stark contrast. The statistics suggest a.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0000",
+              "captured": "Hello world the sunshine on a warm happy day Flowers bloom quickly.",
+              "annotated": "Hello world the sunshine on a warm happy day Flowers bloom quickly.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0001",
+              "captured": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+              "annotated": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+              "exact_match": true,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)decodes\\s+to:\\s*\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "context_anchor",
+          "support": 12,
+          "anchor_phrase": "decodes to:",
+          "anchor_words": [
+            "decodes",
+            "to:"
+          ],
+          "match_rate": 0.8,
+          "matched_count": 12,
+          "total": 15,
+          "capture_exact_rate": 0.8,
+          "capture_contains_rate": 0.8,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0001",
+              "captured": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+              "annotated": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0002",
+              "captured": "A solution to puzzles should always involve the hidden message.",
+              "annotated": "A solution to puzzles should always involve the hidden message.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The quick brown fox jumps over the lazy dog. This message is complete.",
+              "annotated": "The quick brown fox jumps over the lazy dog. This message is complete.",
+              "exact_match": true,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)(?:hello\\s+world|a\\s+solution)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 4,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 0.2667,
+          "matched_count": 4,
+          "total": 15,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.2667,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0000",
+              "captured": "the",
+              "annotated": "Hello world the sunshine on a warm happy day Flowers bloom quickly.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0001",
+              "captured": "to",
+              "annotated": "A solution to puzzles always involves the happy dance. Practice makes the perfect push of a good mental help. The applause.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0002",
+              "captured": "to",
+              "annotated": "A solution to puzzles should always involve the hidden message.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        }
+      ],
+      "label_taxonomy": []
+    },
+    {
+      "position": "end",
+      "format": "plain",
+      "count": 10,
+      "languages": [
+        "en"
+      ],
+      "example_spans": [
+        {
+          "text": "The cartographer drew detailed maps of the coastline The blacksmith forged.",
+          "before": "-> 'e'\n*   'q' -> 'd'\n*   '.' -> '.'\n\n**Step 3: Assembling the Plaintext**\n\nCombining the decoded characters, we get:\n\n\"",
+          "after": "\"\n\n**Step 4: Validation**\n\nThe decoded message appears to be grammatically correct and makes sense. Applying ROT13 again",
+          "sentence": "\"The cartographer drew detailed maps of the coastline The blacksmith forged.\"",
+          "case_id": "encoding_cipher_42_0004",
+          "language": "en",
+          "parser_extracted": "gbt",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The ancient lighthouse stands alone on the rocky cliffs.",
+          "before": "f**\n*   **s** shifted by 13 becomes **f**\n\n**3. Assembling the Plaintext**\n\nCombining the decoded characters, we get:\n\n\"",
+          "after": "\"\n\n**4. Validation**\n\nI can quickly validate this by re-applying ROT13 to the plaintext:\n\n*   **T** shifted by 13 become",
+          "sentence": "\"The ancient lighthouse stands alone on the rocky cliffs.\"",
+          "case_id": "encoding_cipher_42_0007",
+          "language": "en",
+          "parser_extracted": "The ancient lighthouse stands alone on the rocky cliffs.",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The cartographer drew detailed maps of the coastline A single candle.",
+          "before": "l'\n*   'r' shifted by 13 becomes 'e'\n\n**3. Assembled Plaintext**\n\nCombining the decoded characters, the plaintext is:\n\n\"",
+          "after": "\"\n\n**4. Validation**\n\nTo validate, I can re-encode the plaintext using ROT13. This should yield the original ciphertext.",
+          "sentence": "\"The cartographer drew detailed maps of the coastline A single candle.\"",
+          "case_id": "encoding_cipher_42_0009",
+          "language": "en",
+          "parser_extracted": "The cartographer drew detailed maps of the coastline A single candle.",
+          "parser_match_type": "correct"
+        },
+        {
+          "text": "A procession of lanterns would through the narrow streets Frost covered the orchard in a thin white veil The ancient.",
+          "before": "   **dqflhqw** shifted back 3 becomes **ancient**\n\n**3. Assembled Plaintext**\n\nCombining the decoded letters, we get:\n\n\"",
+          "after": "\"\n\n**4. Validation**\n\nThe decoded text appears grammatically correct and makes sense. The proper nouns \"Frost\" suggest a",
+          "sentence": "\"A procession of lanterns would through the narrow streets Frost covered the orchard in a thin white veil The ancient.\"",
+          "case_id": "encoding_cipher_42_0001",
+          "language": "en",
+          "parser_extracted": "Frost",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The glassblower shaped a delicate crustal vessel. Fireflies during twilight through the summer meadow. The navigator relied.",
+          "before": "atically correct and makes sense. Therefore, I am confident in the accuracy of the decoded message.\n\n**Final Answer:**\n\n",
+          "after": "",
+          "sentence": "The glassblower shaped a delicate crustal vessel. Fireflies during twilight through the summer meadow. The navigator relied.",
+          "case_id": "encoding_cipher_42_0003",
+          "language": "en",
+          "parser_extracted": "becomes",
+          "parser_match_type": "wrong_decode"
+        }
+      ],
+      "suggested_strategy": "last_sentences",
+      "suggested_regex": [
+        {
+          "pattern": "(?i)we\\s+get:\\s+\"\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 5,
+          "anchor_phrase": "we get: \"",
+          "anchor_words": [
+            "we",
+            "get:",
+            "\""
+          ]
+        },
+        {
+          "pattern": "(?i)we\\s+get:\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 2,
+          "anchor_phrase": "we get:",
+          "anchor_words": [
+            "we",
+            "get:"
+          ]
+        },
+        {
+          "pattern": "(?i)(?:the\\s+cartographer|the\\s+ancient)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 5,
+          "anchor_phrase": null,
+          "anchor_words": null
+        }
+      ],
+      "confidence": "high",
+      "missed_by_existing": false,
+      "structural_ratios": {
+        "line_start": 0.4,
+        "paragraph_start": 0.4,
+        "list_marker": 0,
+        "label_colon": 0.3,
+        "bold_wrap": 0,
+        "quote_wrap": 0.6,
+        "answer_label_match": 0.1
+      },
+      "prefix_anchors": [
+        {
+          "phrase": "we get: \"",
+          "count": 5,
+          "ratio": 0.5,
+          "type": "phrase"
+        },
+        {
+          "phrase": "we get:",
+          "count": 2,
+          "ratio": 0.2,
+          "type": "label"
+        }
+      ],
+      "regex_test": [
+        {
+          "pattern": "(?i)we\\s+get:\\s+\"\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 5,
+          "anchor_phrase": "we get: \"",
+          "anchor_words": [
+            "we",
+            "get:",
+            "\""
+          ],
+          "match_rate": 0.5,
+          "matched_count": 5,
+          "total": 10,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.5,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0004",
+              "captured": "The",
+              "annotated": "The cartographer drew detailed maps of the coastline The blacksmith forged.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "The",
+              "annotated": "The ancient lighthouse stands alone on the rocky cliffs.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0001",
+              "captured": "A",
+              "annotated": "A procession of lanterns would through the narrow streets Frost covered the orchard in a thin white veil The ancient.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)(?:the\\s+cartographer|the\\s+ancient)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 5,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 0.5,
+          "matched_count": 5,
+          "total": 10,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.5,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0004",
+              "captured": "drew",
+              "annotated": "The cartographer drew detailed maps of the coastline The blacksmith forged.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "lighthouse",
+              "annotated": "The ancient lighthouse stands alone on the rocky cliffs.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0009",
+              "captured": "drew",
+              "annotated": "The cartographer drew detailed maps of the coastline A single candle.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)we\\s+get:\\s*(\\w+)",
+          "kind": "context_anchor",
+          "support": 2,
+          "anchor_phrase": "we get:",
+          "anchor_words": [
+            "we",
+            "get:"
+          ],
+          "match_rate": 0.2,
+          "matched_count": 2,
+          "total": 10,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.2,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The",
+              "annotated": "The glassblower shaped a delicate crustal vessel. Fireflies during twilight through the summer meadow. The navigator relied.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0008",
+              "captured": "A",
+              "annotated": "A singing candle illuminated the dusty manuscript The astonomer charted a.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        }
+      ],
+      "label_taxonomy": [
+        {
+          "label": "final answer",
+          "count": 1
+        }
+      ]
+    },
+    {
+      "position": "start",
+      "format": "bold",
+      "count": 10,
+      "languages": [
+        "en"
+      ],
+      "example_spans": [
+        {
+          "text": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+          "before": "That's a ROT13 cipher! Applying the shift, the message decodes to:\n\n**",
+          "after": "** \n\nIt seems like an announcement about summer events at a university! I recognized the pattern and applied the ROT13 s",
+          "sentence": "**The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.**",
+          "case_id": "encoding_cipher_42_0003",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The adventure here depends much on the personality The battlefield secret.",
+          "before": "That's a ROT13 cipher! Applying the shift, the message decodes to:\n\n**",
+          "after": "** \n\nROT13 is a simple substitution cipher where each letter is replaced by the letter 13 positions down the alphabet. I",
+          "sentence": "**The adventure here depends much on the personality The battlefield secret.**",
+          "case_id": "encoding_cipher_42_0004",
+          "language": "en",
+          "parser_extracted": "s a ROT13 cipher! Applying the shift, the message decodes to:\n\n**The adventure here depends much on the personality The battlefield secret.** \n\nROT13 is a simple substitution cipher where each letter is replaced by the letter 13 positions down the alphabet. It",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "There are golden keys to open the shadows of death The battlefield secrets a battle of importance daily Gur pageencounter read.",
+          "before": "This is a ROT13 cipher! Applying ROT13 (shifting each letter 13 places) to the message reveals:\n\n**",
+          "after": "**\n\n(Which, with a little punctuation and capitalization, becomes: **There are golden keys to open the shadows of death.",
+          "sentence": "**There are golden keys to open the shadows of death The battlefield secrets a battle of importance daily Gur pageencounter read.**",
+          "case_id": "encoding_cipher_42_0005",
+          "language": "en",
+          "parser_extracted": null,
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The thinking very about the steps to find the way home I believe called willingly the.",
+          "before": "That's a ROT13 cipher! Applying the shift, the message decodes to:\n\n**",
+          "after": "**\n\n(A bit fragmented, but that's the decoded text.) \n\nROT13 is symmetrical – decoding it is the same as encoding it. It",
+          "sentence": "**The thinking very about the steps to find the way home I believe called willingly the.**",
+          "case_id": "encoding_cipher_42_0006",
+          "language": "en",
+          "parser_extracted": "s a ROT13 cipher! Applying the shift, the message decodes to:\n\n**The thinking very about the steps to find the way home I believe called willingly the.**\n\n(A bit fragmented, but that",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The answer although stuck would shine on the lucky stars.",
+          "before": "That's a ROT13 cipher! Applying the shift, the message decodes to:\n\n**",
+          "after": "** \n\nROT13 is symmetrical – shifting 13 letters forward *or* backward results in the original text. It's a quick and eas",
+          "sentence": "**The answer although stuck would shine on the lucky stars.**",
+          "case_id": "encoding_cipher_42_0007",
+          "language": "en",
+          "parser_extracted": "s a ROT13 cipher! Applying the shift, the message decodes to:\n\n**The answer although stuck would shine on the lucky stars.** \n\nROT13 is symmetrical – shifting 13 letters forward *or* backward results in the original text. It",
+          "parser_match_type": "wrong_decode"
+        }
+      ],
+      "suggested_strategy": "bold_keyword",
+      "suggested_regex": [
+        {
+          "pattern": "(?i)decodes\\s+to:\\s*\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "context_anchor",
+          "support": 9,
+          "anchor_phrase": "decodes to:",
+          "anchor_words": [
+            "decodes",
+            "to:"
+          ]
+        },
+        {
+          "pattern": "(?i)\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "format_only",
+          "support": 10,
+          "anchor_phrase": null,
+          "anchor_words": null
+        },
+        {
+          "pattern": "(?i)(?:the\\s+university|the\\s+adventure)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 2,
+          "anchor_phrase": null,
+          "anchor_words": null
+        }
+      ],
+      "confidence": "high",
+      "missed_by_existing": false,
+      "structural_ratios": {
+        "line_start": 0,
+        "paragraph_start": 0,
+        "list_marker": 0,
+        "label_colon": 0,
+        "bold_wrap": 0.9,
+        "quote_wrap": 0,
+        "answer_label_match": 0
+      },
+      "prefix_anchors": [
+        {
+          "phrase": "decodes to: **",
+          "count": 9,
+          "ratio": 0.9,
+          "type": "format"
+        }
+      ],
+      "regex_test": [
+        {
+          "pattern": "(?i)\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "format_only",
+          "support": 10,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 1,
+          "matched_count": 10,
+          "total": 10,
+          "capture_exact_rate": 0.9,
+          "capture_contains_rate": 0.9,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+              "annotated": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0004",
+              "captured": "The adventure here depends much on the personality The battlefield secret.",
+              "annotated": "The adventure here depends much on the personality The battlefield secret.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0005",
+              "captured": "There are golden keys to open the shadows of death The battlefield secrets a battle of importance daily Gur pageencounter read.",
+              "annotated": "There are golden keys to open the shadows of death The battlefield secrets a battle of importance daily Gur pageencounter read.",
+              "exact_match": true,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)decodes\\s+to:\\s*\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "context_anchor",
+          "support": 9,
+          "anchor_phrase": "decodes to:",
+          "anchor_words": [
+            "decodes",
+            "to:"
+          ],
+          "match_rate": 0.9,
+          "matched_count": 9,
+          "total": 10,
+          "capture_exact_rate": 0.8,
+          "capture_contains_rate": 0.8,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+              "annotated": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0004",
+              "captured": "The adventure here depends much on the personality The battlefield secret.",
+              "annotated": "The adventure here depends much on the personality The battlefield secret.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0006",
+              "captured": "The thinking very about the steps to find the way home I believe called willingly the.",
+              "annotated": "The thinking very about the steps to find the way home I believe called willingly the.",
+              "exact_match": true,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)(?:the\\s+university|the\\s+adventure)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 2,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 0.2,
+          "matched_count": 2,
+          "total": 10,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.2,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0003",
+              "captured": "campus",
+              "annotated": "The university campus a vibrant feeling offers Sversyvrf events and activities throughout the summer season. The alternative arrival.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0004",
+              "captured": "here",
+              "annotated": "The adventure here depends much on the personality The battlefield secret.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        }
+      ],
+      "label_taxonomy": []
+    },
+    {
+      "position": "end",
+      "format": "bold",
+      "count": 8,
+      "languages": [
+        "en"
+      ],
+      "example_spans": [
+        {
+          "text": "The ancient lighthouse stands alone on the rocky cliffs.",
+          "before": "...\n\nThis will return the original ciphertext, confirming the correct decoding.\n\n**Final Answer:**\n\nThe plaintext is: **",
+          "after": "**",
+          "sentence": "The plaintext is: **The ancient lighthouse stands alone on the rocky cliffs.**",
+          "case_id": "encoding_cipher_42_0007",
+          "language": "en",
+          "parser_extracted": "The ancient lighthouse stands alone on the rocky cliffs.",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The cartographer drew detailed maps of the coastline A single candle.",
+          "before": "\nPerforming this re-encoding confirms that the decoded text is correct.\n\n**Final Answer:**\n\nThe decoded plaintext is: **",
+          "after": "**",
+          "sentence": "The decoded plaintext is: **The cartographer drew detailed maps of the coastline A single candle.**",
+          "case_id": "encoding_cipher_42_0009",
+          "language": "en",
+          "parser_extracted": "The cartographer drew detailed maps of the coastline A single candle.",
+          "parser_match_type": "correct"
+        },
+        {
+          "text": "A procession of lanterns wound through the narrow streets.",
+          "before": " description of a procession of lanterns moving through narrow streets.\n\n**Final Answer:**\n\nThe decoded plaintext is: **",
+          "after": "**\n",
+          "sentence": "The decoded plaintext is: **A procession of lanterns wound through the narrow streets.**",
+          "case_id": "encoding_cipher_42_0002",
+          "language": "en",
+          "parser_extracted": "H wyvjlzzpvu vm shualyuz dvbuk aoyvbno aol uhyyvd zayllaz",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "A procession of lanterns would through the narrow streets Frost covered the orchard in a thin white veil The ancient.",
+          "before": "Robert Frost, winter themes). The shift of 3 was consistently applied.\n\n**Final Answer:**\n\nThe decoded plaintext is:\n\n**",
+          "after": "**\n",
+          "sentence": "**A procession of lanterns would through the narrow streets Frost covered the orchard in a thin white veil The ancient.**",
+          "case_id": "encoding_cipher_42_0001",
+          "language": "en",
+          "parser_extracted": "Frost",
+          "parser_match_type": "wrong_decode"
+        },
+        {
+          "text": "The navigator relied on the stars to find the way home. A single candle illuminated the.",
+          "before": "ically correct and makes sense. The shift of 3 was consistently applied.\n\n**Final Answer:** The decoded plaintext is: **",
+          "after": "**",
+          "sentence": "**Final Answer:** The decoded plaintext is: **The navigator relied on the stars to find the way home. A single candle illuminated the.**",
+          "case_id": "encoding_cipher_42_0006",
+          "language": "en",
+          "parser_extracted": "s assume it",
+          "parser_match_type": "wrong_decode"
+        }
+      ],
+      "suggested_strategy": "bold_keyword",
+      "suggested_regex": [
+        {
+          "pattern": "(?i)plaintext\\s+is:\\s*\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "context_anchor",
+          "support": 8,
+          "anchor_phrase": "plaintext is:",
+          "anchor_words": [
+            "plaintext",
+            "is:"
+          ]
+        },
+        {
+          "pattern": "(?i)\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "format_only",
+          "support": 8,
+          "anchor_phrase": null,
+          "anchor_words": null
+        },
+        {
+          "pattern": "(?i)(?:the\\s+ancient|the\\s+cartographer)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 4,
+          "anchor_phrase": null,
+          "anchor_words": null
+        }
+      ],
+      "confidence": "high",
+      "missed_by_existing": false,
+      "structural_ratios": {
+        "line_start": 0,
+        "paragraph_start": 0,
+        "list_marker": 0,
+        "label_colon": 0,
+        "bold_wrap": 1,
+        "quote_wrap": 0,
+        "answer_label_match": 1
+      },
+      "prefix_anchors": [
+        {
+          "phrase": "plaintext is: **",
+          "count": 8,
+          "ratio": 1,
+          "type": "format"
+        }
+      ],
+      "regex_test": [
+        {
+          "pattern": "(?i)plaintext\\s+is:\\s*\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "context_anchor",
+          "support": 8,
+          "anchor_phrase": "plaintext is:",
+          "anchor_words": [
+            "plaintext",
+            "is:"
+          ],
+          "match_rate": 1,
+          "matched_count": 8,
+          "total": 8,
+          "capture_exact_rate": 1,
+          "capture_contains_rate": 1,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "The ancient lighthouse stands alone on the rocky cliffs.",
+              "annotated": "The ancient lighthouse stands alone on the rocky cliffs.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0009",
+              "captured": "The cartographer drew detailed maps of the coastline A single candle.",
+              "annotated": "The cartographer drew detailed maps of the coastline A single candle.",
+              "exact_match": true,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0002",
+              "captured": "A procession of lanterns wound through the narrow streets.",
+              "annotated": "A procession of lanterns wound through the narrow streets.",
+              "exact_match": true,
+              "aligned": true
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)\\*\\*([^*\\n]+?)\\*\\*",
+          "kind": "format_only",
+          "support": 8,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 1,
+          "matched_count": 8,
+          "total": 8,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "Final Answer:",
+              "annotated": "The ancient lighthouse stands alone on the rocky cliffs.",
+              "exact_match": false,
+              "aligned": false
+            },
+            {
+              "case_id": "encoding_cipher_42_0009",
+              "captured": "Final Answer:",
+              "annotated": "The cartographer drew detailed maps of the coastline A single candle.",
+              "exact_match": false,
+              "aligned": false
+            },
+            {
+              "case_id": "encoding_cipher_42_0002",
+              "captured": "Final Answer:",
+              "annotated": "A procession of lanterns wound through the narrow streets.",
+              "exact_match": false,
+              "aligned": false
+            }
+          ]
+        },
+        {
+          "pattern": "(?i)(?:the\\s+ancient|the\\s+cartographer)\\s+(\\w+)",
+          "kind": "text_pattern",
+          "support": 4,
+          "anchor_phrase": null,
+          "anchor_words": null,
+          "match_rate": 0.5,
+          "matched_count": 4,
+          "total": 8,
+          "capture_exact_rate": 0,
+          "capture_contains_rate": 0.5,
+          "sample_captures": [
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "lighthouse",
+              "annotated": "The ancient lighthouse stands alone on the rocky cliffs.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0009",
+              "captured": "drew",
+              "annotated": "The cartographer drew detailed maps of the coastline A single candle.",
+              "exact_match": false,
+              "aligned": true
+            },
+            {
+              "case_id": "encoding_cipher_42_0007",
+              "captured": "lighthouse",
+              "annotated": "The ancient lighthouse stood alone on the rocky cliff.",
+              "exact_match": false,
+              "aligned": true
+            }
+          ]
+        }
+      ],
+      "label_taxonomy": [
+        {
+          "label": "final answer",
+          "count": 8
+        }
+      ]
+    }
+  ],
+  "answer_when_missed": {
+    "by_expected": {
+      "the ancient lighthouse stood alone on the rocky cliff.": 10,
+      "a procession of lanterns wound through the narrow streets frost covered the orchard in a thin white veil the ancient.": 8,
+      "the glassblower shaped a delicate crystal vessel fireflies drifted lazily through the summer meadow the navigator relied.": 8,
+      "the cartographer drew detailed maps of the coastline the blacksmith forged.": 8,
+      "the navigator relied on the stars to find the way home a single candle illuminated the.": 8,
+      "the cartographer drew detailed maps of the coastline a single candle.": 8,
+      "dense fog rolled in from the harbour at dusk the blacksmith forged a blade of exceptional quality the cartographer drew.": 5,
+      "frost covered the orchard in a thin white veil fireflies drifted.": 5,
+      "a procession of lanterns wound through the narrow streets.": 5,
+      "a single candle illuminated the dusty manuscript the astronomer charted a.": 5
+    },
+    "by_extracted_distractor": {},
+    "expected_distractor_pairs": []
+  },
+  "long_tail_groups": [
+    {
+      "position": "middle",
+      "format": "plain",
+      "count": 3,
+      "example": {
+        "text": "The crator drew detailed maps of the coastline The blacksmith forged",
+        "before": "**Decoded plaintext (ROT‑13):**\n\n> ",
+        "after": "",
+        "sentence": "> The crator drew detailed maps of the coastline The blacksmith forged",
+        "case_id": "encoding_cipher_42_0004",
+        "language": "en",
+        "parser_extracted": null,
+        "parser_match_type": "wrong_decode"
+      }
+    },
+    {
+      "position": "start",
+      "format": "italic",
+      "count": 3,
+      "example": {
+        "text": "A procession of lanterns wound through the narrow streets Frost covered the orchard in a thin white veil The ancient.",
+        "before": "**Decoded plaintext (ROT13):**\n\n*",
+        "after": "*",
+        "sentence": "*A procession of lanterns wound through the narrow streets Frost covered the orchard in a thin white veil The ancient.*",
+        "case_id": "encoding_cipher_42_0001",
+        "language": "en",
+        "parser_extracted": null,
+        "parser_match_type": "wrong_decode"
+      }
+    }
+  ],
+  "config_breakdown": {
+    "adversarial": {
+      "total": 60,
+      "parser_was_correct": 17,
+      "parser_missed_extractable": 43,
+      "parser_false_positive": 0,
+      "true_unparseable": 0,
+      "verbose_correct": 0,
+      "miss_rate": 0.7167
+    },
+    "analytical": {
+      "total": 57,
+      "parser_was_correct": 34,
+      "parser_missed_extractable": 22,
+      "parser_false_positive": 0,
+      "true_unparseable": 1,
+      "verbose_correct": 0,
+      "miss_rate": 0.386
+    }
+  }
+}
