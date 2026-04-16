@@ -4,15 +4,16 @@ Carwash Paradox – Response Parser
 Extracts the model's answer (drive / walk / other) from free-form text using
 multiple strategies, ordered by specificity.
 
-Resolution strategy:
+Resolution strategy (ordered by specificity / signal reliability):
  1. Explicit boxed answer: \\boxed{drive} / \\boxed{walk}
- 2. Bold / header — first bold containing a clear drive/walk signal
- 3. First-sentence signal — short opening line with unambiguous answer
- 4. Keyword "Answer:" / "Recommendation:" / "Decision:" line (last match)
- 5. Strong recommendation phrasing (last match)
- 6. Full-text keyword scan — end-first with conditional walk filtering
- 7. Last sentences that mention drive / walk
- 8. Fallback: raw response snippet
+ 2. Labelled answer line ("Recommendation:" / "Conclusion:" / "Bottom line:" ...)
+ 3. Bold — scored across all bolds, conditional-walk filtered
+ 4. Italic — single-star / underscore emphasis, conditional-walk filtered
+ 5. First-sentence signal — short opening line with unambiguous answer
+ 6. Strong recommendation phrasing ("is to …", "would be to …", "you should …")
+ 7. Full-text keyword scan — end-first with conditional walk filtering
+ 8. Last sentences that mention drive / walk
+ 9. Fallback: raw response snippet
 
 Match values returned:
   "drive"  -> correct
@@ -30,6 +31,20 @@ from src.plugins.parse_utils import (
     merge_keywords, merge_patterns, build_answer_label_re, get_language,
 )
 
+
+def _build_label_alternation(lang: str) -> str:
+    """Build label alternation for the labelled-answer strategy.
+
+    Combines shared ANSWER_LABELS (via build_answer_label_re) with
+    carwash-specific _EXTRA_LABELS (which may contain regex metachars).
+    """
+    base = build_answer_label_re(lang)
+    extra = merge_keywords(_EXTRA_LABELS, lang)
+    extra_alt = "|".join(extra) if extra else ""
+    if base and extra_alt:
+        return base + "|" + extra_alt
+    return base or extra_alt
+
 # ---------------------------------------------------------------------------
 # Keyword sets
 # ---------------------------------------------------------------------------
@@ -41,6 +56,7 @@ DRIVE_KEYWORDS = {
         r"\btake\s+(?:your|the|my)\s+car\b",
         r"\buse\s+(?:your|the|my)\s+car\b",
         r"\bgo\s+by\s+car\b",
+        r"\b(?:by|in)\s+(?:a\s+|the\s+)?car\b",                    # "by car", "in the car" (standalone)
         r"\bgo\s+in\s+(?:your|the|my)\s+car\b",
         r"\bget\s+in\s+(?:your|the|my)\s+car\b",
         r"\bcar\b.*\bneed(?:s?)\b",
@@ -55,7 +71,7 @@ DRIVE_KEYWORDS = {
         r"\btomar (?:el|tu|mi) (?:coche|auto|carro)\b",
         r"\busar (?:el|tu|mi) (?:coche|auto|carro)\b",
         r"\bve en (?:coche|auto)\b",
-        r"\b(?:en|con)\s+(?:el|tu|mi)\s+(?:coche|auto|carro|vehículo)\b",
+        r"\b(?:en|con)\s+(?:el\s+|un\s+|tu\s+|mi\s+)?(?:coche|auto|carro|vehículo)\b",  # "en coche" standalone too
     ],
     "fr": [
         r"\bconduir\w*\b",                                        # all conduire forms (conduirais, conduisant...)
@@ -64,18 +80,20 @@ DRIVE_KEYWORDS = {
         r"\baller en voiture\b",
         r"\butiliser (?:la|ta|ma) voiture\b",
         r"\bfaire\s+laver\s+(?:la|ta|ma)\s+voiture\b",            # "get car washed" (implies driving)
-        r"\b(?:en|avec)\s+(?:la\s+|ta\s+|ma\s+)?voiture\b",        # "with/in the car" (article optional)
+        r"\b(?:en|avec)\s+(?:la\s+|ta\s+|ma\s+|une\s+)?voiture\b",  # "en voiture" standalone too
     ],
     "de": [
+        # _score lowercases text before matching — all patterns here must be
+        # lowercase-only (no capital 'Auto' / 'Fahren').
         r"\bfahren\b", r"\bfahrt\b", r"\bfährst\b",               # base + conjugations
         r"\bzu\s+fahren\b",                                        # infinitive with zu
         r"\bhinfahren\b", r"\bhin\s*fahren\b",                     # drive there
-        r"\bAuto\s+(?:nehmen|benutzen|fahren)\b",
-        r"\bmit\s+dem\s+Auto\b",
-        r"\b(?:das|zum)\s+[Ff]ahren\b",                            # nominalized "das Fahren"
+        r"\bauto\s+(?:nehmen|benutzen|fahren)\b",
+        r"\b(?:mit|im|per)\s+(?:dem\s+|einem\s+)?auto\b",          # "mit dem auto" + "im auto" / "per auto"
+        r"\b(?:das|zum)\s+fahren\b",                                # nominalized "das fahren"
     ],
     "zh": [
-        "开车", "驾车", "坐车", "用车", "开.*去",
+        "开车", "驾车", "坐车", "用车", "开.*去", "开车去", "坐车去",
     ],
     "ua": [
         r"\bїхати\b", r"\bпоїхати\b",                                   # infinitive
@@ -83,7 +101,8 @@ DRIVE_KEYWORDS = {
         r"\bїхатиме\b", r"\bпоїде\b", r"\bпоїхав\b",                    # future / past
         r"\bвзяти (?:машину|авто|автомобіль)\b",                          # "take the car"
         r"\bсісти за кермо\b",                                            # "get behind the wheel"
-        r"(?:на|у)\s+(?:машині|авто|автомобілі|автомобілем)\b",           # "by car" (no leading \b)
+        r"(?:на|у|в)\s+(?:машині|авто|автомобілі|автомобілем)\b",        # "by car" (на/у/в machine variants)
+        r"\bмашиною\b",                                                   # "by car" (instrumental)
         r"\bпідвез(?:ти|іть|и)\b",                                        # "drive over" / "give a ride"
         r"\bпоїзд(?:ку|кою)\b",                                           # "trip (by car)"
         r"\bтранспорт(?:ом|і)\b",                                         # "by transport"
@@ -131,6 +150,98 @@ DRIVE_NEGATION = {
     "de": [re.compile(r"(?:(?:sollte|muss|braucht)\s+nicht\s+)fahren", re.IGNORECASE)],
     "zh": [re.compile(r"不(?:需要|应该|必须)开车|驾车")],
     "ua": [re.compile(r"(?:не\s+(?:потрібно|слід|треба)\s+)(?:їхати|поїхати)", re.IGNORECASE)],
+}
+
+
+# ---------------------------------------------------------------------------
+# Label words that precede the final answer (e.g. "Recommendation: Drive")
+# Merged with shared ANSWER_LABELS (answer/result/solution/response) at parse
+# time via build_answer_label_re(lang). These are plugin-specific additions
+# with regex metachars allowed — do not re.escape them.
+# ---------------------------------------------------------------------------
+_EXTRA_LABELS = {
+    "en": [
+        "recommendation", "decision", "verdict", "conclusion",
+        r"bottom\s*line", r"tl;?dr", r"in\s+short", "tldr",
+        r"my\s+(?:advice|recommendation)", r"final\s+answer",
+    ],
+    "es": [
+        "recomendación", "decisión", "veredicto", "conclusión",
+        r"en\s+resumen", r"en\s+resumidas\s+cuentas",
+        r"mi\s+(?:consejo|recomendación)", r"respuesta\s+final",
+    ],
+    "fr": [
+        "recommandation", "décision", "verdict", "conclusion",
+        r"en\s+résumé", r"en\s+bref",
+        r"mon\s+(?:conseil|avis|recommandation)", r"réponse\s+finale",
+    ],
+    "de": [
+        "empfehlung", "entscheidung", "urteil", "schlussfolgerung", "fazit",
+        r"kurz\s+gesagt", r"mein(?:e)?\s+(?:rat|empfehlung)",
+        r"endgültige\s+antwort",
+    ],
+    "zh": ["推荐", "建议", "结论", "判断", "最终答案", "总结"],
+    "ua": [
+        "рекомендація", "висновок", "рішення", "вердикт", "підсумок",
+        r"коротко\s+кажучи", r"моя\s+(?:порада|рекомендація)",
+        r"остаточна\s+відповідь",
+    ],
+}
+
+
+# ---------------------------------------------------------------------------
+# Strong recommendation phrasing that precedes the final answer.
+# Each language has one compiled pattern with a capturing group for the
+# answer text. Captures are fed through _score() for drive/walk resolution.
+# ---------------------------------------------------------------------------
+_STRONG_INTRO = {
+    "en": re.compile(
+        r"(?:you\s+should|i\s+(?:would|recommend|suggest)|definitely|clearly|obviously|"
+        r"the\s+(?:answer|best\s+option|right\s+choice|recommended\s+(?:option|action|choice))\s+(?:is|would\s+be)|"
+        r"(?:best|optimal|right|recommended)\s+(?:choice|action|option)\s+(?:is|would\s+be)|"
+        r"(?:is|would\s+be)\s+to\b|"                               # "is to walk", "would be to drive"
+        r"action\s+is\s+to\b|"                                     # "the action is to walk"
+        r"go\s+(?:ahead\s+and)?)"
+        r"\s+([^\n.]{1,80})",
+        re.IGNORECASE,
+    ),
+    "es": re.compile(
+        r"(?:deberías|recomiendo|sugiero|claramente|obviamente|"
+        r"la\s+(?:respuesta|mejor\s+opción|opción\s+recomendada)\s+es|"
+        r"(?:mejor|óptimo|recomendado)\s+(?:es|sería)|"
+        r"(?:es|sería)\s+(?:mejor\s+)?)"
+        r"\s+([^\n.]{1,80})",
+        re.IGNORECASE,
+    ),
+    "fr": re.compile(
+        r"(?:vous\s+devriez|tu\s+devrais|je\s+recommande|je\s+suggère|définitivement|clairement|évidemment|"
+        r"la\s+(?:réponse|meilleure\s+option|option\s+recommandée)\s+est|"
+        r"(?:meilleur|optimal|recommandé)\s+(?:est|serait)|"
+        r"(?:est|serait)\s+de)"
+        r"\s+([^\n.]{1,80})",
+        re.IGNORECASE,
+    ),
+    "de": re.compile(
+        r"(?:du\s+solltest|sie\s+sollten|ich\s+(?:würde|empfehle|schlage\s+vor)|eindeutig|offensichtlich|"
+        r"die\s+(?:antwort|beste\s+option|empfohlene\s+option)\s+(?:ist|wäre)|"
+        r"(?:beste|optimale|empfohlene)\s+(?:option|wahl)\s+(?:ist|wäre)|"
+        r"(?:ist|wäre)\s+zu)"
+        r"\s+([^\n.]{1,80})",
+        re.IGNORECASE,
+    ),
+    "zh": re.compile(
+        r"(?:你\s*应该|我\s*(?:建议|推荐)|显然|明显|"
+        r"(?:答案|最佳选择|推荐选择)\s*(?:是|应该是)|"
+        r"建议\s*(?:是|应该))"
+        r"\s*([^\n。.]{1,80})",
+    ),
+    "ua": re.compile(
+        r"(?:ви\s+повинні|тобі\s+слід|я\s+(?:рекомендую|раджу)|однозначно|очевидно|"
+        r"(?:відповідь|найкращий\s+варіант|рекомендований\s+варіант)\s+(?:це|—|-)|"
+        r"(?:це|буде)\s+(?:краще\s+)?)"
+        r"\s+([^\n.]{1,80})",
+        re.IGNORECASE,
+    ),
 }
 
 
@@ -339,14 +450,16 @@ def _score(text: str, lang: str = "en") -> Optional[str]:
     Conditional walk mentions (e.g. "only walk if ...") are excluded from the
     tie-break so that a trailing disclaimer does not override a clear "drive".
     """
-    t = text.lower()
+    # Match case-insensitively on the raw text so keyword patterns with
+    # capital letters (e.g. German "Auto") work without lowercasing tricks.
+    t = text
     drive_kws = merge_keywords(DRIVE_KEYWORDS, lang)
     walk_kws = merge_keywords(WALK_KEYWORDS, lang)
     walk_neg = merge_patterns(WALK_NEGATION, lang)
     drive_neg = merge_patterns(DRIVE_NEGATION, lang)
 
-    has_drive = any(re.search(kw, t) for kw in drive_kws)
-    has_walk = any(re.search(kw, t) for kw in walk_kws)
+    has_drive = any(re.search(kw, t, re.IGNORECASE) for kw in drive_kws)
+    has_walk = any(re.search(kw, t, re.IGNORECASE) for kw in walk_kws)
     negated_walk = any(p.search(t) for p in walk_neg)
     negated_drive = any(p.search(t) for p in drive_neg)
 
@@ -363,14 +476,14 @@ def _score(text: str, lang: str = "en") -> Optional[str]:
     if has_drive and has_walk:
         # Both present — last occurrence wins (end-first principle)
         drive_pos = max(
-            (m.start() for kw in drive_kws for m in re.finditer(kw, t)),
+            (m.start() for kw in drive_kws for m in re.finditer(kw, t, re.IGNORECASE)),
             default=-1,
         )
         # Collect all walk positions, filtering out conditional mentions
         all_walk_positions = [
             m.start()
             for kw in walk_kws
-            for m in re.finditer(kw, t)
+            for m in re.finditer(kw, t, re.IGNORECASE)
         ]
         non_conditional = [
             pos for pos in all_walk_positions
@@ -409,7 +522,22 @@ class CarwashParser(ResponseParser):
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="boxed", confidence=0.95)
 
-        # --- Strategy 2: Bold — score all bolds, filter contextually ---
+        # --- Strategy 2: Labelled answer line (last match) ---
+        # Promoted above Bold: "Recommendation: Drive" has 100% regex reliability
+        # on the annotated data, whereas bolds fire on explanatory bullets like
+        # "**Walking costs basically no fuel**" which mislead the scorer.
+        label_alternation = _build_label_alternation(lang)
+        label_match = re_search_last(
+            r"(?:" + label_alternation + r")\s*[:：]\s*([^\n.]{1,120})",
+            text,
+            re.IGNORECASE,
+        )
+        if label_match:
+            result = _score(label_match.group(1), lang)
+            if result:
+                return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_line", confidence=0.9)
+
+        # --- Strategy 3: Bold — score all bolds, filter contextually ---
         # Models bold their answer but also bold explanatory bullet points
         # (e.g. "**Walking back would be awkward**").  For walk-scoring bolds,
         # verify they aren't conditional/negative in the surrounding text.
@@ -435,8 +563,31 @@ class CarwashParser(ResponseParser):
                     result = bold_results[-1][0]
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="bold", confidence=0.9)
 
-        # --- Strategy 3: First-sentence signal ---
-        # Models almost always state the answer in the opening line.
+        # --- Strategy 4: Italic — single-star / underscore emphasis ---
+        # Models occasionally emphasize the final answer with single-star or
+        # underscore italics instead of bold: "...is to *walk*" / "_Walk_".
+        # The lookarounds prevent matching inside **bold** runs.
+        italics = list(re.finditer(
+            r"(?<!\*)\*([^*\n]{1,50})\*(?!\*)|(?<!_)_([^_\n]{1,50})_(?!_)",
+            text,
+        ))
+        if italics:
+            text_lower = text.lower()
+            italic_results = []
+            for m in italics:
+                span = (m.group(1) or m.group(2) or "").strip()
+                r = _score(span, lang)
+                if r == "walk" and _is_conditional_walk(text_lower, m.start(), lang):
+                    continue
+                if r:
+                    italic_results.append((r, m))
+            if italic_results:
+                signals = {r for r, _ in italic_results}
+                result = italic_results[0][0] if len(signals) == 1 else italic_results[-1][0]
+                return ParsedAnswer(value=result, raw_response=text, parse_strategy="italic", confidence=0.85)
+
+        # --- Strategy 5: First-sentence signal ---
+        # Models sometimes state the answer in the opening line.
         # If a short first line/sentence has an unambiguous signal, trust it.
         first_line = text.split('\n', 1)[0].strip()
         first_sent = re.split(r'[.!?\n]', text, maxsplit=1)[0].strip()
@@ -446,36 +597,23 @@ class CarwashParser(ResponseParser):
                 if result:
                     return ParsedAnswer(value=result, raw_response=text, parse_strategy="first_sentence", confidence=0.88)
 
-        # --- Strategy 4: Labelled answer line (last match) ---
-        answer_labels = build_answer_label_re(lang)
-        label_match = re_search_last(
-            r"(?:" + answer_labels + r"|recommendation|decision|verdict|conclusion|my\s+(?:advice|recommendation))\s*[:：]\s*([^\n.]{1,120})",
-            text,
-            re.IGNORECASE,
-        )
-        if label_match:
-            result = _score(label_match.group(1), lang)
-            if result:
-                return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_line", confidence=0.88)
-
-        # --- Strategy 5: Strong recommendation phrasing (last match) ---
-        strong_intro = re_search_last(
-            r"(?:you\s+should|i\s+(?:would|recommend|suggest)|definitely|clearly|obviously|"
-            r"the\s+(?:answer|best\s+option|right\s+choice)\s+is|go\s+(?:ahead\s+and)?)\s+([^\n.]{1,80})",
-            text,
-            re.IGNORECASE,
-        )
+        # --- Strategy 6: Strong recommendation phrasing (last match) ---
+        strong_intro_pat = _STRONG_INTRO.get(lang) or _STRONG_INTRO["en"]
+        strong_intro = re_search_last(strong_intro_pat.pattern, text, strong_intro_pat.flags)
         if strong_intro:
+            # Feed the FULL match (intro + tail) through _score so phrases like
+            # "the action is to walk" resolve on both the intro and the captured
+            # verb. Falls back to capture group if full match is ambiguous.
             result = _score(strong_intro.group(0), lang)
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="strong_intro", confidence=0.85)
 
-        # --- Strategy 6: Full-text keyword scan ---
+        # --- Strategy 7: Full-text keyword scan ---
         result = _score(text, lang)
         if result:
             return ParsedAnswer(value=result, raw_response=text, parse_strategy="full_text", confidence=0.7)
 
-        # --- Strategy 7: Last 3 sentences (end-first) ---
+        # --- Strategy 8: Last 5 sentences (end-first) ---
         for sent in reversed(last_sentences(text, n=5)):
             result = _score(sent, lang)
             if result:

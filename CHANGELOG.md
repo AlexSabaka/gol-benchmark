@@ -83,6 +83,39 @@ Before v2.21.0, `parse_strategy` was being computed by plugin parsers but only p
 - `frontend/src/components/review/improvement-report-dialog.tsx` — 9 tabs, `DataQualityBanner`, `ParserSpanAlignmentCallout`, `ParserMissedStat`, `AccuracyStat`, `StructuralSignalsRow`, `PrefixAnchorsTable` (type-chipped), `LabelTaxonomyBlock`, `RegexTestRow` (expansion + capture pill), `CaptureSampleRow`, `ModelAnswersTab` + `ModelAnswerRow`
 - `frontend/src/components/review/annotation-dock.tsx` — `autoFormat` gains italic / strikethrough / header detection + widened multilingual label vocabulary
 
+### Carwash Parser — First agent-driven refactor seeded by the v2.4 report
+
+The carwash plugin parser became the first consumer of the v2.4 Improvement Report. A 300-case annotation sweep across `gpt-5.4-nano` / `claude-3.5-haiku` / `claude-3-haiku` (all English, all expected `drive`) drove a targeted refactor; ~90% of the decisions traced directly to specific v2.4 report fields (`span_groups[].regex_test[].capture_contains_rate`, `parser_span_alignment`, `prefix_anchors[].type`, `sample_misaligned`, `data_quality.warnings[]`).
+
+#### Parser changes ([src/plugins/carwash/parser.py](src/plugins/carwash/parser.py))
+
+- **Strategy cascade reordered** — `label_line` promoted from Strategy 4 to Strategy 2, above `bold`. The merged-label disjunction `(?i)(?:recommendation|conclusion)\s*[:：]\s*…` had 100% match + 100% capture_contains on 88 annotated cases, yet was being shadowed by bold-strategy hits on explanation bullets (e.g. `**Walking costs no fuel**`). New order: `boxed` → **`label_line`** → `bold` → **`italic`** → `first_sentence` → `strong_intro` → `full_text` → `last_sentences` → `fallback`
+- **New `italic` strategy** — extracts last `*X*` / `_X_` emphasis with negative lookarounds `(?<!\*)\*…\*(?!\*)` to prevent collision with `**bold**` runs. Reuses `_is_conditional_walk` for symmetry with the bold strategy
+- **`_EXTRA_LABELS` dict (module-level, per-language)** — plugin-local label list merged with shared `ANSWER_LABELS` via new `_build_label_alternation(lang)` helper. Adds "bottom line" (6 annotated cases), "tl;dr", "in short", "final answer" (EN) + localized equivalents for ES/FR/DE/ZH/UA. Regex metachars retained — not `re.escape`'d at merge time
+- **`_STRONG_INTRO` dict (module-level, per-language)** — converted the English-only inline regex to a compiled-pattern dict. EN gains three infinitive-recommendation fragments that together cover ~103 annotated cases previously missed: `is\s+to\b` (60 cases), `would\s+be\s+to\b` (43), `action\s+is\s+to\b` (20). Corresponding fragments added for ES/FR/DE/ZH/UA
+- **`DRIVE_KEYWORDS` widened with standalone "by/in car" pattern** — `\b(?:by|in)\s+(?:a\s+|the\s+)?car\b` (EN) + localized equivalents across all 6 languages. Regression fix for `carwash_999_0004`: model wrote `**Answer: By car.**`, parser saw no drive signal, fell through to walk mentions elsewhere
+- **`_score` now uses `re.IGNORECASE`** — latent bug where DE `\bAuto\b` / `\bFuß\b` patterns never matched, because `_score` lowercased the input before running case-sensitive regex. Fix: drop the lowercasing, add `re.IGNORECASE` to every `re.search` / `re.finditer` call in the scorer. Patterns can now be written in their natural orthography
+- **Module docstring updated** to reflect the 9-step cascade order
+
+#### Tests — new [tests/plugins/test_carwash_parser.py](tests/plugins/test_carwash_parser.py)
+
+40 tests across 10 classes, all passing:
+
+- `TestLabelLineBeatsBold` (5) — strategy-reorder regression: `Recommendation: Drive` must win over earlier bolded walk-bullets
+- `TestByCarKeyword` (3) — including a word-boundary check that `\bcar\b` doesn't fire inside "carwash"
+- `TestItalicStrategy` (3) — single-star, underscore, and bold-vs-italic lookaround safety
+- `TestStrongIntroInfinitive` (3) — "is to X" / "would be to X" / "action is to X"
+- `TestBoxed` (2), `TestConditionalWalkSuppression` (2), `TestFallback` (2)
+- `TestParseStrategyEmission` (9 parametrized) — every non-empty parse emits a concrete `parse_strategy`, never `"unknown"` or empty (regression for the `no_parse_strategy` data-quality warning)
+- `TestMultilingualLabelLine` (5) + `TestMultilingualByCar` (4) — one smoke test per language for each new multilingual feature
+- `TestParsedAnswerShape` (2) — raw response preserved, confidence in [0.0, 1.0]
+
+Full plugin-suite run confirmed zero new regressions (13 pre-existing failures in `test_ascii_shapes.py` / `test_cellular_automata_1d.py` / `test_linda_fallacy.py` are unchanged, verified by stashing + re-running).
+
+### Improvement Report v2.5 / v2.6 plan — consumer's report card on v2.4
+
+New design doc [docs/improvement_report_v2.5_plan.md](docs/improvement_report_v2.5_plan.md) — reflective review written from the parser-refactor consumer's perspective on the v2.4 JSON artifact. Verdict: v2.4 is genuinely useful (6 of ~20 top-level keys drove all real decisions) but over-emitted (redundant sections, dead siblings under active warnings, long-tail span_groups with `count < 4`) and missing three agent-critical features (ranked action list, parser version pinning, per-group alignment split). Split into v2.5 (pure suppression, ~30% JSON size reduction, zero risk) and v2.6 (additive: `priority_actions[]`, `parser_fingerprint`, per-group `count_aligned` / `count_misaligned`, `closest_existing_strategy` via parser AST walk, `suggested_regex[].cascade_hint`, `conflicts[]`, stemmed `model_answer_distribution`). Tracked as **TD-088** in TECHDEBT.
+
 ### Job Persistence & Pause/Resume
 
 Benchmark execution jobs now survive server restarts and can be paused mid-run and resumed from a checkpoint.
