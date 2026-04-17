@@ -128,7 +128,7 @@ function IdleDock() {
   return (
     <div className="flex items-center gap-2 text-[11px] text-muted-foreground">
       <span className="inline-block h-1.5 w-1.5 rounded-full bg-muted-foreground/40" />
-      Select text in the response to mark an answer span, or pick a classification below.
+      <span>Click to mark answer · <kbd className="font-mono text-[9px]">Ctrl</kbd> anchor · <kbd className="font-mono text-[9px]">Alt</kbd> keyword · <kbd className="font-mono text-[9px]">Shift</kbd> negative</span>
       <span className="ml-auto hidden items-center gap-1 font-mono text-[10px] sm:flex">
         <kbd className="rounded border border-border bg-background px-1">Space</kbd>
         to commit when active

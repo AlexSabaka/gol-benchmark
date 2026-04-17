@@ -23,6 +23,10 @@ class OllamaInterface(ModelInterface):
             "model": self.model_name,
             "prompt": prompt,
             "stream": False,
+            # Pass think=False when no_think is set; models that don't support
+            # thinking ignore this field.  When think=True (default), Ollama
+            # returns a separate "thinking" field in the response.
+            "think": not params.get("no_think", False),
             "options": {
                 "temperature": params.get("temperature", 0.1),
                 "top_k": params.get("top_k", 40),
@@ -51,6 +55,10 @@ class OllamaInterface(ModelInterface):
 
             return {
                 "response": result.get("response", ""),
+                # "thinking" is populated by Ollama for thinking-capable models
+                # when think=True.  We surface it as "reasoning" so callers use
+                # a provider-agnostic key.
+                "reasoning": result.get("thinking") or None,
                 "tokens_input": result.get("prompt_eval_count", 0),
                 "tokens_generated": result.get("eval_count", 0),
                 "duration": end_time - start_time,

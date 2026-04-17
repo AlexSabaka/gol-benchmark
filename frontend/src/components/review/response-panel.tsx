@@ -4,7 +4,7 @@ import { toast } from "sonner"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
-import type { AnnotationSpan, ResponseClass, ReviewCase } from "@/types"
+import type { AnnotationSpan, MarkSpan, ResponseClass, ReviewCase } from "@/types"
 import { AnnotationDock, autoFormat, autoPosition, type PendingSpan } from "./annotation-dock"
 import { chunkResponse, type TranslateChunk } from "./translate-chunks"
 import { ChunkGutter } from "./chunk-gutter"
@@ -18,9 +18,9 @@ interface Props {
    * muted so it doesn't falsely reassure the annotator. */
   annotatorVerified: boolean
   pending: PendingSpan | null
-  /** Current classification verdict (if any) — used to compute the
+  /** Current classification verdicts — used to compute the
    * disagreement alert + strike-through parser badge. */
-  responseClass: ResponseClass | null
+  responseClasses: ResponseClass[]
   /** Session-wide target language for the Translate button. */
   targetLang: string
   /** Session-wide peek-translate toggle (chunked gutter + hover popover). */
@@ -36,6 +36,19 @@ interface Props {
   onChangeFormat: (format: PendingSpan["format"]) => void
   onFlagFalsePositive?: () => void
   onRegisterCommit?: (commit: (() => void) | null) => void
+  // v3 mark types
+  contextAnchors: MarkSpan[]
+  answerKeywords: MarkSpan[]
+  negativeSpans: MarkSpan[]
+  negativeKeywords: MarkSpan[]
+  onAddContextAnchor: (mark: MarkSpan) => void
+  onAddAnswerKeyword: (mark: MarkSpan) => void
+  onAddNegativeSpan: (mark: MarkSpan) => void
+  onAddNegativeKeyword: (mark: MarkSpan) => void
+  onRemoveContextAnchor: (index: number) => void
+  onRemoveAnswerKeyword: (index: number) => void
+  onRemoveNegativeSpan: (index: number) => void
+  onRemoveNegativeKeyword: (index: number) => void
 }
 
 /** Find the first occurrence of parser-extracted text inside the response. */
@@ -51,13 +64,15 @@ function findParserMatch(
   return { start: idx, end: idx + needle.length }
 }
 
-// Owner tag per character position. Spans take precedence over parser-match,
-// and both take precedence over plain. Negative sentinel values:
-//   -2  → plain text (no decoration)
-//   -1  → parser-match ghost
-//   >=0 → annotation span (value is the span index)
+// Owner tag per character position. Higher-priority marks overwrite lower ones.
+// Negative sentinel values encode mark type; non-negative values are span indices.
 const OWN_PLAIN = -2
 const OWN_PARSER = -1
+// >=0 → annotation span (value is the span index)
+const OWN_ANCHOR = -3    // context anchor (Ctrl+click)
+const OWN_KEYWORD = -4   // answer keyword (Alt+click)
+const OWN_NEG_SPAN = -5  // negative span (Shift+click)
+const OWN_NEG_KW = -6    // negative keyword (Shift+Alt+click)
 
 /** Build a per-character owner map so the word-level renderer can decorate
  *  each token without re-scanning the whole span list. */
@@ -65,14 +80,31 @@ function classifyChars(
   len: number,
   spans: AnnotationSpan[],
   parserMatch: { start: number; end: number } | null,
+  contextAnchors: MarkSpan[],
+  answerKeywords: MarkSpan[],
+  negativeSpans: MarkSpan[],
+  negativeKeywords: MarkSpan[],
 ): Int32Array {
   const owner = new Int32Array(len).fill(OWN_PLAIN)
+  // Paint in priority order (lowest first → highest overwrites).
   if (parserMatch) {
     for (let i = parserMatch.start; i < parserMatch.end && i < len; i++) {
       owner[i] = OWN_PARSER
     }
   }
-  // Spans win over parser-match (they encode verified annotator intent).
+  for (const s of negativeSpans) {
+    for (let i = s.char_start; i < s.char_end && i < len; i++) owner[i] = OWN_NEG_SPAN
+  }
+  for (const s of negativeKeywords) {
+    for (let i = s.char_start; i < s.char_end && i < len; i++) owner[i] = OWN_NEG_KW
+  }
+  for (const s of contextAnchors) {
+    for (let i = s.char_start; i < s.char_end && i < len; i++) owner[i] = OWN_ANCHOR
+  }
+  for (const s of answerKeywords) {
+    for (let i = s.char_start; i < s.char_end && i < len; i++) owner[i] = OWN_KEYWORD
+  }
+  // Answer spans win over everything (primary annotator intent).
   spans.forEach((s, idx) => {
     for (let i = s.char_start; i < s.char_end && i < len; i++) {
       owner[i] = idx
@@ -92,7 +124,7 @@ interface RenderWordsArgs {
   parserHighlightRef: React.RefObject<HTMLSpanElement | null>
   flashing: boolean
   parserHint: string
-  onWordClick: (start: number, end: number, text: string) => void
+  onWordClick: (start: number, end: number, text: string, event: React.MouseEvent) => void
   onRemoveSpan: (index: number) => void
   /**
    * When provided, output is wrapped in `<span data-chunk-idx="…">` elements
@@ -170,7 +202,7 @@ function renderRange(
   parserAttached: { value: boolean },
   flashing: boolean,
   parserHint: string,
-  onWordClick: (start: number, end: number, text: string) => void,
+  onWordClick: (start: number, end: number, text: string, event: React.MouseEvent) => void,
   onRemoveSpan: (index: number) => void,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = []
@@ -188,19 +220,20 @@ function renderRange(
       if (owner[k] !== firstOwner) { consistent = false; break }
     }
 
+    // ── Non-word runs (whitespace, punctuation) — inert decorations ──
     if (!runStartsWord) {
       if (consistent && firstOwner >= 0) {
-        out.push(
-          <span key={runStart} className="border-b-2 border-primary bg-primary/15">
-            {chunk}
-          </span>,
-        )
+        out.push(<span key={runStart} className="border-b-2 border-primary bg-primary/15">{chunk}</span>)
+      } else if (consistent && firstOwner === OWN_ANCHOR) {
+        out.push(<span key={runStart} className="border-b border-dashed border-indigo-500 bg-indigo-400/15">{chunk}</span>)
+      } else if (consistent && firstOwner === OWN_KEYWORD) {
+        out.push(<span key={runStart} className="border-b border-dotted border-violet-500 bg-violet-400/15">{chunk}</span>)
+      } else if (consistent && firstOwner === OWN_NEG_SPAN) {
+        out.push(<span key={runStart} className="border-b-2 border-rose-500 bg-rose-400/15">{chunk}</span>)
+      } else if (consistent && firstOwner === OWN_NEG_KW) {
+        out.push(<span key={runStart} className="border-b border-dotted border-rose-600 bg-rose-500/20">{chunk}</span>)
       } else if (consistent && firstOwner === OWN_PARSER) {
-        out.push(
-          <span key={runStart} className="border-b border-dashed border-amber-500 bg-amber-400/10">
-            {chunk}
-          </span>,
-        )
+        out.push(<span key={runStart} className="border-b border-dashed border-amber-500 bg-amber-400/10">{chunk}</span>)
       } else {
         out.push(<span key={runStart}>{chunk}</span>)
       }
@@ -208,20 +241,52 @@ function renderRange(
       continue
     }
 
+    // ── Word tokens — interactive ──
     if (consistent && firstOwner >= 0) {
       const spanIdx = firstOwner
       out.push(
         <mark
           key={runStart}
-          onClick={(e) => {
-            e.stopPropagation()
-            onRemoveSpan(spanIdx)
-          }}
+          onClick={(e) => { e.stopPropagation(); onRemoveSpan(spanIdx) }}
           className="cursor-pointer rounded-sm border-b-2 border-primary bg-primary/15 px-0.5 text-foreground hover:bg-primary/25"
           title="Click to remove annotation"
-        >
-          {chunk}
-        </mark>,
+        >{chunk}</mark>,
+      )
+    } else if (consistent && firstOwner === OWN_ANCHOR) {
+      out.push(
+        <mark
+          key={runStart}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          className="cursor-pointer rounded-sm border-b border-dashed border-indigo-500 bg-indigo-400/15 px-0.5 text-foreground hover:bg-indigo-400/25"
+          title="Context anchor · click to remove"
+        >{chunk}</mark>,
+      )
+    } else if (consistent && firstOwner === OWN_KEYWORD) {
+      out.push(
+        <mark
+          key={runStart}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          className="cursor-pointer rounded-sm border-b border-dotted border-violet-500 bg-violet-400/15 px-0.5 text-foreground hover:bg-violet-400/25"
+          title="Answer keyword · click to remove"
+        >{chunk}</mark>,
+      )
+    } else if (consistent && firstOwner === OWN_NEG_SPAN) {
+      out.push(
+        <mark
+          key={runStart}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          className="cursor-pointer rounded-sm border-b-2 border-rose-500 bg-rose-400/15 px-0.5 text-foreground hover:bg-rose-400/25"
+          title="Negative span · click to remove"
+        >{chunk}</mark>,
+      )
+    } else if (consistent && firstOwner === OWN_NEG_KW) {
+      out.push(
+        <mark
+          key={runStart}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          className="cursor-pointer rounded-sm border-b border-dotted border-rose-600 bg-rose-500/20 px-0.5 text-foreground hover:bg-rose-500/30"
+          title="Negative keyword · click to remove"
+        >{chunk}</mark>,
       )
     } else if (consistent && firstOwner === OWN_PARSER) {
       const isFirstParserWord = !parserAttached.value
@@ -230,29 +295,19 @@ function renderRange(
         <span
           key={runStart}
           ref={isFirstParserWord ? parserHighlightRef : undefined}
-          onClick={(e) => {
-            e.stopPropagation()
-            onWordClick(runStart, j, chunk)
-          }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
           className={`cursor-pointer rounded-sm border-b border-dashed border-amber-500 bg-amber-400/10 px-0.5 text-foreground transition-colors hover:bg-amber-400/25 ${flashing ? "ring-2 ring-amber-400" : ""}`}
           title={`Parser extracted: ${parserHint} · click to mark this word as the answer`}
-        >
-          {chunk}
-        </span>,
+        >{chunk}</span>,
       )
     } else if (consistent && firstOwner === OWN_PLAIN) {
       out.push(
         <span
           key={runStart}
-          onClick={(e) => {
-            e.stopPropagation()
-            onWordClick(runStart, j, chunk)
-          }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
           className="cursor-pointer rounded-sm px-0.5 transition-colors hover:bg-primary/10 hover:underline hover:decoration-primary hover:decoration-2 hover:underline-offset-4"
-          title="Click to mark as answer (or drag-select for a phrase)"
-        >
-          {chunk}
-        </span>,
+          title="Click to mark · Ctrl: anchor · Alt: keyword · Shift: negative"
+        >{chunk}</span>,
       )
     } else {
       out.push(<span key={runStart}>{chunk}</span>)
@@ -302,13 +357,45 @@ function stringifyAnswer(value: unknown): string {
   }
 }
 
+/** Reusable chip row for any mark type (spans, anchors, keywords, negatives). */
+function MarkChipRow({
+  label,
+  color,
+  items,
+  onRemove,
+}: {
+  label: string
+  color: string
+  items: { text: string; detail?: string }[]
+  onRemove: (index: number) => void
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className={`text-[11px] ${color}`}>{label}:</span>
+      {items.map((item, i) => (
+        <Button
+          key={i}
+          variant="outline"
+          size="sm"
+          onClick={() => onRemove(i)}
+          className={`h-6 gap-1 px-1.5 text-[10px] font-mono ${color}`}
+          title="Click to remove"
+        >
+          <span className="max-w-30 truncate">{item.text}</span>
+          {item.detail && <span className="text-muted-foreground">[{item.detail}]</span>}
+        </Button>
+      ))}
+    </div>
+  )
+}
+
 export function ResponsePanel({
   caseData,
   spans,
   note,
   annotatorVerified,
   pending,
-  responseClass,
+  responseClasses,
   targetLang,
   peekTranslateOn,
   onTogglePeekTranslate,
@@ -321,6 +408,18 @@ export function ResponsePanel({
   onChangeFormat,
   onFlagFalsePositive,
   onRegisterCommit,
+  contextAnchors,
+  answerKeywords,
+  negativeSpans,
+  negativeKeywords,
+  onAddContextAnchor,
+  onAddAnswerKeyword,
+  onAddNegativeSpan,
+  onAddNegativeKeyword,
+  onRemoveContextAnchor,
+  onRemoveAnswerKeyword,
+  onRemoveNegativeSpan,
+  onRemoveNegativeKeyword,
 }: Props) {
   const responseRef = useRef<HTMLDivElement | null>(null)
   const parserHighlightRef = useRef<HTMLSpanElement | null>(null)
@@ -339,8 +438,11 @@ export function ResponsePanel({
   )
 
   const charOwner = useMemo(
-    () => classifyChars(caseData.raw_response.length, spans, parserMatch),
-    [caseData.raw_response, spans, parserMatch],
+    () => classifyChars(
+      caseData.raw_response.length, spans, parserMatch,
+      contextAnchors, answerKeywords, negativeSpans, negativeKeywords,
+    ),
+    [caseData.raw_response, spans, parserMatch, contextAnchors, answerKeywords, negativeSpans, negativeKeywords],
   )
 
   // Chunking is cheap (pure string ops) but still skip it when the feature is
@@ -378,60 +480,107 @@ export function ResponsePanel({
     setTimeout(() => setFlashing(false), 1400)
   }, [])
 
-  /** One-click word-marking: commit the clicked word as an answer span
-   *  immediately, without routing through the pending / dock flow. The dock is
-   *  still used for drag-selected multi-word spans. */
+  /** One-click word-marking with modifier key detection.
+   *  - Plain click: answer span (blue)
+   *  - Ctrl/Cmd+click: context anchor (indigo)
+   *  - Alt/Option+click: answer keyword (violet)
+   *  - Shift+click: negative span (rose)
+   *  - Shift+Alt/Ctrl/Cmd+click: negative keyword (dark rose)
+   */
   const handleWordClick = useCallback(
-    (start: number, end: number, text: string) => {
-      const full = caseData.raw_response
-      onAddSpan({
-        text,
-        char_start: start,
-        char_end: end,
-        position: autoPosition(start, full.length),
-        format: autoFormat(full, start, end),
-        confidence: "high",
-      })
+    (start: number, end: number, text: string, event: React.MouseEvent) => {
+      const isCtrl = event.ctrlKey || event.metaKey
+      const isAlt = event.altKey
+      const isShift = event.shiftKey
+
+      const mark: MarkSpan = { text, char_start: start, char_end: end }
+
+      if (isShift && (isAlt || isCtrl)) {
+        onAddNegativeKeyword(mark)
+      } else if (isShift) {
+        onAddNegativeSpan(mark)
+      } else if (isCtrl) {
+        onAddContextAnchor(mark)
+      } else if (isAlt) {
+        onAddAnswerKeyword(mark)
+      } else {
+        // Default: answer span (existing behavior)
+        const full = caseData.raw_response
+        onAddSpan({
+          text,
+          char_start: start,
+          char_end: end,
+          position: autoPosition(start, full.length),
+          format: autoFormat(full, start, end),
+          confidence: "high",
+        })
+      }
     },
-    [caseData.raw_response, onAddSpan],
+    [caseData.raw_response, onAddSpan, onAddContextAnchor, onAddAnswerKeyword, onAddNegativeSpan, onAddNegativeKeyword],
   )
 
-  // ── Selection handling ────────────────────────────────────────────────
-  const handleMouseUp = useCallback(() => {
-    const sel = window.getSelection()
-    if (!sel || sel.isCollapsed) return
-    const container = responseRef.current
-    if (!container) return
-    const selected = sel.toString()
-    if (!selected.trim()) return
+  // ── Selection handling (drag-select) ──────────────────────────────────
+  // With modifier keys: Ctrl/Alt/Shift+drag directly add the mark (bypass dock).
+  // Without modifiers: route through PendingSpan → dock as before.
+  const handleMouseUp = useCallback(
+    (event: React.MouseEvent) => {
+      const sel = window.getSelection()
+      if (!sel || sel.isCollapsed) return
+      const container = responseRef.current
+      if (!container) return
+      const selected = sel.toString()
+      if (!selected.trim()) return
 
-    const anchor = sel.anchorNode
-    const focus = sel.focusNode
-    if (!anchor || !focus) return
-    if (!container.contains(anchor) || !container.contains(focus)) return
+      const anchorNode = sel.anchorNode
+      const focusNode = sel.focusNode
+      if (!anchorNode || !focusNode) return
+      if (!container.contains(anchorNode) || !container.contains(focusNode)) return
 
-    const full = caseData.raw_response
-    const range = sel.getRangeAt(0)
+      const full = caseData.raw_response
+      const range = sel.getRangeAt(0)
 
-    // Walk from the container to the anchor-range start to compute char offset.
-    const pre = range.cloneRange()
-    pre.selectNodeContents(container)
-    pre.setEnd(range.startContainer, range.startOffset)
-    const startHint = pre.toString().length
+      // Walk from the container to the anchor-range start to compute char offset.
+      const pre = range.cloneRange()
+      pre.selectNodeContents(container)
+      pre.setEnd(range.startContainer, range.startOffset)
+      const startHint = pre.toString().length
 
-    let char_start = full.indexOf(selected, Math.max(0, startHint - 3))
-    if (char_start < 0) char_start = full.indexOf(selected)
-    if (char_start < 0) return
-    const char_end = char_start + selected.length
+      let char_start = full.indexOf(selected, Math.max(0, startHint - 3))
+      if (char_start < 0) char_start = full.indexOf(selected)
+      if (char_start < 0) return
+      const char_end = char_start + selected.length
 
-    onSetPending({
-      text: selected,
-      char_start,
-      char_end,
-      position: autoPosition(char_start, full.length),
-      format: autoFormat(full, char_start, char_end),
-    })
-  }, [caseData.raw_response, onSetPending])
+      const isCtrl = event.ctrlKey || event.metaKey
+      const isAlt = event.altKey
+      const isShift = event.shiftKey
+
+      // Modifier held → directly add mark, clear selection.
+      if (isShift || isCtrl || isAlt) {
+        const mark: MarkSpan = { text: selected, char_start, char_end }
+        if (isShift && (isAlt || isCtrl)) {
+          onAddNegativeKeyword(mark)
+        } else if (isShift) {
+          onAddNegativeSpan(mark)
+        } else if (isCtrl) {
+          onAddContextAnchor(mark)
+        } else if (isAlt) {
+          onAddAnswerKeyword(mark)
+        }
+        sel.removeAllRanges()
+        return
+      }
+
+      // No modifier → pending span (dock flow).
+      onSetPending({
+        text: selected,
+        char_start,
+        char_end,
+        position: autoPosition(char_start, full.length),
+        format: autoFormat(full, char_start, char_end),
+      })
+    },
+    [caseData.raw_response, onSetPending, onAddContextAnchor, onAddAnswerKeyword, onAddNegativeSpan, onAddNegativeKeyword],
+  )
 
   return (
     <div className="flex h-full flex-col gap-3 overflow-hidden">
@@ -442,7 +591,7 @@ export function ResponsePanel({
         <Badge variant="outline" className="text-[10px]">
           Expected: <span className="ml-1 font-mono">{stringifyAnswer(caseData.expected)}</span>
         </Badge>
-        {responseClass === "parser_false_positive" ? (
+        {responseClasses.includes("false_positive") ? (
           <Badge className="bg-fuchsia-500/15 text-[10px] text-fuchsia-700 border-fuchsia-500/40 dark:text-fuchsia-400">
             <span className="line-through opacity-70">{caseData.parser_match_type}</span>
             <span className="ml-1">→ false-positive</span>
@@ -500,12 +649,12 @@ export function ResponsePanel({
         </div>
       </div>
 
-      {/* Parser-disagreement callout: persistent, one-click flag to `parser_false_positive`. */}
+      {/* Parser-disagreement callout: persistent, one-click flag to `false_positive`. */}
       {(() => {
         const hasSpans = spans.length > 0
         const parserStr = typeof caseData.parsed_answer === "string" ? caseData.parsed_answer.trim() : ""
         const disagrees = hasSpans && parserStr.length > 0 && !parserMatchesAnySpan(caseData.parsed_answer, spans)
-        const flagged = responseClass === "parser_false_positive"
+        const flagged = responseClasses.includes("false_positive")
 
         if (flagged) {
           return (
@@ -554,6 +703,20 @@ export function ResponsePanel({
         <div
           ref={responseRef}
           onMouseUp={handleMouseUp}
+          onMouseDown={(e) => {
+            // Suppress native text-selection extension when modifier keys are
+            // held — Shift+click natively extends the selection, which prevents
+            // our click handler from firing.  Alt+click on macOS inserts
+            // special chars in some contexts.  Preventing default here keeps
+            // plain drag-select working (no modifiers) while letting modified
+            // clicks through to the onClick handlers on individual word spans.
+            if (e.shiftKey || e.altKey) e.preventDefault()
+          }}
+          onContextMenu={(e) => {
+            // Suppress the native context menu so Ctrl+click (macOS right-click
+            // equivalent) reaches the click handler as an anchor-mark action.
+            if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) e.preventDefault()
+          }}
           className={`relative h-full select-text overflow-y-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background font-mono text-sm leading-relaxed ${
             chunks.length > 0 ? "py-4 pl-8 pr-4" : "p-4"
           }`}
@@ -585,23 +748,46 @@ export function ResponsePanel({
         </div>
       </div>
 
+      {/* Mark chip rows — one per non-empty mark type */}
       {spans.length > 0 && (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <span className="text-[11px] text-muted-foreground">Answer spans:</span>
-          {spans.map((s, i) => (
-            <Button
-              key={i}
-              variant="outline"
-              size="sm"
-              onClick={() => onRemoveSpan(i)}
-              className="h-6 gap-1 px-1.5 text-[10px] font-mono"
-              title="Click to remove"
-            >
-              <span className="max-w-30 truncate">{s.text}</span>
-              <span className="text-muted-foreground">[{s.position}/{s.format}]</span>
-            </Button>
-          ))}
-        </div>
+        <MarkChipRow
+          label="Answer spans"
+          color="text-primary border-primary/40"
+          items={spans.map((s) => ({ text: s.text, detail: `${s.position}/${s.format}` }))}
+          onRemove={onRemoveSpan}
+        />
+      )}
+      {contextAnchors.length > 0 && (
+        <MarkChipRow
+          label="Anchors"
+          color="text-indigo-600 border-indigo-400/40 dark:text-indigo-400"
+          items={contextAnchors.map((s) => ({ text: s.text }))}
+          onRemove={onRemoveContextAnchor}
+        />
+      )}
+      {answerKeywords.length > 0 && (
+        <MarkChipRow
+          label="Keywords"
+          color="text-violet-600 border-violet-400/40 dark:text-violet-400"
+          items={answerKeywords.map((s) => ({ text: s.text }))}
+          onRemove={onRemoveAnswerKeyword}
+        />
+      )}
+      {negativeSpans.length > 0 && (
+        <MarkChipRow
+          label="Negative spans"
+          color="text-rose-600 border-rose-400/40 dark:text-rose-400"
+          items={negativeSpans.map((s) => ({ text: s.text }))}
+          onRemove={onRemoveNegativeSpan}
+        />
+      )}
+      {negativeKeywords.length > 0 && (
+        <MarkChipRow
+          label="Neg. keywords"
+          color="text-rose-700 border-rose-500/40 dark:text-rose-500"
+          items={negativeKeywords.map((s) => ({ text: s.text }))}
+          onRemove={onRemoveNegativeKeyword}
+        />
       )}
 
       <AnnotationDock

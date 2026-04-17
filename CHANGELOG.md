@@ -2,6 +2,127 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.24.0] - April 17, 2026
+
+### Annotation System DX Overhaul — Schema v3, Multi-Mark Types, Leakage Fixes
+
+Major iteration on the human annotation + improvement report pipeline, driven by practical use across multilingual carwash annotation sessions that exposed data leakage and UX friction.
+
+#### Schema v3 — Classification + Mark Types
+
+- **`response_classes: list[str]` (was `response_class: str`)** — multi-select array; any combination valid. `_migrate_annotation()` auto-upgrades old scalar sidecars on load.
+- **Class renames**: `verbose_correct` → `verbose`, `parser_false_positive` → `false_positive`. **Dropped**: `parser_ok` (auto-inferred at aggregation time when spans align with `parser_extracted`). **Added**: `truncated` (new class for cut-off responses).
+- **Five mark types** via modifier+click (or drag-select):
+  - `LMB` → Answer span (`spans[]`, blue)
+  - `Ctrl/Cmd+LMB` → Context anchor (`context_anchors[]`, indigo)
+  - `Alt/Opt+LMB` → Answer keyword (`answer_keywords[]`, violet)
+  - `Shift+LMB` → Negative span (`negative_spans[]`, rose)
+  - `Shift+Alt/Ctrl+LMB` → Negative keyword (`negative_keywords[]`, dark rose)
+- All mark types persist in the sidecar. Adjacent marks of the same type auto-merge on click.
+- Classification buttons redesigned as two-state toggles (off = muted, on = filled+ring). Keyboard 1–7 toggles the corresponding class.
+
+#### Data Leakage Root Cause — Fixed
+
+Three progressive leakage bugs were identified and fixed in this session:
+
+1. **Draft key was `case_id` only** (pre-fix) → `result_file_id::case_id` (intermediate) → `result_file_id::case_id::response_hash` (final). A single result file can contain up to `6 languages × 3 user_styles × 3 system_styles = 54` variants of the same `test_id`. Only the response hash reliably disambiguates them.
+2. **Save endpoint used a dict comprehension** `{r["test_id"]: r …}` — the last entry wins, so annotations for English cases were written with German metadata. Fixed: iterate results to find the entry whose `_response_hash(raw_response)` matches the hash sent from the frontend.
+3. **Sidecar key was `case_id::language`** — still collides when same language appears multiple times with different system_style. Final key: `case_id::response_hash`.
+
+Additional fixes:
+- `_project_case()` now includes `response_hash` in every projected `ReviewCase` — frontend uses it in `caseKey()` and includes it in save requests.
+- `_response_hash()` helper: MD5 of first 128 chars of raw_response, 8 hex chars.
+- Response hash validation on load: sidecar entries whose stored `response_hash` doesn't match the current case's response are silently dropped (catches contamination from pre-fix sessions).
+- `DELETE /annotations/{id}` now invalidates `["review-cases"]` in the React Query client cache — fixes stale-cache reappearance after deletion.
+
+#### Improvement Report v2.6
+
+- **`REPORT_FORMAT_VERSION = "2.6"`**
+- **`negative_span_groups[]`** — `_collect_negative_records()` + `_negative_span_analysis()`: groups negative spans and keywords by normalized text; each group carries `text`, `normalized_text`, `count`, `mark_type` (`negative_span` / `negative_keyword`), and up to 5 `example_negatives[]` (each with `before`, `after`, `correct_span`, `parse_strategy`).
+- **`context_anchor_groups[]`** — manually-tagged anchor labels grouped by normalized text with frequency counts.
+- **`manual_keyword_distribution`** — annotator-tagged answer keywords; higher-confidence signal than auto-inferred `model_answer_distribution`.
+- **`parser_was_correct` auto-inferred** — replaces the manual `parser_ok` class. Cases where `parser_extracted` aligns with any annotated span are counted as correct without requiring the annotator to press 6.
+- **Negatives tab** added to improvement-report-dialog (shown only when `negative_span_groups` is non-empty); also surfaces `manual_keyword_distribution` and `context_anchor_groups`.
+
+#### Review UI Polish
+
+- **Finish button navigates to `/results`** — previously clamped at last case. `→` on the last case also navigates. Skip on the last case shows "Finish" and navigates.
+- **Help modal** (`?` key + `HelpCircle` button in header) — keyboard shortcut reference + mark-type guide with visual preview swatches. Two-column layout: nav/classification/dock shortcuts on left; full-width mark-types table on right.
+- **`onMouseDown` selection suppression** — Shift+click previously triggered browser text-selection-extension instead of firing the click handler. `e.preventDefault()` when Shift or Alt is held fixes this.
+- **Shift+Ctrl/Cmd now maps to negative keyword** — previously only Shift+Alt did; the priority updated to `isShift && (isAlt || isCtrl)` → negative keyword.
+
+#### Files Modified
+
+- [src/web/api/human_review.py](src/web/api/human_review.py) — `_migrate_annotation()`, `_response_hash()`, composite sidecar key, `AnnotateRequest` schema, `_project_case()` adds `response_hash`, hash-based target lookup
+- [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) — `_get_response_classes()`, `_collect_negative_records()`, `_negative_span_analysis()`, `_answer_keyword_distribution()`, `_context_anchor_groups()`, auto-infer `parser_was_correct`, `REPORT_FORMAT_VERSION = "2.6"`
+- [frontend/src/types/review.ts](frontend/src/types/review.ts) — `ResponseClass` union, `Annotation` interface, `MarkSpan`, `NegativeMarkGroup`, `ContextAnchorGroup`, `ImprovementReport` additions
+- [frontend/src/pages/review.tsx](frontend/src/pages/review.tsx) — `caseKey()` with `response_hash`, `handleFinish` + `useNavigate`, `handleToggleClass`, `mergeOrAppendMark`, mark-type handlers, help modal wiring
+- [frontend/src/components/review/classification-bar.tsx](frontend/src/components/review/classification-bar.tsx) — v3 classes, toggle-style buttons
+- [frontend/src/components/review/verdict-pill.tsx](frontend/src/components/review/verdict-pill.tsx) — multi-pill `verdicts[]`
+- [frontend/src/components/review/response-panel.tsx](frontend/src/components/review/response-panel.tsx) — 5-level owner map, modifier-key detection, `MarkChipRow`, warm/cool rendering
+- [frontend/src/components/review/help-dialog.tsx](frontend/src/components/review/help-dialog.tsx) — new component
+- [frontend/src/components/review/improvement-report-dialog.tsx](frontend/src/components/review/improvement-report-dialog.tsx) — Negatives tab, `CLASS_TONE` updated for v3 codes
+- [frontend/src/hooks/use-review.ts](frontend/src/hooks/use-review.ts) — `useDeleteAnnotations` busts `["review-cases"]` cache; `useSaveAnnotation` passes `response_hash`
+- [tests/test_human_review.py](tests/test_human_review.py) — updated for v3 schema + hash-keyed sidecar assertions
+
+---
+
+## [2.23.1] - April 17, 2026
+
+### Carwash Parser — Rounds 1–4 (annotation-data-driven)
+
+Four iterative optimization rounds on `src/plugins/carwash/parser.py`, each seeded by human-annotation Improvement Reports (v2.5 → v2.6 format). Cumulative result: 93 parser tests (up from 0), 11 parsing strategies, multilingual conjugation coverage, and dual-keyword option-listing filtering.
+
+**Data sources:** 26 EN-only cases on qwen3-8b (Rounds 1–2), 197 multilingual cases on nemotron-3-super-120b (Round 3), 223 cases across both models (Round 4, first v2.6 report with negative span annotations).
+
+#### Round 1 — Label strategy promotion + bold filtering
+
+- **label_line promoted above bold** — annotation data showed `bold` strategy fired on 24/26 cases with 24 false positives (explanatory bolds like `**Walking costs no fuel**`). `label_line` (Strategy 2) now runs before bold (Strategy 3) — `Recommendation: Drive` resolves cleanly before bolds are scanned
+- **bold_label strategy** (Strategy 2a) — covers `**Final Recommendation** **Walk to the carwash**` where label and answer are in separate bold runs. Modifier-restricted (`final|my|the|best|our`) to prevent false matches on arbitrary bolds
+- **label_newline strategy** (Strategy 2b) — covers heading + newline patterns: `### **Recommendation**\n**Walk to the carwash**`, `**Answer:**\n Walk.`
+- **Label-only bold filtering** — `_label_skip_re` skips bolds that contain only a label word (e.g. `**Recommendation**`, `**Answer**`) so they don't score as answers
+- **6 multilingual negative patterns** — `_PRE_WALK_CONDITIONAL` (conditional keyword before walk), `_WALK_CONDITIONAL` (walk followed by conditional), `_WALK_NEGATIVE` (walk in dismissive context). Covers `walk or drive` option-listing, `whether to walk` deliberation, `walking is faster` explanatory assertion
+- **`_EXTRA_LABELS` dict** — carwash-specific label words beyond shared `ANSWER_LABELS`: recommendation, decision, verdict, conclusion, bottom line, tl;dr, best option/choice + equivalents in es/fr/de/zh/ua
+
+#### Round 2 — Bold-label colon fix + label-newline refinement
+
+- **bold_label colon inside bold** — fixed `**Answer:**\n**walk**` where the colon is inside the bold run (previously required colon outside: `**Answer**: **walk**`)
+- **label_newline strategy** — added for colon-less heading-then-answer patterns that label_line can't catch
+
+#### Round 3 — Multilingual verb conjugation coverage
+
+Root cause: FR/ES/DE languages scoring 4–10% correct because keyword patterns used exact infinitives (`\bmarcher\b`, `\bcaminar\b`, `\bgehen\b`) that miss conjugated forms models actually produce.
+
+- **FR WALK_KEYWORDS**: `r"\bmarche[zs]?\b"`, `r"\bmarchons\b"`, `r"\bmarchent\b"`, `r"\bmarchant\b"` — covers marchez (7 cases), marche (3)
+- **FR DRIVE_KEYWORDS**: `r"\bconduis\w*\b"` — conduis- stem covers conduisez (5 cases)
+- **ES WALK_KEYWORDS**: `r"\bcamin[aeo]\w*\b"` — covers camina (4), camine (1), caminando
+- **DE WALK_KEYWORDS**: `r"\bgeh(?:e|st|t)\b"`, `r"\b\w*gehen\b"`, `r"\bfuß\b"` — covers gehe (2), losgehen (1), standalone Fuß (4)
+- **DE DRIVE_KEYWORDS**: `r"\bfahr(?:e|en|t|st)\b"`, `r"\b\w*fahren\b"` — covers fahre (3)
+- **ES/FR WALK_NEGATION**: updated to include conjugated forms alongside infinitives
+
+#### Round 4 — Option-listing filter + label expansion (v2.6 negative spans)
+
+First round driven by negative span annotations (v2.6 report). 55 negative "or drive"/"walk or"/"vs" keywords + 84 bare keyword negatives revealed that option-listing text (`"walk or drive"`, `"walk vs drive"`) was the #1 false-positive source.
+
+- **`_DRIVE_LISTING` dict + `_is_conditional_drive()` function** — drive-side filtering for option-listing/comparison patterns. Uses **positional matching** (`finditer` + span check) rather than window proximity to avoid false-filtering a genuine "drive" recommendation that happens to be near an earlier listing phrase. Intentionally lighter than `_is_conditional_walk` — no semantic negation filtering (dismissive drive language IS a walk signal)
+- **`_score()` tie-break updated** — filters both walk AND drive positions. When all positions are filtered (pure option-listing text like `"Walk or drive?"`), returns `None` instead of guessing — lets the parser fall through to the next strategy
+- **Symmetric "walk or drive" in `_WALK_CONDITIONAL`** — previously only "drive or walk" was covered; walk-first order was unfiltered, creating an asymmetry that biased toward walk when drive positions were filtered
+- **"vs"/"versus" patterns** added to `_PRE_WALK_CONDITIONAL` and `_WALK_CONDITIONAL` for EN/ES/FR/DE — handles 11 negative "vs" keywords from annotation data
+- **6 new label words in `_EXTRA_LABELS`** — DE: `zusammenfassung`, `kurzantwort`, `handlungsanleitung`; FR: `action recommandée`, `choix`; ES: `resumen`
+- **"Therefore" in `_STRONG_INTRO`** — EN `therefore,?|consequently,?|hence,?|thus,?`; DE `daher,?|deshalb,?|folglich,?`; FR `donc,?|par conséquent,?`; ES `por lo tanto,?|en consecuencia,?`. Optional trailing comma allows "Therefore, drive" to parse correctly
+- **22 new tests** — `TestVsComparisonFiltering` (5), `TestDriveConditionalFiltering` (5), `TestNewLabels` (6), `TestThereforeStrongIntro` (6); 93 total carwash tests, 0 regressions
+
+#### Annotation DX review
+
+- [docs/improvement_report_annotation_dx_review.md](docs/improvement_report_annotation_dx_review.md) — post-session retrospective on annotation summary usefulness. Key findings: `strategy_breakdown` is the most useful field for triage; `prefix_anchors` with `type` tag is critical for label-vs-format disambiguation; `parser_span_alignment` corrects misleading headlines. Proposed additions: negative span annotations (landed in v2.6), keyword tags on spans, parser match context on misaligned cases, `false_positive_reason` sub-types, structural section context
+
+#### Files modified
+
+- [src/plugins/carwash/parser.py](src/plugins/carwash/parser.py) — 11 strategies, dual-keyword filtering, 6-language keyword/label/negation/conditional dicts
+- [tests/plugins/test_carwash_parser.py](tests/plugins/test_carwash_parser.py) — 93 tests across 17 test classes
+
+---
+
 ## [2.23.0] - April 16, 2026
 
 ### fancy_unicode — Fancy Unicode Normalization Plugin (20th benchmark)

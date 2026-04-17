@@ -335,18 +335,36 @@ async def analyze_results(req: AnalyzeRequest):
         loaded = [load_result_file(p) for p in resolved]
         summaries = [extract_summary_stats(r) for r in loaded]
 
-        # Per-model breakdown
-        model_stats = {}
+        # Per-model breakdown — accumulate across all files sharing the same model_name
+        model_stats: dict = {}
         for s in summaries:
             model = s.get("model_name", "unknown")
-            model_stats[model] = {
-                "accuracy": s.get("accuracy", 0),
-                "total_tests": s.get("total_tests", 0),
-                "correct": s.get("correct_responses", 0),
-                "parse_error_rate": s.get("parse_error_rate", 0),
-                "duration": s.get("duration_seconds", 0),
-                "task_breakdown": s.get("task_breakdown", {}),
-            }
+            if model not in model_stats:
+                model_stats[model] = {
+                    "total_tests": 0,
+                    "correct": 0,
+                    "_parse_errors": 0,
+                    "duration": 0.0,
+                    "task_breakdown": {},
+                }
+            entry = model_stats[model]
+            total = s.get("total_tests", 0)
+            entry["total_tests"] += total
+            entry["correct"] += s.get("correct_responses", 0)
+            entry["duration"] += s.get("duration_seconds", 0)
+            entry["_parse_errors"] += round(s.get("parse_error_rate", 0) * total)
+            for task, tb in s.get("task_breakdown", {}).items():
+                slot = entry["task_breakdown"].setdefault(task, {"correct": 0, "total": 0})
+                slot["correct"] += tb.get("correct", round(tb.get("accuracy", 0) * tb.get("total", 0)))
+                slot["total"] += tb.get("total", 0)
+
+        # Derive accuracy and rates after accumulation
+        for entry in model_stats.values():
+            t = entry["total_tests"]
+            entry["accuracy"] = entry["correct"] / t if t > 0 else 0
+            entry["parse_error_rate"] = entry.pop("_parse_errors") / t if t > 0 else 0
+            for tb in entry["task_breakdown"].values():
+                tb["accuracy"] = tb["correct"] / tb["total"] if tb["total"] > 0 else 0
 
         # Build dimension breakdowns (language, user_style, system_style)
         dimension_breakdowns: dict = {"language": {}, "user_style": {}, "system_style": {}}

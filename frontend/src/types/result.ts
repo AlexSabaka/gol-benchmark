@@ -78,7 +78,7 @@ export interface ModelAnalysis {
   correct: number
   parse_error_rate: number
   duration: number
-  task_breakdown: Record<string, { accuracy: number; total: number }>
+  task_breakdown: Record<string, { accuracy: number; total: number; correct?: number }>
 }
 
 export interface ReportInfo {

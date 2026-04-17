@@ -24,3 +24,7 @@ export function pauseJob(jobId: string): Promise<{ status: string; job_id: strin
 export function resumeJob(jobId: string): Promise<{ status: string; job_id: string; new_job_id: string }> {
   return post(`/api/jobs/${encodeURIComponent(jobId)}/resume`)
 }
+
+export function stopAndDumpJob(jobId: string): Promise<{ status: string; job_id: string }> {
+  return post(`/api/jobs/${encodeURIComponent(jobId)}/stop-dump`)
+}

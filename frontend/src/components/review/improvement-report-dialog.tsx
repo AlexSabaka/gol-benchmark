@@ -17,12 +17,14 @@ import { languageLabel } from "@/components/language-filter-chip"
 import type {
   AnnotatorNote,
   AxisBucket,
+  ContextAnchorGroup,
   DataQuality,
   ExpectedDistractorPair,
   ImprovementReport,
   LabelTaxonomyRow,
   LongTailGroup,
   ModelAnswerBucket,
+  NegativeMarkGroup,
   ParserSpanAlignment,
   PrefixAnchor,
   RegexCaptureSample,
@@ -145,6 +147,11 @@ function ReportBody({ report }: { report: ImprovementReport }) {
               Notes ({report.annotator_notes.length})
             </TabsTrigger>
           )}
+          {report.negative_span_groups && report.negative_span_groups.length > 0 && (
+            <TabsTrigger value="negatives" className="whitespace-nowrap shrink-0">
+              Negatives ({report.negative_span_groups.length})
+            </TabsTrigger>
+          )}
         </TabsList>
 
         <TabsContent value="summary" className="mt-3">
@@ -205,6 +212,15 @@ function ReportBody({ report }: { report: ImprovementReport }) {
         {report.annotator_notes && report.annotator_notes.length > 0 && (
           <TabsContent value="notes" className="mt-3">
             <NotesTab notes={report.annotator_notes} />
+          </TabsContent>
+        )}
+        {report.negative_span_groups && report.negative_span_groups.length > 0 && (
+          <TabsContent value="negatives" className="mt-3">
+            <NegativesTab
+              groups={report.negative_span_groups}
+              manualKeywords={report.manual_keyword_distribution}
+              contextAnchors={report.context_anchor_groups}
+            />
           </TabsContent>
         )}
       </Tabs>
@@ -943,13 +959,17 @@ function OrderingTab({ hints }: { hints: ImprovementReport["ordering_hints"] }) 
 
 const CLASS_TONE: Record<string, string> = {
   hedge: "bg-amber-500",
+  truncated: "bg-slate-500",
   gibberish: "bg-rose-500",
   refusal: "bg-red-500",
   language_error: "bg-orange-500",
+  verbose: "bg-sky-500",
+  false_positive: "bg-fuchsia-500",
+  parser_missed: "bg-violet-500",
+  // Legacy codes — backwards compat with old reports.
   verbose_correct: "bg-sky-500",
   parser_ok: "bg-emerald-500",
   parser_false_positive: "bg-fuchsia-500",
-  parser_missed: "bg-violet-500",
 }
 
 function ClassesTab({ classes }: { classes: Record<string, number> }) {
@@ -1178,6 +1198,109 @@ function NotesTab({ notes }: { notes: AnnotatorNote[] }) {
           <p className="whitespace-pre-wrap text-sm">{n.note}</p>
         </div>
       ))}
+    </div>
+  )
+}
+
+function NegativesTab({
+  groups,
+  manualKeywords,
+  contextAnchors,
+}: {
+  groups: NegativeMarkGroup[]
+  manualKeywords?: Record<string, number>
+  contextAnchors?: ContextAnchorGroup[]
+}) {
+  const [expanded, setExpanded] = useState<number | null>(null)
+  return (
+    <div className="max-h-[60vh] space-y-4 overflow-y-auto pr-1">
+      {/* Manual keyword distribution */}
+      {manualKeywords && Object.keys(manualKeywords).length > 0 && (
+        <div className="rounded-md border border-violet-500/30 bg-violet-500/5 p-3">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-violet-600 dark:text-violet-400">
+            Manual answer keywords
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {Object.entries(manualKeywords)
+              .sort(([, a], [, b]) => b - a)
+              .map(([kw, count]) => (
+                <span key={kw} className="inline-flex items-center gap-1 rounded-full border border-violet-400/40 bg-violet-400/10 px-2 py-0.5 text-[11px] font-mono text-violet-700 dark:text-violet-400">
+                  {kw} <span className="opacity-60">×{count}</span>
+                </span>
+              ))}
+          </div>
+        </div>
+      )}
+      {/* Context anchor groups */}
+      {contextAnchors && contextAnchors.length > 0 && (
+        <div className="rounded-md border border-indigo-500/30 bg-indigo-500/5 p-3">
+          <p className="mb-2 text-[11px] font-medium uppercase tracking-wider text-indigo-600 dark:text-indigo-400">
+            Context anchors
+          </p>
+          <div className="flex flex-wrap gap-2">
+            {contextAnchors.map((a, i) => (
+              <span key={i} className="inline-flex items-center gap-1 rounded-full border border-indigo-400/40 bg-indigo-400/10 px-2 py-0.5 text-[11px] font-mono text-indigo-700 dark:text-indigo-400">
+                {a.text} <span className="opacity-60">×{a.count}</span>
+              </span>
+            ))}
+          </div>
+        </div>
+      )}
+      {/* Negative span/keyword groups */}
+      <div className="space-y-2">
+        <p className="text-[11px] font-medium uppercase tracking-wider text-rose-600 dark:text-rose-400">
+          Negative patterns ({groups.length} groups)
+        </p>
+        {groups.map((g, i) => (
+          <div key={i} className="rounded-md border border-rose-500/30 bg-rose-500/5">
+            <button
+              type="button"
+              className="flex w-full items-center gap-2 px-3 py-2 text-left"
+              onClick={() => setExpanded(expanded === i ? null : i)}
+            >
+              <span className="inline-flex items-center gap-1 rounded-full border border-rose-400/40 bg-rose-400/10 px-2 py-0.5 font-mono text-[11px] text-rose-700 dark:text-rose-400">
+                {g.text}
+              </span>
+              <Badge variant="outline" className="text-[10px]">×{g.count}</Badge>
+              <Badge variant="outline" className={`text-[10px] ${g.mark_type === "negative_keyword" ? "border-rose-600/40 text-rose-700" : "border-rose-400/40 text-rose-600"}`}>
+                {g.mark_type === "negative_keyword" ? "keyword" : "span"}
+              </Badge>
+              <span className="ml-auto text-[10px] text-muted-foreground">
+                {expanded === i ? "▲" : "▼"}
+              </span>
+            </button>
+            {expanded === i && (
+              <div className="border-t border-rose-500/20 px-3 pb-3 pt-2 space-y-2">
+                {g.example_negatives.map((ex, j) => (
+                  <div key={j} className="rounded border border-border/50 bg-background/60 p-2 text-xs">
+                    <div className="mb-1 flex flex-wrap items-center gap-1.5 text-[10px]">
+                      <span className="font-mono text-muted-foreground">{ex.case_id}</span>
+                      <Badge variant="outline" className="text-[10px]">{languageLabel(ex.language)}</Badge>
+                      {ex.parse_strategy && ex.parse_strategy !== "unknown" && (
+                        <Badge variant="outline" className="text-[10px]">{ex.parse_strategy}</Badge>
+                      )}
+                      {ex.correct_span && (
+                        <span className="text-emerald-600 dark:text-emerald-400">
+                          → correct: <span className="font-mono font-semibold">{ex.correct_span}</span>
+                        </span>
+                      )}
+                    </div>
+                    {(ex.before || ex.after) ? (
+                      <p className="whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
+                        <span className="text-muted-foreground">{ex.before}</span>
+                        <span className="rounded bg-rose-500/20 px-0.5 text-rose-700 dark:text-rose-300">{ex.text}</span>
+                        <span className="text-muted-foreground">{ex.after}</span>
+                      </p>
+                    ) : (
+                      <p className="font-mono text-[11px] text-muted-foreground">(no context — re-annotate to capture context)</p>
+                    )}
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        ))}
+      </div>
     </div>
   )
 }

@@ -1,7 +1,10 @@
 """HuggingFace Transformers model interface with proper MPS support."""
 
+import re as _re
 import time
 from typing import Any, Dict, Tuple
+
+_THINK_RE = _re.compile(r"<think>(.*?)</think>", _re.DOTALL)
 
 from src.models.BaseModelInterface import ModelInterface
 
@@ -98,11 +101,20 @@ class HuggingFaceInterface(ModelInterface):
             # Decode only the newly generated tokens
             input_len = inputs["input_ids"].shape[1]
             response_tokens = outputs[0][input_len:]
-            response = tokenizer.decode(response_tokens, skip_special_tokens=True)
+            response = tokenizer.decode(response_tokens, skip_special_tokens=True).strip()
+
+            # Local thinking models (e.g. qwen3) embed <think>…</think> inline.
+            # Strip and return separately so parsers receive a clean answer.
+            reasoning: str | None = None
+            m = _THINK_RE.search(response)
+            if m:
+                reasoning = m.group(1).strip()
+                response = _THINK_RE.sub("", response).strip()
 
             end_time = time.time()
             return {
-                "response": response.strip(),
+                "response": response,
+                "reasoning": reasoning,
                 "tokens_input": input_len,
                 "tokens_generated": len(response_tokens),
                 "duration": end_time - start_time,

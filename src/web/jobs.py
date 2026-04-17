@@ -71,12 +71,36 @@ class Job:
     api_key: str = ""
     api_base: str = ""
 
+    # Cumulative elapsed from all previous paused segments (carried over on resume)
+    accumulated_elapsed_seconds: float = 0.0
+    # Test index this job started from (0 for fresh; paused_at_index for resumed)
+    start_index: int = 0
+
+    # Internal housekeeping — not exposed in to_dict()
+    hidden: bool = False
+
     def to_dict(self) -> Dict[str, Any]:
-        """Serialize for the REST API (includes computed elapsed_seconds)."""
+        """Serialize for the REST API (includes computed elapsed_seconds and eta_seconds)."""
+        now = time.time()
+        # Cumulative duration = prior segments + current segment
         elapsed = None
-        if self.started_at:
-            end = self.finished_at or time.time()
-            elapsed = round(end - self.started_at, 1)
+        if self.started_at is not None:
+            end = self.finished_at or now
+            elapsed = round(self.accumulated_elapsed_seconds + (end - self.started_at), 1)
+
+        # ETA: rate is based only on tests processed in THIS segment so resumed jobs
+        # don't dilute the rate with the prior (paused) segment's throughput.
+        eta_seconds = None
+        if (self.state == JobState.RUNNING and self.started_at is not None
+                and self.progress_current > self.start_index
+                and self.progress_total > self.progress_current):
+            current_segment_elapsed = now - self.started_at
+            if current_segment_elapsed > 0:
+                tests_in_segment = self.progress_current - self.start_index
+                rate = tests_in_segment / current_segment_elapsed  # tests/sec
+                remaining = self.progress_total - self.progress_current
+                eta_seconds = round(remaining / rate, 1)
+
         return {
             "id": self.id,
             "model_name": self.model_name,
@@ -89,6 +113,7 @@ class Job:
             "error": self.error,
             "created_at": self.created_at,
             "elapsed_seconds": elapsed,
+            "eta_seconds": eta_seconds,
             "paused_at_index": self.paused_at_index,
             "partial_result_path": self.partial_result_path,
         }
@@ -118,6 +143,9 @@ class Job:
             "no_think": self.no_think,
             "api_key": self.api_key,
             "api_base": self.api_base,
+            "accumulated_elapsed_seconds": self.accumulated_elapsed_seconds,
+            "start_index": self.start_index,
+            "hidden": self.hidden,
         }
 
     @classmethod
@@ -154,6 +182,11 @@ def _cancel_requested(progress_dict: dict, job_id: str) -> bool:
 def _pause_requested(progress_dict: dict, job_id: str) -> bool:
     current = _read_progress(progress_dict, job_id)
     return bool(current.get("pause_requested"))
+
+
+def _stop_dump_requested(progress_dict: dict, job_id: str) -> bool:
+    current = _read_progress(progress_dict, job_id)
+    return bool(current.get("stop_dump_requested"))
 
 
 # ── Subprocess worker ─────────────────────────────────────────────────────────
@@ -237,6 +270,16 @@ def _run_testset_worker(
             _write_progress(progress_dict, job_id, current=i, total=total, state="cancelled")
             return {"status": "cancelled", "result_path": None}
 
+        if _stop_dump_requested(progress_dict, job_id):
+            # Save a complete result file from current results and mark completed
+            out_path = _finalize_and_save(
+                results_list, testset, model_name, provider, run_group_id,
+                job_id, output_dir, len(results_list), correct,
+                total_input_tokens, total_output_tokens, partial_result_path, start_time,
+            )
+            _write_progress(progress_dict, job_id, current=i, total=total, state="completed", result_path=out_path)
+            return {"status": "completed", "result_path": out_path}
+
         if _pause_requested(progress_dict, job_id):
             # Save partial results and report paused checkpoint
             partial_path = _save_partial_results(
@@ -263,6 +306,7 @@ def _run_testset_worker(
                 return {"status": "cancelled", "result_path": None}
 
             raw_response = resp.get("response", resp.get("error", ""))
+            reasoning = resp.get("reasoning") or None
             task_type = tc.get("task_type", "")
             task_params = tc.get("task_params", {})
 
@@ -311,6 +355,7 @@ def _run_testset_worker(
                 },
                 "output": {
                     "raw_response": raw_response,
+                    "reasoning": reasoning,
                     "parsed_answer": str(parsed) if parsed is not None else None,
                     "parse_strategy": parse_strategy,
                     "parse_confidence": parse_confidence,
@@ -332,9 +377,34 @@ def _run_testset_worker(
         _write_progress(progress_dict, job_id, current=total, total=total, state="cancelled")
         return {"status": "cancelled", "result_path": None}
 
-    duration = _time.time() - start_time
+    out_path = _finalize_and_save(
+        results_list, testset, model_name, provider, run_group_id,
+        job_id, output_dir, total, correct,
+        total_input_tokens, total_output_tokens, partial_result_path, start_time,
+    )
+    _write_progress(progress_dict, job_id, current=total, total=total, state="completed", result_path=out_path)
+    return {"status": "completed", "result_path": out_path}
 
-    # Build result structure
+
+def _finalize_and_save(
+    results_list: list,
+    testset: dict,
+    model_name: str,
+    provider: str,
+    run_group_id: Optional[str],
+    job_id: str,
+    output_dir: str,
+    processed_count: int,
+    correct: int,
+    total_input_tokens: int,
+    total_output_tokens: int,
+    partial_result_path: Optional[str],
+    start_time: float,
+) -> str:
+    """Build and write a complete result file; clean up any partial file. Returns out_path."""
+    import json, gzip, time as _time, os
+
+    duration = _time.time() - start_time
     result_data = {
         "format_version": "1.0.0",
         "metadata": {
@@ -350,36 +420,25 @@ def _run_testset_worker(
             "duration_seconds": round(duration, 2),
         },
         "summary_statistics": {
-            "accuracy": round(correct / max(total, 1), 4),
+            "accuracy": round(correct / max(processed_count, 1), 4),
             "correct_responses": correct,
             "total_input_tokens": total_input_tokens,
             "total_output_tokens": total_output_tokens,
         },
         "results": results_list,
     }
-
-    # Save
     os.makedirs(output_dir, exist_ok=True)
     safe_model = model_name.replace("/", "_").replace(":", "_")
     ts = _time.strftime("%Y%m%d_%H%M%S")
     out_path = os.path.join(output_dir, f"results_{safe_model}_{ts}.json.gz")
-
-    if _cancel_requested(progress_dict, job_id):
-        _write_progress(progress_dict, job_id, current=total, total=total, state="cancelled")
-        return {"status": "cancelled", "result_path": None}
-
     with gzip.open(out_path, "wt", encoding="utf-8") as f:
         json.dump(result_data, f, indent=2, default=str)
-
-    # Clean up partial file now that we have the final result
     if partial_result_path and os.path.exists(partial_result_path):
         try:
             os.unlink(partial_result_path)
         except Exception:
             pass
-
-    _write_progress(progress_dict, job_id, current=total, total=total, state="completed", result_path=out_path)
-    return {"status": "completed", "result_path": out_path}
+    return out_path
 
 
 def _save_partial_results(
@@ -495,6 +554,7 @@ class JobManager:
         start_index: int = 0,
         partial_result_path: Optional[str] = None,
         job_id: Optional[str] = None,
+        accumulated_elapsed_seconds: float = 0.0,
     ) -> str:
         job_id = job_id or uuid.uuid4().hex[:12]
         job = Job(
@@ -510,6 +570,8 @@ class JobManager:
             no_think=no_think,
             api_key=api_key,
             api_base=api_base,
+            accumulated_elapsed_seconds=accumulated_elapsed_seconds,
+            start_index=start_index,
         )
         self._jobs[job_id] = job
         _write_progress(self._progress, job_id, current=start_index, total=0, state="pending", cancel_requested=False)
@@ -587,6 +649,7 @@ class JobManager:
         return [
             self.get_status(jid)
             for jid in sorted(self._jobs, key=lambda k: self._jobs[k].created_at, reverse=True)
+            if not self._jobs[jid].hidden
         ]
 
     # ── Actions ──────────────────────────────────────────────────────────────
@@ -622,15 +685,83 @@ class JobManager:
         self._progress[job_id] = {**current, "pause_requested": True}
         return True
 
+    def stop_and_dump(self, job_id: str) -> bool:
+        """Stop a job and write a final result file.
+
+        For running jobs: sets a cooperative signal; the worker finalizes after
+        the current test case and exits cleanly.
+        For paused jobs: the worker has already exited; we finalize directly from
+        the partial checkpoint file in the manager process.
+        """
+        job = self._jobs.get(job_id)
+        if not job:
+            return False
+
+        if job.state == JobState.PAUSED:
+            # Worker is gone — load partial file and finalize synchronously.
+            import json, gzip, os as _os
+            results_list: list = []
+            correct = 0
+            total_input_tokens = 0
+            total_output_tokens = 0
+            if job.partial_result_path and _os.path.exists(job.partial_result_path):
+                try:
+                    with gzip.open(job.partial_result_path, "rt", encoding="utf-8") as f:
+                        prev = json.load(f)
+                    results_list = prev.get("results", [])
+                    stats = prev.get("summary_statistics", {})
+                    correct = stats.get("correct_responses", 0)
+                    total_input_tokens = stats.get("total_input_tokens", 0)
+                    total_output_tokens = stats.get("total_output_tokens", 0)
+                except Exception:
+                    pass
+            try:
+                with gzip.open(job.testset_path, "rt", encoding="utf-8") as f:
+                    testset = json.load(f)
+            except Exception:
+                testset = {}
+            # Reconstruct a fake start_time so _finalize_and_save records correct duration.
+            segment_elapsed = 0.0
+            if job.started_at is not None and job.finished_at is not None:
+                segment_elapsed = job.finished_at - job.started_at
+            total_elapsed = job.accumulated_elapsed_seconds + segment_elapsed
+            fake_start = time.time() - total_elapsed
+            out_path = _finalize_and_save(
+                results_list, testset, job.model_name, job.provider, job.run_group_id,
+                job.id, job.output_dir, len(results_list), correct,
+                total_input_tokens, total_output_tokens, job.partial_result_path, fake_start,
+            )
+            job.state = JobState.COMPLETED
+            job.result_path = out_path
+            job.partial_result_path = None
+            job.finished_at = time.time()
+            self._persist_job(job)
+            return True
+
+        # For running jobs: signal via shared dict; worker picks it up cooperatively.
+        future = self._futures.get(job_id)
+        if not future or job.state != JobState.RUNNING or future.done():
+            return False
+        current = _read_progress(self._progress, job_id)
+        self._progress[job_id] = {**current, "stop_dump_requested": True}
+        return True
+
     def resume(self, job_id: str) -> Optional[str]:
         """Resume a paused job. Returns the new job_id, or None if not resumable."""
         job = self._jobs.get(job_id)
         if not job or job.state != JobState.PAUSED:
             return None
 
-        # Mark the paused job as superseded
+        # Accumulate elapsed time from this paused segment so Duration stays cumulative.
+        segment_elapsed = 0.0
+        if job.started_at is not None and job.finished_at is not None:
+            segment_elapsed = job.finished_at - job.started_at
+        accumulated = job.accumulated_elapsed_seconds + segment_elapsed
+
+        # Mark the paused job as superseded and hide it from the job list
         job.state = JobState.CANCELLED
         job.error = "Superseded by resumed job"
+        job.hidden = True
         self._persist_job(job)
 
         # Submit a new job continuing from the checkpoint, inheriting the same params.
@@ -648,6 +779,7 @@ class JobManager:
             api_base=job.api_base,
             start_index=job.paused_at_index or 0,
             partial_result_path=job.partial_result_path,
+            accumulated_elapsed_seconds=accumulated,
         )
         return new_job_id
 

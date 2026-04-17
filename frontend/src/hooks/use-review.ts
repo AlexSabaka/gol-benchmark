@@ -41,7 +41,7 @@ export function useReviewCases(
 export function useSaveAnnotation() {
   const qc = useQueryClient()
   return useMutation({
-    mutationFn: (body: { result_file_id: string; case_id: string; annotation: Annotation }) =>
+    mutationFn: (body: { result_file_id: string; case_id: string; response_hash?: string; language?: string; annotation: Annotation }) =>
       saveAnnotation(body),
     onSuccess: () => {
       // Refresh row-level `has_annotations` flag on the Results page.
@@ -76,6 +76,9 @@ export function useDeleteAnnotations() {
       // The `has_annotations` flag on the Results list changes — refresh it.
       qc.invalidateQueries({ queryKey: ["results"] })
       qc.invalidateQueries({ queryKey: ["annotations", filename] })
+      // Bust the review-cases cache so the review page re-fetches and no
+      // longer shows stale existing_annotation entries for this file.
+      qc.invalidateQueries({ queryKey: ["review-cases"] })
     },
   })
 }

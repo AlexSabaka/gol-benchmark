@@ -49,6 +49,14 @@ class OpenAICompatibleInterface(ModelInterface):
             "stream": False,
         }
 
+        # Thinking suppression — provider-specific field names:
+        #   Qwen/Dashscope uses "enable_thinking", Ollama's OpenAI endpoint
+        #   uses "think".  Sending both is safe: well-behaved APIs ignore
+        #   unknown fields.
+        if params.get("no_think"):
+            data["enable_thinking"] = False
+            data["think"] = False
+
         headers: Dict[str, str] = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
@@ -66,11 +74,22 @@ class OpenAICompatibleInterface(ModelInterface):
 
             end_time = time.time()
             choice = result.get("choices", [{}])[0]
-            text = choice.get("message", {}).get("content", "")
+            msg = choice.get("message", {})
+            text = msg.get("content", "") or ""
             usage = result.get("usage", {})
+
+            # Qwen/Dashscope returns reasoning in a separate "reasoning_content"
+            # field.  Fall back to extracting inline <think>…</think> tags.
+            reasoning: str | None = msg.get("reasoning_content") or None
+            if reasoning is None and "<think>" in text:
+                m = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
+                if m:
+                    reasoning = m.group(1).strip()
+                    text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
             return {
                 "response": text,
+                "reasoning": reasoning or None,
                 "tokens_generated": usage.get("completion_tokens", 0),
                 "tokens_input": usage.get("prompt_tokens", 0),
                 "duration": end_time - start_time,

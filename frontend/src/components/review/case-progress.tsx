@@ -25,6 +25,10 @@ interface Props {
   savedCount: number
   /** Count of cases with unsaved drafts pending retry. */
   unsavedCount: number
+  /** Authoritative annotated count from sidecar files — includes cases hidden by
+   *  filters. When greater than `savedCount`, a "(N filtered)" hint is shown so
+   *  the annotator knows work from previous sessions is preserved but not visible. */
+  totalAnnotatedInSidecars?: number
   skipEmpty: boolean
   skipCorrect: boolean
   matchFilterKey: string
@@ -43,6 +47,7 @@ export function CaseProgress({
   total,
   savedCount,
   unsavedCount,
+  totalAnnotatedInSidecars,
   skipEmpty,
   skipCorrect,
   matchFilterKey,
@@ -52,6 +57,10 @@ export function CaseProgress({
   onChangeMatchFilter,
   onChangeTargetLang,
 }: Props) {
+  const hiddenAnnotatedCount =
+    totalAnnotatedInSidecars !== undefined && totalAnnotatedInSidecars > savedCount
+      ? totalAnnotatedInSidecars - savedCount
+      : 0
   // Segmented progress: saved portion (filled primary) + current position marker.
   const savedPct = total > 0 ? Math.min(100, Math.round((savedCount / total) * 100)) : 0
   const positionPct = total > 0 ? Math.min(100, Math.round(((current + 1) / total) * 100)) : 0
@@ -70,6 +79,14 @@ export function CaseProgress({
           <div className="flex items-center gap-2 text-xs">
             <span className="font-mono tabular-nums text-muted-foreground">
               <span className="text-emerald-600">{savedCount}</span> annotated
+              {hiddenAnnotatedCount > 0 && (
+                <span
+                  className="ml-1 text-muted-foreground"
+                  title={`${hiddenAnnotatedCount} annotated cases hidden by current filter`}
+                >
+                  (+{hiddenAnnotatedCount} filtered)
+                </span>
+              )}
               <span className="mx-1">·</span>
               <span className="text-foreground">{total === 0 ? "0 / 0" : `${current + 1} / ${total}`}</span>
             </span>

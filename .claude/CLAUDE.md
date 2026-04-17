@@ -78,7 +78,7 @@ gol_eval/
 │   │   ├── ascii_shapes/  # ASCII Shapes plugin
 │   │   ├── object_tracking/ # Object Tracking (Grape Test) plugin
 │   │   ├── sally_anne/    # Sally-Anne false belief test plugin
-│   │   ├── carwash/       # Carwash Paradox plugin (v2.2.0)
+│   │   ├── carwash/       # Carwash Paradox plugin (4 annotation-driven optimization rounds)
 │   │   ├── inverted_cup/  # Inverted Cup plugin (v2.2.0)
 │   │   ├── strawberry/    # Character-level reasoning (6 sub-types)
 │   │   ├── measure_comparison/ # Quantity comparison plugin (incl. decimal framing)
@@ -173,12 +173,13 @@ gol_eval/
 | [src/evaluation/TestEvaluator.py](src/evaluation/TestEvaluator.py) | Grid comparison and accuracy calculation |
 | [src/engine/GameOfLifeEngine.py](src/engine/GameOfLifeEngine.py) | Conway's Game of Life rules |
 | [src/engine/MathExpressionGenerator.py](src/engine/MathExpressionGenerator.py) | Expression tree generation |
-| **Human Review (v2.20.0) + Improvement Report (v2.1–v2.5)** | |
-| [src/web/api/human_review.py](src/web/api/human_review.py) | `/api/human-review/*` router: `GET /cases`, `POST /annotate`, GET + DELETE `/annotations/{id}`, `POST /report`, `POST /translate` |
-| [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) | Pure-function improvement-report builder. Key helpers: `_span_analysis` (per-group rollup), `_split_long_tail` (v2.5 rich/long-tail partition), `_context_anchored_regex` + `_merged_label_disjunction` (v2.4 regex generators, replace legacy `_auto_regex`), `_filter_candidates` (low-support cut), `_parser_span_alignment` (aligned / misaligned / no-output split), `_regex_test_harness` (capture quality + sample captures), `_data_quality` (warnings + suppressed-sections; v2.5 suppresses `strategy_breakdown` + `answer_when_missed.by_expected`), `_response_class_counts` (v2.5: folded into `summary.response_class_counts`), `_model_answer_stats` (distribution + raw variants). `REPORT_FORMAT_VERSION = "2.5"` |
+| **Human Review (v2.20.0 → v2.6) + Improvement Report (v2.1–v2.6)** | |
+| [src/web/api/human_review.py](src/web/api/human_review.py) | `/api/human-review/*` router: `GET /cases`, `POST /annotate`, GET + DELETE `/annotations/{id}`, `POST /report`, `POST /translate`. v2.6: `AnnotateRequest` includes `response_hash` + `language`; sidecar key is `case_id::response_hash`; `_migrate_annotation()` auto-upgrades old `response_class` scalar → `response_classes[]` on load |
+| [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) | Pure-function improvement-report builder. Key helpers: `_span_analysis` (per-group rollup), `_split_long_tail` (v2.5 rich/long-tail partition), `_context_anchored_regex` + `_merged_label_disjunction` (v2.4 regex generators), `_filter_candidates` (low-support cut), `_parser_span_alignment` (aligned / misaligned / no-output split), `_regex_test_harness` (capture quality + sample captures), `_data_quality` (warnings + suppressed-sections), `_response_class_counts` (v2.5: folded into `summary.response_class_counts`), `_model_answer_stats` (distribution + raw variants). **v2.6**: `_collect_negative_records` + `_negative_span_analysis` (negative span/keyword groups), `_answer_keyword_distribution` (manual keyword signal), `_context_anchor_groups`. `REPORT_FORMAT_VERSION = "2.6"` |
 | [src/web/translation.py](src/web/translation.py) | `deep-translator` wrapper with LRU cache; provider via `TRANSLATOR_PROVIDER` env (google / libre / mymemory) |
-| [frontend/src/pages/review.tsx](frontend/src/pages/review.tsx) | `/review` wizard — two-column workspace with keyboard-first annotation |
-| [frontend/src/components/review/improvement-report-dialog.tsx](frontend/src/components/review/improvement-report-dialog.tsx) | Improvement-report modal: 9 tabs (Summary / Spans / Strategy / Languages / Misses / Answers / Anchors / Ordering / Classes / Notes), data-quality banner, parser-span alignment callout, expandable span-group cards with structural signals / prefix anchors (type-chipped) / regex test rows (capture quality pill + sample captures) |
+| [frontend/src/pages/review.tsx](frontend/src/pages/review.tsx) | `/review` wizard — two-column workspace with keyboard-first annotation. v2.6: `caseKey()` uses `result_file_id::case_id::response_hash`; `handleFinish` navigates to `/results` after last case |
+| [frontend/src/components/review/improvement-report-dialog.tsx](frontend/src/components/review/improvement-report-dialog.tsx) | Improvement-report modal: 10 tabs (Summary / Spans / Strategy / Languages / Misses / Answers / Ordering / Classes / Notes / **Negatives**), data-quality banner, parser-span alignment callout, expandable span-group cards with structural signals / prefix anchors (type-chipped) / regex test rows (capture quality pill + sample captures) |
+| [frontend/src/components/review/help-dialog.tsx](frontend/src/components/review/help-dialog.tsx) | Keyboard shortcuts & annotation guide modal. Triggered by `?` key or `HelpCircle` button in review header. Two-column layout: nav/classification/dock on left; mark-types table (preview swatch + name + description + key binding) on right |
 
 ---
 
@@ -241,6 +242,7 @@ All response parsers follow the principle of searching from the **end** of the m
 - `inverted_cup` classification — if "flip" is mentioned anywhere, the model understood the key insight (correct answer); "wrong" keywords alongside flip are just creative alternatives
 - `linda_fallacy` — extracts ordered rankings, not single answers
 - `false_premise` first-sentence refusal — uses FIRST sentences because models lead with "I can't help..." then explain at length; also uses negation-aware compliance detection and safe-alternative section filtering
+- `carwash` dual-keyword filtering — when both `drive` and `walk` keywords appear, `_is_conditional_walk` and `_is_conditional_drive` filter option-listing/comparison positions (`"walk or drive"`, `"walk vs drive"`). Drive filtering uses **positional matching** (checks if drive_start falls within a listing pattern match span, not just nearby) to avoid over-filtering. When all positions are filtered, `_score()` returns `None` so the caller tries a different strategy
 
 **Validated**: Re-parsed 1,933 results across 33 files. Zero true regressions from end-first changes. See [CHANGELOG.md](CHANGELOG.md) for detailed parser fix history (v2.10.3–v2.10.7).
 
@@ -277,7 +279,7 @@ Audit incorrect model responses via a judge LLM:
 - `frontend/package.json` is the npm source of truth — kept in sync manually when cutting releases
 - **All locations to update when bumping version**: `src/__init__.py`, `frontend/package.json` (+`package-lock.json`), `.github/copilot-instructions.md`, CHANGELOG.md, CLAUDE.md footer
 
-### 11. Human Review & Annotation (v2.20.0 + Improvement Report v2.1 → v2.4)
+### 11. Human Review & Annotation (v2.20.0 + Improvement Report v2.1 → v2.6)
 
 Human annotation workflow for parser diagnosis and improvement. Every labelled response becomes a parser test case in waiting. The **Improvement Report** aggregates annotations into a JSON artifact whose explicit purpose is to seed a coding-agent task refactoring plugin parsers — so its shape is agent-facing and has iterated fast.
 
@@ -287,10 +289,18 @@ Human annotation workflow for parser diagnosis and improvement. Every labelled r
 - Aggregator module [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) — pure-function, no I/O — computes the full report shape from sidecar payloads (+ optional source-result-payload backfill for legacy sidecars)
 - Translation [src/web/translation.py](src/web/translation.py) — `deep-translator` wrapper, `TRANSLATOR_PROVIDER` env (`google` default, `libre`, `mymemory`), LRU-cached
 - Sidecars: gzipped JSON at `{result_stem}_annotations.json.gz`, atomic `temp + os.replace`; `has_annotations` flag surfaces on `/api/results` summaries
-- Response classes (7): `hedge`, `gibberish`, `refusal`, `language_error`, `verbose_correct`, `parser_ok`, **`parser_false_positive`** (uniquely coexists with spans — span is the evidence, verdict is the diagnosis)
-- Annotation invariant (relaxed in v2.20.0): ≥1 of `spans` / `response_class`; both may coexist
+- **Sidecar key (v2.6+): `case_id::response_hash`** — MD5 of first 128 chars of raw_response (8 hex chars). Unique across all testset dimensions (language × user_style × system_style). Falls back to `case_id::language` → bare `case_id` when loading legacy sidecars. See Known Issue #17.
+- **Response classes (v3, 7):** `hedge`, `truncated`, `gibberish`, `refusal`, `language_error`, `verbose`, `false_positive` — multi-select array `response_classes: list[str]`. v3 renames: `verbose_correct` → `verbose`, `parser_false_positive` → `false_positive`. Dropped: `parser_ok` (auto-inferred at aggregation from span-parser alignment). Added: `truncated`. Old scalar `response_class` sidecars auto-migrated by `_migrate_annotation()` on load.
+- Annotation invariant (v3): ≥1 of `spans` / `response_classes` / mark-type arrays; any may coexist
 - Format: `bold` / `italic` / `strikethrough` / `header` / `boxed` / `label` / `plain` / `other` (italic/strike/header added in v2.2)
-- Frontend `/review` ([pages/review.tsx](frontend/src/pages/review.tsx)): two-column editorial workspace; keyboard shortcuts `←/→` navigate, `1`–`7` classify, `S` skip, `Space`/`Enter` commit drag-selection
+- **v3 Mark Types (5 levels, modifier+click or drag):**
+  - `LMB` → Answer span (blue solid) — `spans[]`
+  - `Ctrl/Cmd+LMB` → Context anchor (indigo dashed) — `context_anchors[]`
+  - `Alt/Opt+LMB` → Answer keyword (violet dotted) — `answer_keywords[]`
+  - `Shift+LMB` → Negative span (rose solid) — `negative_spans[]`
+  - `Shift+Alt/Ctrl+LMB` → Negative keyword (dark rose dotted) — `negative_keywords[]`
+  - Adjacent marks of the same type auto-merge. `onMouseDown` suppresses browser selection-extension when Shift/Alt held so click handlers fire correctly.
+- Frontend `/review` ([pages/review.tsx](frontend/src/pages/review.tsx)): two-column editorial workspace; keyboard shortcuts `←/→` navigate, `1`–`7` toggle-classify, `S` skip, `?` help modal, `Space`/`Enter` commit drag-selection, `→` on last case navigates to `/results`
 
 **Improvement Report schema — `format_version` rolls forward additively:**
 
@@ -302,6 +312,7 @@ Human annotation workflow for parser diagnosis and improvement. Every labelled r
 | `"2.3"` | Top-level **`parser_span_alignment`** — `aligned_with_parser` / `misaligned_with_parser` / `no_parser_output` split, resolving the "parser_missed: N" framing when `parser_extracted` is actually aligned with the annotated span. Summary gains `parser_missed_aligned` / `parser_missed_misaligned` / `parser_missed_no_output`. Regex harness gains `capture_exact_rate` / `capture_contains_rate` / `sample_captures` (capture quality ≠ match rate). Top-level **`data_quality.warnings[]` + `suppressed_sections[]`** — auto-detects `no_parse_strategy`, `uniform_language` / `uniform_system_style` / `uniform_user_style`, `uniform_expected`. Single-bucket axis breakdowns are **omitted from output** and reported as suppressed |
 | `"2.4"` | **Merged label disjunction** — when a group has ≥2 distinct label-type atoms, emits `(?i)(?:atom1\|atom2)\s*[:：]\s*{capture}` as highest-priority candidate (`kind: "merged_label_disjunction"`, `participating_atoms`). Prefix anchors gain **`type`**: `label` / `format` / `phrase` (label > format > phrase at equal count). Post-harness **low-support filter** drops candidates with `match_rate < 0.1 AND capture_contains_rate < 0.1` and `support < 2 AND support/group_size < 0.1` (always keeps `format_only`). New **`model_answer_variants`** preserves raw text variants per normalized bucket (top 10) so the agent sees `Walk` / `WALK` / `**Walk**` / `Walk to the carwash` separately under `walk` |
 | `"2.5"` | **Tactical cut** — ~30% smaller JSON, zero new computed fields. Deletes `confusion_matrix` (duplicated `summary`), top-level `anchor_frequency` (subsumed by per-group `prefix_anchors`), top-level `response_classes` (folded into `summary.response_class_counts`, non-zero only). Suppresses `strategy_breakdown` under `no_parse_strategy` warning and `answer_when_missed.by_expected` under `uniform_expected` (both reported in `data_quality.suppressed_sections`). New **`long_tail_groups`** — span groups with `count < 4` collapse to compact `{position, format, count, example}` stubs so per-group rollups stay signal-dense (guard: only when ≥1 rich group exists, so small-N sessions keep full detail). Empty `ordering_hints` / `annotator_notes` omitted entirely from output |
+| `"2.6"` | **Negative span annotations** — first negative-span support. New top-level `negative_span_groups[]` — aggregated negative spans with `text`, `normalized_text`, `count`, `mark_type` (`negative_span` / `negative_keyword`), `example_negatives[]` (each with `correct_span`, `parse_strategy`). New top-level `context_anchor_groups[]` — aggregated label anchors with `text`, `count`, `example_cases`. New top-level `manual_keyword_distribution` — annotator-tagged answer keywords (distinct from auto-detected `model_answer_distribution`). Multi-source support: `source_files[]` array replaces single-source assumption |
 
 **Key agent-facing distinctions (future-you, read this):**
 
@@ -309,6 +320,7 @@ Human annotation workflow for parser diagnosis and improvement. Every labelled r
 - **Parser alignment ≠ parser correctness** — v2.3 split. `aligned_with_parser` means `parser_extracted` matches the annotated span (even when model was wrong). `parser_missed_extractable` alone is misleading; always pair with `parser_span_alignment`.
 - **Markdown-stripped buckets collapse case + wrappers but NOT stems** — `walk` and `walking` are separate buckets on purpose; surfacing that difference is the agent's signal to add stemming.
 - **Single-bucket axes auto-suppress** — if every annotated case shares one language/style/expected answer, `language_breakdown` etc. are omitted (reported in `data_quality.suppressed_sections`). Don't assume a missing field means a bug.
+- **Negative spans drive parser work differently from positive spans** — positive spans say "the answer IS here"; negative spans say "the parser should NOT match here." `negative_span_groups` with `mark_type: "negative_keyword"` (e.g. `"or drive"`, `"vs"`) identify option-listing/comparison patterns the parser must filter. Groups with `mark_type: "negative_span"` (e.g. bare `"drive"`, `"walk"`) mark keyword mentions in reasoning text the parser incorrectly extracted from. Use `context_anchor_groups` alongside negative spans to cross-reference which labels precede correct extractions vs. which keyword contexts produce false positives.
 
 **One-click word marking** + drag-select + sticky annotation dock + parser-match highlight (amber dashed underline) + persistent parser-disagreement callout + 🌐 translation panels (`select-none` — translated text is never an annotation target).
 
@@ -584,6 +596,18 @@ All job I/O is confined to **`src/web/job_store.py`** (`JobStore` class) — the
     - **Guarded**: collapse only applies when at least one group has `count ≥ 4`. When every group is below threshold (small sessions, focused testsets) those small groups ARE the signal and are left intact in `span_groups`
     - Deleted in v2.5: top-level `confusion_matrix` (duplicated `summary`), top-level `anchor_frequency` (subsumed by per-group `prefix_anchors`), top-level `response_classes` (folded into `summary.response_class_counts`, non-zero only)
     - Empty `ordering_hints` / `annotator_notes` are omitted entirely from output (not emitted as `[]`). Feature-detect in the frontend; downstream agents should treat absence as "nothing to report" rather than an error
+
+17. **Annotation sidecar key must be `case_id::response_hash`** (v2.6+)
+    - A single result file regularly contains multiple variants of the same `test_id` — e.g. 6 languages × 3 user styles × 3 system styles = 54 entries sharing the same `test_id`. Keys based on `case_id` or `case_id::language` alone overwrite each other during save.
+    - The canonical key is `f"{case_id}::{_response_hash(raw_response)}"` where `_response_hash` is an 8-hex-char MD5 of the first 128 chars of `raw_response`. Any two distinct result entries will have different first-128-char prefixes with overwhelmingly high probability.
+    - `AnnotateRequest` carries `response_hash` (sent from the frontend `ReviewCase.response_hash`). The backend iterates all results to find the one whose computed hash matches before writing to the sidecar.
+    - Frontend `caseKey()` = `result_file_id::case_id::response_hash` — prevents draft leakage between variants shown in the same review session.
+    - Backwards compat: `get_review_cases` falls back through `case_id::language` → bare `case_id` when loading old sidecars without a hash-keyed entry.
+
+18. **Review-cases React Query cache must be busted on annotation delete** (v2.6+)
+    - `useReviewCases` has `staleTime: Infinity` — the case list is a snapshot and must not background-refetch during an active annotation session.
+    - `DELETE /annotations/{id}` removes the sidecar file server-side, but if the user returns to the review page in the same browser session the old cached `existing_annotation` values are still served by React Query.
+    - `useDeleteAnnotations.onSuccess` invalidates `["review-cases"]` (prefix match) as well as `["results"]` and `["annotations", filename]`. Do not remove this invalidation.
 
 ### Import Patterns
 
@@ -886,11 +910,16 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-16*
-*Version: 2.22.0*
+*Last updated: 2026-04-17*
+*Version: 2.24.0*
 
 **Recent key additions:**
 
+- **Annotation DX Overhaul (v2.24.0 / annotation schema v3)** — Multi-select classification (`response_classes: list[str]`), v3 class renames (`verbose_correct`→`verbose`, `parser_false_positive`→`false_positive`, dropped `parser_ok`), new `truncated` class. Five mark types (answer span / context anchor / answer keyword / negative span / negative keyword) via modifier+click with warm/cool visual treatment; adjacent marks auto-merge. `onMouseDown` suppresses browser selection-extension for Shift/Alt modifier keys. `Finish` button on last case navigates to `/results`. `?` help modal (keyboard shortcut + mark-type guide). Sidecar key migrated to `case_id::response_hash` (fixes leakage across language × user_style × system_style variants). `DELETE /annotations` now busts review-cases React Query cache. Response hash validation drops contaminated sidecar entries from pre-fix sessions.
+- **Improvement Report v2.6** — `REPORT_FORMAT_VERSION = "2.6"`. New sections: `negative_span_groups[]` (aggregated negative spans/keywords with `correct_span` + `parse_strategy` per example), `context_anchor_groups[]` (manually-tagged anchor labels), `manual_keyword_distribution` (higher-confidence signal than auto-inferred `model_answer_distribution`). `parser_was_correct` auto-inferred from span-parser alignment (replaces manual `parser_ok` class). New **Negatives tab** in improvement-report-dialog.
+- **Carwash parser Round 4 — option-listing filter + label expansion** — annotation-driven (v2.6 report, 223 cases). New `_is_conditional_drive()` with positional matching filters drive keywords in option-listing/comparison text (`"walk or drive"`, `"drive vs walk"`). Symmetric `"walk or drive"` pattern added to `_WALK_CONDITIONAL`. When both keywords fully filtered in a fragment, `_score()` returns `None` (fall-through) instead of guessing. 6 new label words (DE: zusammenfassung/kurzantwort/handlungsanleitung, FR: action recommandée/choix, ES: resumen). "therefore"/"daher"/"donc"/"por lo tanto" added to `_STRONG_INTRO` with comma tolerance. 93 total carwash tests (22 new), 0 regressions
+- **Carwash parser Rounds 1–3** — annotation-driven parser overhaul across 3 sessions (26 EN → 26 EN re-annotated → 197 multilingual cases). Round 1: label_line promoted above bold; bold_label + label_newline strategies added; label-only bold filtering; negative patterns (`_PRE_WALK_CONDITIONAL`, `_WALK_CONDITIONAL`, `_WALK_NEGATIVE`). Round 2: bold_label colon fix; label_newline heading patterns. Round 3: multilingual verb conjugation coverage (FR marche[zs]?/conduis\w*, ES camin[aeo]\w*, DE geh(e|st|t)/fahr(e|en|t|st)/compound verbs)
+- **Improvement Report v2.6** — first negative-span support. `negative_span_groups[]`, `context_anchor_groups[]`, `manual_keyword_distribution`, multi-source `source_files[]`
 - **Improvement Report v2.5** — tactical cut of the v2.4 seed artifact driven by a post-carwash-refactor retrospective (`docs/improvement_report_v2.5_plan.md`). ~30% smaller JSON with zero new computed fields: deletes `confusion_matrix` / top-level `anchor_frequency` / top-level `response_classes` (the last folded into `summary.response_class_counts`, non-zero only); suppresses `strategy_breakdown` under `no_parse_strategy` and `answer_when_missed.by_expected` under `uniform_expected` (both reported via `data_quality.suppressed_sections`); adds **`long_tail_groups`** to collapse span groups with `count < 4` into compact stubs (guarded: only fires when ≥1 rich group exists so small-N sessions keep full detail); empty `ordering_hints` / `annotator_notes` omitted. Frontend drops Anchors tab, rewires Classes to read `summary.response_class_counts`, renders long-tail stubs as a dimmed trailing section in the Spans tab
 - **Improvement Report v2.4** — `format_version: "2.4"`, agent-facing seed artifact for parser refactor work. Context-anchored regex generator replaces legacy span-text LCP (locates via `before` prefix + format-aware capture); merged label disjunction synthesizes across multiple `Label:` anchors into one pattern (carwash: `recommendation:` + `conclusion:` → single ~100% regex); regex candidates carry weighted `kind` (`merged_label_disjunction` > `context_anchor` > `format_only` > `text_pattern`) with `support` + post-harness low-support filtering
 - **Capture quality metrics (v2.3)** — `regex_test[]` rows now carry `capture_exact_rate` / `capture_contains_rate` / `sample_captures` so `match_rate` is never read in isolation; frontend `CaptureQualityPill` tones on capture quality

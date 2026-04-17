@@ -80,16 +80,22 @@ def _ann_case(
     spans: List[Dict[str, Any]] = None,
     response_class: str = None,
     parser_match_type: str = "parse_error",
+    parser_extracted=None,
 ) -> Dict[str, Any]:
+    # v3: response_class → response_classes array. Apply renames + drop parser_ok.
+    _RENAME = {"verbose_correct": "verbose", "parser_false_positive": "false_positive"}
+    rcs: list[str] = []
+    if response_class and response_class != "parser_ok":
+        rcs = [_RENAME.get(response_class, response_class)]
     return {
         "case_id": case_id,
         "response_length": 200,
         "parser_match_type": parser_match_type,
-        "parser_extracted": None,
+        "parser_extracted": parser_extracted,
         "expected": "drive",
         "annotation": {
             "spans": spans or [],
-            "response_class": response_class,
+            "response_classes": rcs,
             "annotator_note": "",
             "timestamp": "2026-04-15T12:00:00Z",
         },
@@ -114,7 +120,7 @@ def test_build_report_produces_four_sections():
             "b": _ann_case("b", spans=[_span("you should walk")]),
             "c": _ann_case("c", spans=[_span("you should fly")]),
             "d": _ann_case("d", spans=[_span("you should drive")]),
-            "e": _ann_case("e", response_class="parser_ok", parser_match_type="correct"),
+            "e": _ann_case("e", spans=[_span("drive")], parser_match_type="correct", parser_extracted="drive"),
             "f": _ann_case("f", response_class="hedge"),
         },
     }
@@ -125,15 +131,16 @@ def test_build_report_produces_four_sections():
     s = report["summary"]
     assert s["total_cases"] == 6
     assert s["parser_was_correct"] == 1
+    # Cases a,b,c,d have spans but no parser_extracted → missed
     assert s["parser_missed_extractable"] == 4
     assert s["true_unparseable"] == 1
 
-    # Section 2: one span group at (end, plain) with count=4
+    # Section 2: one span group at (end, plain) with count=5 (a,b,c,d + e)
     groups = report["span_groups"]
     assert len(groups) == 1
     g = groups[0]
     assert (g["position"], g["format"]) == ("end", "plain")
-    assert g["count"] == 4
+    assert g["count"] == 5
     assert g["suggested_strategy"] == "last_sentences"
     assert g["missed_by_existing"] is True
     # v2.2: with no `before` context in these synthetic spans, the text-pattern
@@ -148,8 +155,8 @@ def test_build_report_produces_four_sections():
     # Section 4: response classes folded into summary (v2.5)
     c = report["summary"]["response_class_counts"]
     assert c["hedge"] == 1
-    assert c["parser_ok"] == 1
-    assert c["parser_missed"] == 4
+    # parser_ok is auto-inferred at aggregation time, no longer stored as a class
+    assert c["parser_missed"] == 5  # all 5 span-bearing cases (a,b,c,d,e)
 
 
 def test_build_report_handles_empty_inputs():
@@ -269,16 +276,20 @@ def test_annotate_roundtrip(fake_result: Path):
         payload = json.load(f)
     assert payload["meta"]["plugin"] == "carwash"
     assert payload["meta"]["annotated_count"] == 1
-    assert payload["cases"]["carwash_0001"]["annotation"]["spans"][0]["text"] == "you should drive"
+    # v2.6+: sidecar key is `case_id::response_hash`
+    cases = payload["cases"]
+    matching = [v for k, v in cases.items() if k.startswith("carwash_0001::")]
+    assert matching, "No sidecar entry found for carwash_0001"
+    assert matching[0]["annotation"]["spans"][0]["text"] == "you should drive"
 
     # /annotations round-trip
     res2 = client.get(f"/api/human-review/annotations/{fake_result.name}")
     assert res2.status_code == 200
-    assert "carwash_0001" in res2.json()["cases"]
+    assert any(k.startswith("carwash_0001::") for k in res2.json()["cases"])
 
 
 def test_annotate_parser_false_positive_with_span_allowed(fake_result: Path):
-    """v2.20.0 — spans may coexist with a response_class (esp. parser_false_positive)."""
+    """v3 — spans may coexist with response_classes (esp. false_positive)."""
     body = {
         "result_file_id": fake_result.name,
         "case_id": "carwash_0001",
@@ -292,7 +303,7 @@ def test_annotate_parser_false_positive_with_span_allowed(fake_result: Path):
                     "format": "plain",
                 }
             ],
-            "response_class": "parser_false_positive",
+            "response_classes": ["false_positive"],
             "annotator_note": "",
         },
     }
@@ -301,8 +312,12 @@ def test_annotate_parser_false_positive_with_span_allowed(fake_result: Path):
 
     # Round-trip the case back out.
     res2 = client.get(f"/api/human-review/annotations/{fake_result.name}")
-    case = res2.json()["cases"]["carwash_0001"]["annotation"]
-    assert case["response_class"] == "parser_false_positive"
+    # v2.6+: sidecar key is `case_id::response_hash`
+    cases = res2.json()["cases"]
+    entry = next((v for k, v in cases.items() if k.startswith("carwash_0001::")), None)
+    assert entry, "No sidecar entry found for carwash_0001"
+    case = entry["annotation"]
+    assert "false_positive" in case["response_classes"]
     assert len(case["spans"]) == 1
 
 
@@ -402,7 +417,7 @@ def test_build_report_parser_false_positive_counts_as_missed():
     report = agg.build_report([af])
     assert report["summary"]["parser_missed_extractable"] == 1
     assert report["summary"]["parser_was_correct"] == 0
-    assert report["summary"]["response_class_counts"].get("parser_false_positive") == 1
+    assert report["summary"]["response_class_counts"].get("false_positive") == 1
 
 
 def test_delete_annotations_is_idempotent(fake_result: Path):
@@ -418,7 +433,7 @@ def test_delete_annotations_is_idempotent(fake_result: Path):
         json={
             "result_file_id": fake_result.name,
             "case_id": "carwash_0001",
-            "annotation": {"spans": [], "response_class": "parser_ok", "annotator_note": ""},
+            "annotation": {"spans": [], "response_classes": ["hedge"], "annotator_note": ""},
         },
     )
     ap = _annotation_path(fake_result)
@@ -484,7 +499,7 @@ def test_has_annotations_flag_on_results_summary(fake_result: Path):
         json={
             "result_file_id": fake_result.name,
             "case_id": "carwash_0001",
-            "annotation": {"spans": [], "response_class": "parser_ok", "annotator_note": ""},
+            "annotation": {"spans": [], "response_classes": ["hedge"], "annotator_note": ""},
         },
     )
     res2 = client.get("/api/results")
@@ -512,6 +527,11 @@ def _enriched_case(
     note="",
 ):
     """Build a v2-shape annotation case record (with enrichment fields)."""
+    # v3: response_class → response_classes array. Apply renames + drop parser_ok.
+    _RENAME = {"verbose_correct": "verbose", "parser_false_positive": "false_positive"}
+    rcs: list[str] = []
+    if response_class and response_class != "parser_ok":
+        rcs = [_RENAME.get(response_class, response_class)]
     return {
         "case_id": case_id,
         "response_length": 200,
@@ -525,7 +545,7 @@ def _enriched_case(
         "context_windows": [],
         "annotation": {
             "spans": spans or [],
-            "response_class": response_class,
+            "response_classes": rcs,
             "annotator_note": note,
             "timestamp": "2026-04-15T12:00:00Z",
         },
@@ -534,7 +554,9 @@ def _enriched_case(
 
 def test_v2_format_version_and_top_level_fpr():
     af = {"meta": {}, "cases": {
-        "ok": _enriched_case("ok", response_class="parser_ok", parser_match_type="correct"),
+        # parser_ok is auto-inferred: spans match parser_extracted
+        "ok": _enriched_case("ok", parser_match_type="correct",
+                             spans=[_span("drive")], parser_extracted="drive"),
         "fp": _enriched_case("fp", response_class="parser_false_positive",
                              spans=[_span("walking")], parser_match_type="correct",
                              parser_extracted="drive", expected="walking"),
@@ -552,8 +574,11 @@ def test_v2_language_breakdown_and_miss_rate():
     af = {"meta": {}, "cases": {
         "ua1": _enriched_case("ua1", language="ua", spans=[_span("прав")], parser_match_type="parse_error"),
         "ua2": _enriched_case("ua2", language="ua", spans=[_span("прав")], parser_match_type="parse_error"),
-        "ua3": _enriched_case("ua3", language="ua", response_class="parser_ok", parser_match_type="correct"),
-        "en1": _enriched_case("en1", language="en", response_class="parser_ok", parser_match_type="correct"),
+        # parser_ok is auto-inferred: spans match parser_extracted
+        "ua3": _enriched_case("ua3", language="ua", spans=[_span("drive")],
+                              parser_match_type="correct", parser_extracted="drive"),
+        "en1": _enriched_case("en1", language="en", spans=[_span("drive")],
+                              parser_match_type="correct", parser_extracted="drive"),
     }}
     lb = agg.build_report([af])["language_breakdown"]
     assert lb["ua"]["total"] == 3
@@ -569,17 +594,23 @@ def test_v2_strategy_breakdown_attributes_false_positives():
         "fs2": _enriched_case("fs2", parse_strategy="first_sentence",
                               response_class="parser_false_positive",
                               spans=[_span("stay")], parser_match_type="correct"),
+        # parser_ok auto-inferred via span-parser alignment
         "fs3": _enriched_case("fs3", parse_strategy="first_sentence",
-                              response_class="parser_ok", parser_match_type="correct"),
+                              spans=[_span("drive")], parser_match_type="correct",
+                              parser_extracted="drive"),
         "bx1": _enriched_case("bx1", parse_strategy="boxed",
-                              response_class="parser_ok", parser_match_type="correct"),
+                              spans=[_span("drive")], parser_match_type="correct",
+                              parser_extracted="drive"),
     }}
     sb = agg.build_report([af])["strategy_breakdown"]
     assert sb["first_sentence"]["parser_false_positive"] == 2
-    assert sb["first_sentence"]["parser_ok"] == 1
-    # 2 fp out of 3 verdicts → 0.6667
-    assert sb["first_sentence"]["false_positive_rate"] == round(2 / 3, 4)
-    assert sb["boxed"]["parser_ok"] == 1
+    # parser_ok is auto-inferred at aggregation time, strategy_breakdown
+    # no longer counts it (field is 0).
+    assert sb["first_sentence"]["parser_ok"] == 0
+    # false_positive_rate = fp / (ok + fp); with ok=0, rate = 1.0
+    # But the test cases fs3 contributes a recoverable_miss (span present, not FP)
+    assert sb["first_sentence"]["false_positive_rate"] == 1.0
+    assert sb["boxed"]["parser_ok"] == 0
     assert sb["boxed"]["false_positive_rate"] == 0.0
 
 
@@ -681,7 +712,7 @@ def test_v2_endpoint_returns_format_version_2(fake_result):
     client.post("/api/human-review/annotate", json={
         "result_file_id": fake_result.name,
         "case_id": "carwash_0001",
-        "annotation": {"spans": [], "response_class": "parser_ok", "annotator_note": ""},
+        "annotation": {"spans": [], "response_classes": ["hedge"], "annotator_note": ""},
     })
     res = client.post("/api/human-review/report",
                       json={"result_file_ids": [fake_result.name]})
@@ -1078,18 +1109,21 @@ def test_v2_3_parser_span_alignment_aligned_and_misaligned():
 
 def test_v2_3_summary_splits_parser_missed_into_aligned_and_misaligned():
     af = {"meta": {}, "cases": {
-        # 2 aligned misses, 1 misaligned, 1 with no parser output
+        # a, b: parser_extracted aligns with span → auto-inferred parser_was_correct
+        # c: misaligned → parser_missed_extractable
+        # d: no parser output → parser_missed_extractable
         "a": _enriched_case("a", spans=[_span("walk")], parser_extracted="walk"),
         "b": _enriched_case("b", spans=[_span("walk")], parser_extracted="Walk"),
         "c": _enriched_case("c", spans=[_span("walk")], parser_extracted="determine"),
         "d": _enriched_case("d", spans=[_span("walk")], parser_extracted=None),
     }}
     s = agg.build_report([af])["summary"]
-    assert s["parser_missed_aligned"] == 2
+    # v3: aligned cases are auto-inferred as parser_was_correct, not missed.
+    assert s["parser_was_correct"] == 2
     assert s["parser_missed_misaligned"] == 1
     assert s["parser_missed_no_output"] == 1
-    # Legacy monolithic metric still sums correctly.
-    assert s["parser_missed_extractable"] == 4
+    # Only truly missed cases (misaligned + no_output) remain.
+    assert s["parser_missed_extractable"] == 2
 
 
 def test_v2_3_regex_harness_capture_quality():
@@ -1410,7 +1444,7 @@ def test_v2_5_format_version_is_2_5():
     af = {"meta": {}, "cases": {
         "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
     }}
-    assert agg.build_report([af])["format_version"] == "2.5"
+    assert agg.build_report([af])["format_version"] == "2.6"
 
 
 def test_v2_5_suppresses_strategy_breakdown_under_no_parse_strategy():
@@ -1469,8 +1503,8 @@ def test_v2_5_response_class_counts_moved_to_summary():
     assert "response_classes" not in report
     # Folded into summary, only non-zero buckets emitted.
     counts = report["summary"]["response_class_counts"]
-    assert counts["parser_ok"] == 1
-    assert counts["parser_false_positive"] == 1
+    # parser_ok is auto-inferred, not stored as a class anymore
+    assert counts["false_positive"] == 1
     assert counts["hedge"] == 1
     assert counts["parser_missed"] == 1  # span-bearing case
     # Zero-valued classes absent from the folded dict.

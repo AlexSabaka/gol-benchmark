@@ -30,6 +30,8 @@ export function fetchReviewCases(params: {
 export function saveAnnotation(body: {
   result_file_id: string
   case_id: string
+  response_hash?: string
+  language?: string
   annotation: Annotation
 }): Promise<{ status: string; case_id: string; annotation_file: string }> {
   return post("/api/human-review/annotate", body)

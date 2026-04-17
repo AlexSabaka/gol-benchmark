@@ -52,7 +52,7 @@ function bucketByCanonical(raw: AnalyzeResponse): Record<string, CanonicalBucket
 
     for (const [task, tb] of Object.entries(analysis.task_breakdown)) {
       const slot = (bucket.taskBreakdown[task] ??= { correct: 0, total: 0 })
-      slot.correct += Math.round(tb.accuracy * tb.total)
+      slot.correct += tb.correct ?? Math.round(tb.accuracy * tb.total)
       slot.total += tb.total
     }
   }

@@ -2,12 +2,12 @@
 
 export type ResponseClass =
   | "hedge"
+  | "truncated"
   | "gibberish"
   | "refusal"
   | "language_error"
-  | "verbose_correct"
-  | "parser_ok"
-  | "parser_false_positive"
+  | "verbose"
+  | "false_positive"
 
 export type SpanPosition = "start" | "middle" | "end"
 export type SpanFormat =
@@ -29,16 +29,30 @@ export interface AnnotationSpan {
   confidence?: "high" | "medium" | "low"
 }
 
+/** Lightweight char-range mark for context anchors, keywords, and negatives. */
+export interface MarkSpan {
+  text: string
+  char_start: number
+  char_end: number
+}
+
 export interface Annotation {
   spans: AnnotationSpan[]
-  response_class: ResponseClass | null
+  /** v3: array of response classes (replaces scalar `response_class`). */
+  response_classes: ResponseClass[]
   annotator_note: string
   timestamp?: string
+  // v3 mark types
+  context_anchors: MarkSpan[]
+  answer_keywords: MarkSpan[]
+  negative_spans: MarkSpan[]
+  negative_keywords: MarkSpan[]
 }
 
 export interface ReviewCase {
   result_file_id: string
   case_id: string
+  response_hash: string
   task_type: string
   language: string
   user_style?: string | null
@@ -58,6 +72,9 @@ export interface ReviewCasesResponse {
   plugins: string[]
   mixed_plugins: boolean
   total: number
+  /** Sum of `meta.annotated_count` from all loaded sidecars — includes cases
+   *  currently hidden by skip_correct / match_types / skip_empty filters. */
+  total_annotated_in_sidecars?: number
   cases: ReviewCase[]
 }
 
@@ -294,6 +311,31 @@ export interface LongTailGroup {
   example: SpanExample | null
 }
 
+// v2.6 — negative span/keyword groups from manual annotation
+export interface NegativeExample {
+  text: string
+  before: string
+  after: string
+  case_id: string
+  language: string
+  correct_span?: string
+  parse_strategy?: string
+}
+
+export interface NegativeMarkGroup {
+  text: string
+  normalized_text: string
+  count: number
+  mark_type: "negative_span" | "negative_keyword"
+  example_negatives: NegativeExample[]
+}
+
+export interface ContextAnchorGroup {
+  text: string
+  count: number
+  example_cases: string[]
+}
+
 export interface ImprovementReport {
   format_version?: string
   source_files: string[]
@@ -316,6 +358,10 @@ export interface ImprovementReport {
   long_tail_groups?: LongTailGroup[]
   ordering_hints?: OrderingHint[]
   annotator_notes?: AnnotatorNote[]
+  // v2.6 — new mark-type aggregations (absent when no marks of that type exist)
+  negative_span_groups?: NegativeMarkGroup[]
+  manual_keyword_distribution?: Record<string, number>
+  context_anchor_groups?: ContextAnchorGroup[]
 }
 
 // ── Translation ──

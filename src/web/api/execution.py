@@ -115,3 +115,13 @@ async def resume_job(job_id: str):
     if new_job_id is None:
         raise HTTPException(400, f"Cannot resume job {job_id} (must be in paused state)")
     return {"status": "pending", "job_id": job_id, "new_job_id": new_job_id}
+
+
+@router.post("/{job_id}/stop-dump")
+async def stop_and_dump_job(job_id: str):
+    """Stop a running job cooperatively and save results collected so far to a final file."""
+    if job_manager.get_status(job_id) is None:
+        raise HTTPException(404, f"Job not found: {job_id}")
+    if job_manager.stop_and_dump(job_id):
+        return {"status": "stopping", "job_id": job_id}
+    raise HTTPException(400, f"Cannot stop-dump job {job_id} (must be in running or paused state)")

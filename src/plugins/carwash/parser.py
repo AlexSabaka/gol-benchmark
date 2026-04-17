@@ -74,7 +74,8 @@ DRIVE_KEYWORDS = {
         r"\b(?:en|con)\s+(?:el\s+|un\s+|tu\s+|mi\s+)?(?:coche|auto|carro|vehículo)\b",  # "en coche" standalone too
     ],
     "fr": [
-        r"\bconduir\w*\b",                                        # all conduire forms (conduirais, conduisant...)
+        r"\bconduir\w*\b",                                        # conduir- stem (conduire, conduirais, conduiront...)
+        r"\bconduis\w*\b",                                         # conduis- stem (conduisez, conduisons, conduisent, conduisant...)
         r"\bconduite\b",                                            # noun form "la conduite"
         r"\bprendre (?:la|ta|ma) voiture\b",
         r"\baller en voiture\b",
@@ -83,11 +84,12 @@ DRIVE_KEYWORDS = {
         r"\b(?:en|avec)\s+(?:la\s+|ta\s+|ma\s+|une\s+)?voiture\b",  # "en voiture" standalone too
     ],
     "de": [
-        # _score lowercases text before matching — all patterns here must be
-        # lowercase-only (no capital 'Auto' / 'Fahren').
-        r"\bfahren\b", r"\bfahrt\b", r"\bfährst\b",               # base + conjugations
+        # _score uses re.IGNORECASE on raw text — patterns match any case.
+        r"\bfahr(?:e|en|t|st)\b",                                  # all present tense: fahre, fahren, fahrt, fahrst
+        r"\bfährst\b",                                              # umlaut 2nd person
         r"\bzu\s+fahren\b",                                        # infinitive with zu
         r"\bhinfahren\b", r"\bhin\s*fahren\b",                     # drive there
+        r"\b\w*fahren\b",                                           # compound verbs: losfahren, hinfahren, etc.
         r"\bauto\s+(?:nehmen|benutzen|fahren)\b",
         r"\b(?:mit|im|per)\s+(?:dem\s+|einem\s+)?auto\b",          # "mit dem auto" + "im auto" / "per auto"
         r"\b(?:das|zum)\s+fahren\b",                                # nominalized "das fahren"
@@ -119,9 +121,21 @@ WALK_KEYWORDS = {
         r"\bstroll\b",
         r"\bpedestrian\b",
     ],
-    "es": [r"\bcaminar\b", r"\bir a pie\b", r"\bpeatonal\b", r"\bpasear\b"],
-    "fr": [r"\bmarcher\b", r"\bà pied\b", r"\bpiéton\b", r"\bse promener\b"],
-    "de": [r"\blaufen\b", r"\bzu Fuß\b", r"\bgehen\b", r"\bFußgänger\b"],
+    "es": [
+        r"\bcaminar\b", r"\bcamin[aeo]\w*\b",                     # infinitive + conjugations (camina, camine, caminemos, caminando...)
+        r"\bir a pie\b", r"\bpeatonal\b", r"\bpasear\b",
+    ],
+    "fr": [
+        r"\bmarcher\b", r"\bmarche[zs]?\b",                       # infinitive + marche/marches/marchez
+        r"\bmarchons\b", r"\bmarchent\b", r"\bmarchant\b",         # 1st plur / 3rd plur / present participle
+        r"\bà pied\b", r"\bpiéton\b", r"\bse promener\b",
+    ],
+    "de": [
+        r"\blaufen\b", r"\bzu Fuß\b", r"\bgehen\b", r"\bFußgänger\b",
+        r"\bgeh(?:e|st|t)\b",                                     # conjugations: gehe, gehst, geht
+        r"\b\w*gehen\b",                                           # compound verbs: losgehen, hingehen, weitergehen
+        r"\bfuß\b",                                                # standalone "Fuß" (IGNORECASE)
+    ],
     "zh": ["走路", "步行", "走着去", "徒步"],
     "ua": [r"\bйти пішки\b", r"\bпішки\b", r"\bпішохідний\b", r"\bпрогулятися\b"],
 }
@@ -132,8 +146,8 @@ WALK_NEGATION = {
         r"\b(don'?t|do not|shouldn'?t|should not|no need to|not necessary to)\s+walk\b",
         re.IGNORECASE,
     )],
-    "es": [re.compile(r"(?:no\s+(?:debería|necesita|tiene que)\s+)caminar|ir a pie", re.IGNORECASE)],
-    "fr": [re.compile(r"(?:ne\s+(?:devrait|faut|doit)\s+pas\s+)marcher|aller à pied", re.IGNORECASE)],
+    "es": [re.compile(r"(?:no\s+(?:debería|necesita|tiene que)\s+)(?:caminar|camin[aeo]\w*|ir a pie)", re.IGNORECASE)],
+    "fr": [re.compile(r"(?:ne\s+(?:devrait|faut|doit)\s+pas\s+)(?:marcher|marche[zs]?|aller à pied)", re.IGNORECASE)],
     "de": [re.compile(r"(?:(?:sollte|muss|braucht)\s+nicht\s+)(?:laufen|zu Fuß gehen)", re.IGNORECASE)],
     "zh": [re.compile(r"不(?:需要|应该|必须)走路|步行")],
     "ua": [re.compile(r"(?:не\s+(?:потрібно|слід|треба)\s+)(?:йти пішки|ходити)", re.IGNORECASE)],
@@ -164,27 +178,38 @@ _EXTRA_LABELS = {
         "recommendation", "decision", "verdict", "conclusion",
         r"bottom\s*line", r"tl;?dr", r"in\s+short", "tldr",
         r"my\s+(?:advice|recommendation)", r"final\s+answer",
+        r"best\s+(?:option|choice)",
     ],
     "es": [
         "recomendación", "decisión", "veredicto", "conclusión",
         r"en\s+resumen", r"en\s+resumidas\s+cuentas",
         r"mi\s+(?:consejo|recomendación)", r"respuesta\s+final",
+        r"mejor\s+(?:opción|elección)",
+        "resumen",                                                  # standalone summary (context_anchor_groups)
     ],
     "fr": [
         "recommandation", "décision", "verdict", "conclusion",
         r"en\s+résumé", r"en\s+bref",
         r"mon\s+(?:conseil|avis|recommandation)", r"réponse\s+finale",
+        r"meilleur(?:e)?\s+(?:option|choix)",
+        r"action\s+recommandée",                                    # recommended action (context_anchor_groups)
+        "choix",                                                     # standalone choice (context_anchor_groups)
     ],
     "de": [
         "empfehlung", "entscheidung", "urteil", "schlussfolgerung", "fazit",
         r"kurz\s+gesagt", r"mein(?:e)?\s+(?:rat|empfehlung)",
         r"endgültige\s+antwort",
+        r"beste\s+(?:option|wahl)",
+        "zusammenfassung",                                          # summary (context_anchor_groups)
+        "kurzantwort",                                               # short answer (context_anchor_groups)
+        "handlungsanleitung",                                       # action instruction (context_anchor_groups)
     ],
-    "zh": ["推荐", "建议", "结论", "判断", "最终答案", "总结"],
+    "zh": ["推荐", "建议", "结论", "判断", "最终答案", "总结", "最佳选择", "最好的选择"],
     "ua": [
         "рекомендація", "висновок", "рішення", "вердикт", "підсумок",
         r"коротко\s+кажучи", r"моя\s+(?:порада|рекомендація)",
         r"остаточна\s+відповідь",
+        r"найкращий\s+(?:варіант|вибір)",
     ],
 }
 
@@ -197,6 +222,7 @@ _EXTRA_LABELS = {
 _STRONG_INTRO = {
     "en": re.compile(
         r"(?:you\s+should|i\s+(?:would|recommend|suggest)|definitely|clearly|obviously|"
+        r"therefore,?|consequently,?|hence,?|thus,?|"               # conclusion connectors (allow trailing comma)
         r"the\s+(?:answer|best\s+option|right\s+choice|recommended\s+(?:option|action|choice))\s+(?:is|would\s+be)|"
         r"(?:best|optimal|right|recommended)\s+(?:choice|action|option)\s+(?:is|would\s+be)|"
         r"(?:is|would\s+be)\s+to\b|"                               # "is to walk", "would be to drive"
@@ -207,6 +233,7 @@ _STRONG_INTRO = {
     ),
     "es": re.compile(
         r"(?:deberías|recomiendo|sugiero|claramente|obviamente|"
+        r"por\s+lo\s+tanto,?|en\s+consecuencia,?|"                  # conclusion connectors (allow trailing comma)
         r"la\s+(?:respuesta|mejor\s+opción|opción\s+recomendada)\s+es|"
         r"(?:mejor|óptimo|recomendado)\s+(?:es|sería)|"
         r"(?:es|sería)\s+(?:mejor\s+)?)"
@@ -215,6 +242,7 @@ _STRONG_INTRO = {
     ),
     "fr": re.compile(
         r"(?:vous\s+devriez|tu\s+devrais|je\s+recommande|je\s+suggère|définitivement|clairement|évidemment|"
+        r"donc,?|par\s+conséquent,?|"                                # conclusion connectors (allow trailing comma)
         r"la\s+(?:réponse|meilleure\s+option|option\s+recommandée)\s+est|"
         r"(?:meilleur|optimal|recommandé)\s+(?:est|serait)|"
         r"(?:est|serait)\s+de)"
@@ -223,6 +251,7 @@ _STRONG_INTRO = {
     ),
     "de": re.compile(
         r"(?:du\s+solltest|sie\s+sollten|ich\s+(?:würde|empfehle|schlage\s+vor)|eindeutig|offensichtlich|"
+        r"daher,?|deshalb,?|folglich,?|"                             # conclusion connectors (allow trailing comma)
         r"die\s+(?:antwort|beste\s+option|empfohlene\s+option)\s+(?:ist|wäre)|"
         r"(?:beste|optimale|empfohlene)\s+(?:option|wahl)\s+(?:ist|wäre)|"
         r"(?:ist|wäre)\s+zu)"
@@ -267,36 +296,61 @@ _PRE_WALK_CONDITIONAL = {
         r"|if\s+any\s+of\s+the\s+above"
         # "if the mud/road/weather" (domain-specific conditionals)
         r"|if\s+the\s+(?:mud|road|weather|plate|visibility)"
+        # "walk or drive" — option listing, not a recommendation
+        r"|(?:walk|walking)\s+or\s+(?:driv\w+)"
+        # "walk vs drive" / "walk versus drive" — comparison heading
+        r"|(?:walk|walking)\s+(?:vs\.?|versus)\s+(?:driv\w+)"
+        # "whether to walk" — deliberation framing
+        r"|\bwhether\s+to\s+(?:walk|walking)"
+        # "determine/decide/choose ... walk" — decision framing
+        r"|\b(?:determine|decide|choose)\s+(?:\w+\s+){0,4}(?:walk|walking)"
         r")"
         r".{0,80}?\b(?:walk|walking|on\s+foot)\b",
         re.IGNORECASE | re.DOTALL,
     ),
     "es": re.compile(
         r"(?:excepto\s+(?:si|cuando)|la\s+única\s+excepción|alternativamente|"
-        r"sin\s+embargo,?\s+si|solo\s+(?:si|cuando))"
+        r"sin\s+embargo,?\s+si|solo\s+(?:si|cuando)"
+        r"|(?:caminar|a pie)\s+o\s+(?:conducir|manejar)"
+        r"|(?:caminar|a pie)\s+(?:vs\.?|versus)\s+(?:conducir|manejar)"
+        r"|\bsi\s+(?:caminar|ir a pie)"
+        r"|\b(?:determinar|decidir|elegir)\s+(?:\w+\s+){0,4}(?:caminar|a pie))"
         r".{0,80}?\b(?:caminar|a pie|peatonal)\b",
         re.IGNORECASE | re.DOTALL,
     ),
     "fr": re.compile(
         r"(?:sauf\s+(?:si|quand)|la\s+seule\s+exception|alternativement|"
-        r"cependant,?\s+si|seulement\s+(?:si|quand))"
+        r"cependant,?\s+si|seulement\s+(?:si|quand)"
+        r"|\bmarcher\s+ou\s+conduire"
+        r"|(?:marcher|à pied)\s+(?:vs\.?|versus)\s+(?:conduire|voiture)"
+        r"|\bsi\s+(?:marcher|aller à pied)"
+        r"|\b(?:déterminer|décider|choisir)\s+(?:\w+\s+){0,4}(?:marcher|à pied))"
         r".{0,80}?\b(?:marcher|à pied|piéton)\b",
         re.IGNORECASE | re.DOTALL,
     ),
     "de": re.compile(
         r"(?:außer\s+(?:wenn|falls)|die\s+einzige\s+Ausnahme|alternativ|"
-        r"jedoch,?\s+wenn|nur\s+(?:wenn|falls))"
+        r"jedoch,?\s+wenn|nur\s+(?:wenn|falls)"
+        r"|\b(?:laufen|gehen)\s+oder\s+fahren"
+        r"|(?:laufen|gehen|zu Fuß)\s+(?:vs\.?|versus)\s+(?:fahren|auto)"
+        r"|\bob\s+(?:man\s+)?(?:laufen|gehen)"
+        r"|\b(?:entscheiden|bestimmen|wählen)\s+(?:\w+\s+){0,4}(?:laufen|gehen))"
         r".{0,80}?\b(?:laufen|zu Fuß|gehen)\b",
         re.IGNORECASE | re.DOTALL,
     ),
     "zh": re.compile(
-        r"(?:除非|例外|只有.*?(?:情况|时候)|如果)"
+        r"(?:除非|例外|只有.*?(?:情况|时候)|如果"
+        r"|走路还是开车|步行还是开车"
+        r"|(?:决定|选择|确定).*?(?:走路|步行))"
         r".{0,40}?(?:走路|步行|徒步)",
         re.DOTALL,
     ),
     "ua": re.compile(
         r"(?:за винятком|єдиний виняток|альтернативно|"
-        r"однак,?\s+якщо|тільки\s+(?:якщо|коли))"
+        r"однак,?\s+якщо|тільки\s+(?:якщо|коли)"
+        r"|\b(?:пішки|ходити)\s+чи\s+(?:їхати|поїхати)"
+        r"|\bчи\s+(?:йти пішки|ходити)"
+        r"|\b(?:визначити|вирішити|обрати)\s+(?:\w+\s+){0,4}(?:пішки|ходити))"
         r".{0,80}?\b(?:пішки|ходити|йти пішки)\b",
         re.IGNORECASE | re.DOTALL,
     ),
@@ -318,7 +372,13 @@ _WALK_CONDITIONAL = {
         # "walk for exercise" (non-primary motivation)
         r"|\b(?:walk|walking)\s+for\s+(?:exercise|fitness|health|fun)\b"
         # "walk instead" preceded by conditional context (caught via window)
-        r"|\b(?:walk|walking)\s+instead\b",
+        r"|\b(?:walk|walking)\s+instead\b"
+        # "drive or walk" — symmetric option listing
+        r"|\b(?:drive|driving)\s+or\s+(?:walk|walking)\b"
+        # "walk or drive" — walk-first option listing (symmetric counterpart)
+        r"|\b(?:walk|walking)\s+(?:or|vs\.?|versus)\s+(?:driv\w+)\b"
+        # "drive vs walk" — comparison (symmetric)
+        r"|\b(?:drive|driving)\s+(?:vs\.?|versus)\s+(?:walk|walking)\b",
         re.IGNORECASE,
     ),
     "es": re.compile(
@@ -327,7 +387,10 @@ _WALK_CONDITIONAL = {
         r"|\bsi\s+(?:prefieres?|quieres?|decides?)\b.{0,30}?\bcaminar\b"
         r"|\bpodría\s+caminar\b.{0,40}?\bpero\b"
         r"|\bcaminar\b.{0,30}?\bpero\s+(?:tú|eso|el|la|esto)\b"
-        r"|\bcaminar\s+en\s+(?:su\s+)?lugar\b",
+        r"|\bcaminar\s+en\s+(?:su\s+)?lugar\b"
+        r"|\b(?:conducir|manejar)\s+o\s+caminar\b"
+        r"|\b(?:caminar|a pie)\s+(?:o|vs\.?|versus)\s+(?:conducir|manejar)\b"
+        r"|\b(?:conducir|manejar)\s+(?:vs\.?|versus)\s+(?:caminar|a pie)\b",
         re.IGNORECASE,
     ),
     "fr": re.compile(
@@ -336,7 +399,10 @@ _WALK_CONDITIONAL = {
         r"|\bsi\s+(?:vous\s+)?(?:préférez|voulez|décidez)\b.{0,30}?\bmarcher\b"
         r"|\bpourrait\s+marcher\b.{0,40}?\bmais\b"
         r"|\bmarcher\b.{0,30}?\bmais\s+(?:vous|ça|il|elle|ce)\b"
-        r"|\bmarcher\s+(?:à la place|plutôt)\b",
+        r"|\bmarcher\s+(?:à la place|plutôt)\b"
+        r"|\b(?:conduire)\s+ou\s+marcher\b"
+        r"|\b(?:marcher|à pied)\s+(?:ou|vs\.?|versus)\s+(?:conduire|voiture)\b"
+        r"|\b(?:conduire)\s+(?:vs\.?|versus)\s+(?:marcher|à pied)\b",
         re.IGNORECASE,
     ),
     "de": re.compile(
@@ -345,14 +411,18 @@ _WALK_CONDITIONAL = {
         r"|\bwenn\s+(?:Sie|du)\s+(?:lieber|möchtest?|willst)\b.{0,30}?\b(?:laufen|gehen)\b"
         r"|\bkönnte\s+(?:laufen|gehen)\b.{0,40}?\baber\b"
         r"|\b(?:laufen|gehen)\b.{0,30}?\baber\s+(?:du|es|das|die|der)\b"
-        r"|\b(?:laufen|gehen)\s+stattdessen\b",
+        r"|\b(?:laufen|gehen)\s+stattdessen\b"
+        r"|\bfahren\s+oder\s+(?:laufen|gehen)\b"
+        r"|\b(?:laufen|gehen|zu Fuß)\s+(?:oder|vs\.?|versus)\s+(?:fahren|fahr\w+)\b"
+        r"|\b(?:fahren)\s+(?:vs\.?|versus)\s+(?:laufen|gehen|zu Fuß)\b",
         re.IGNORECASE,
     ),
     "zh": re.compile(
         r"只(?:能|有).*?(?:走路|步行)"
         r"|(?:走路|步行).*?(?:如果|只有|除非)"
         r"|如果.*?(?:愿意|想要|选择).*?(?:走路|步行)"
-        r"|可以走路.*?但",
+        r"|可以走路.*?但"
+        r"|开车还是走路|开车或走路",
     ),
     "ua": re.compile(
         r"\bтільки\s+(?:йти пішки|ходити)\b"
@@ -360,7 +430,8 @@ _WALK_CONDITIONAL = {
         r"|\bякщо\s+(?:ви\s+)?(?:хочете|бажаєте|вирішите)\b.{0,30}?\b(?:пішки|ходити)\b"
         r"|\bміг би\s+(?:піти пішки|ходити)\b.{0,40}?\bале\b"
         r"|\b(?:пішки|ходити)\b.{0,30}?\bале\s+(?:ви|це|той|та)\b"
-        r"|\b(?:піти пішки|ходити)\s+замість\b",
+        r"|\b(?:піти пішки|ходити)\s+замість\b"
+        r"|\b(?:їхати|поїхати)\s+чи\s+(?:йти пішки|ходити)\b",
         re.IGNORECASE,
     ),
 }
@@ -382,40 +453,47 @@ _WALK_NEGATIVE = {
         # "walkable but awkward" — not a walk recommendation
         r"|\bwalkable\s+but\b"
         # "walking back" — discussing return trip logistics, not recommending walk
-        r"|\b(?:walk|walking)\s+back\b",
+        r"|\b(?:walk|walking)\s+back\b"
+        # "walking is faster/cheaper/easier" — explanatory assertion, not recommendation
+        r"|\b(?:walk|walking)\s+(?:is|are|would\s+be|seems?)\s+(?:faster|quicker|cheaper|easier|simpler|shorter|more\s+\w+)\b",
         re.IGNORECASE,
     ),
     "es": re.compile(
         r"\bcaminar\s+(?:\w+\s+)?(?:no\s+(?:va|funcionará|sirve|puede))"
         r"|\bcaminar\s+(?:\w+\s+)?(?:complicaría|sería\s+\w+|dejaría)"
         r"|\bcaminar\s+(?:está|parece)\s+(?:bien|ok)\s*,?\s*pero"
-        r"|\bcaminar\s+(?:de\s+)?regreso\b",
+        r"|\bcaminar\s+(?:de\s+)?regreso\b"
+        r"|\bcaminar\s+(?:es|sería)\s+más\s+(?:rápido|barato|fácil|simple|corto)\b",
         re.IGNORECASE,
     ),
     "fr": re.compile(
         r"\bmarcher\s+(?:\w+\s+)?(?:ne\s+(?:va|fonctionnera|peut)\s+pas)"
         r"|\bmarcher\s+(?:\w+\s+)?(?:compliquerait|serait\s+\w+|laisserait)"
         r"|\bmarcher\s+(?:est|semble)\s+(?:bien|ok)\s*,?\s*mais"
-        r"|\bmarcher\s+(?:en\s+)?retour\b",
+        r"|\bmarcher\s+(?:en\s+)?retour\b"
+        r"|\bmarcher\s+(?:est|serait)\s+plus\s+(?:rapide|simple|court)\b",
         re.IGNORECASE,
     ),
     "de": re.compile(
         r"\b(?:laufen|gehen)\s+(?:\w+\s+)?(?:wird\s+nicht|würde\s+nicht|kann\s+nicht)"
         r"|\b(?:laufen|gehen)\s+(?:\w+\s+)?würde\s+(?:komplizieren|sein\s+\w+|bedeuten)"
         r"|\b(?:laufen|gehen)\s+(?:ist|scheint)\s+(?:ok|in Ordnung)\s*,?\s*aber"
-        r"|\bzurück\s*(?:laufen|gehen)\b",
+        r"|\bzurück\s*(?:laufen|gehen)\b"
+        r"|\b(?:laufen|gehen)\s+(?:ist|wäre)\s+(?:schneller|einfacher|billiger|kürzer)\b",
         re.IGNORECASE,
     ),
     "zh": re.compile(
         r"走路.*?(?:不行|不好|麻烦|不方便|不现实|没用)"
         r"|(?:走路|步行).*?但是"
-        r"|走回去",
+        r"|走回去"
+        r"|走路.*?(?:更快|更便宜|更简单|更短)",
     ),
     "ua": re.compile(
         r"\b(?:піти пішки|ходити)\s+(?:\w+\s+)?(?:не\s+(?:буде|може|вийде))"
         r"|\b(?:піти пішки|ходити)\s+(?:\w+\s+)?(?:ускладнить|буде\s+\w+|залишить)"
         r"|\b(?:пішки|ходити)\s+(?:це|здається)\s+(?:добре|нормально)\s*,?\s*але"
-        r"|\bйти\s+назад\b",
+        r"|\bйти\s+назад\b"
+        r"|\bпішки\s+(?:швидше|дешевше|простіше|коротше)\b",
         re.IGNORECASE,
     ),
 }
@@ -442,13 +520,91 @@ def _is_conditional_walk(text: str, walk_start: int, lang: str = "en") -> bool:
     return False
 
 
+# ---------------------------------------------------------------------------
+# Drive-side option-listing / comparison patterns
+# Lighter than walk filtering — only catches option-listing / comparison /
+# deliberation framing.  Does NOT filter semantic negation ("driving won't
+# help") because dismissive drive language is a genuine walk signal.
+# Uses standalone patterns (no trailing anchor) because the window already
+# limits proximity — avoids the double-mention issue of the _PRE_WALK style.
+# ---------------------------------------------------------------------------
+_DRIVE_LISTING = {
+    "en": re.compile(
+        # "drive or walk" / "drive vs walk" — option listing / comparison
+        r"\b(?:drive|driving)\s+(?:or|vs\.?|versus)\s+(?:walk|walking)\b"
+        # "walk or drive" — drive is second option in listing
+        r"|\b(?:walk|walking)\s+(?:or|vs\.?|versus)\s+(?:driv\w+)\b"
+        # "whether to drive" — deliberation framing
+        r"|\bwhether\s+to\s+(?:drive|driving)\b"
+        # "determine/decide/choose ... drive" — decision framing
+        r"|\b(?:determine|decide|choose)\s+(?:\w+\s+){0,4}(?:drive|driving)\b",
+        re.IGNORECASE,
+    ),
+    "es": re.compile(
+        r"\b(?:conducir|manejar)\s+(?:o|vs\.?|versus)\s+(?:caminar|a pie)\b"
+        r"|\b(?:caminar|a pie)\s+(?:o|vs\.?|versus)\s+(?:conducir|manejar)\b"
+        r"|\bsi\s+(?:conducir|manejar)\b"
+        r"|\b(?:determinar|decidir|elegir)\s+(?:\w+\s+){0,4}(?:conducir|manejar)\b",
+        re.IGNORECASE,
+    ),
+    "fr": re.compile(
+        r"\b(?:conduire)\s+(?:ou|vs\.?|versus)\s+(?:marcher|à pied)\b"
+        r"|\b(?:marcher|à pied)\s+(?:ou|vs\.?|versus)\s+(?:conduire|voiture)\b"
+        r"|\bsi\s+(?:conduire)\b"
+        r"|\b(?:déterminer|décider|choisir)\s+(?:\w+\s+){0,4}(?:conduire)\b",
+        re.IGNORECASE,
+    ),
+    "de": re.compile(
+        r"\b(?:fahren)\s+(?:oder|vs\.?|versus)\s+(?:laufen|gehen|zu Fuß)\b"
+        r"|\b(?:laufen|gehen|zu Fuß)\s+(?:oder|vs\.?|versus)\s+(?:fahren|auto)\b"
+        r"|\bob\s+(?:man\s+)?(?:fahren)\b"
+        r"|\b(?:entscheiden|bestimmen|wählen)\s+(?:\w+\s+){0,4}(?:fahren)\b",
+        re.IGNORECASE,
+    ),
+    "zh": re.compile(
+        r"开车还是走路|走路还是开车"
+        r"|(?:决定|选择|确定).*?(?:开车|驾车)",
+    ),
+    "ua": re.compile(
+        r"\b(?:їхати|поїхати)\s+(?:чи|або)\s+(?:пішки|ходити)\b"
+        r"|\b(?:пішки|ходити)\s+(?:чи|або)\s+(?:їхати|поїхати)\b"
+        r"|\bчи\s+(?:їхати|поїхати)\b"
+        r"|\b(?:визначити|вирішити|обрати)\s+(?:\w+\s+){0,4}(?:їхати|поїхати)\b",
+        re.IGNORECASE,
+    ),
+}
+
+
+def _is_conditional_drive(text: str, drive_start: int, lang: str = "en") -> bool:
+    """Return True if the drive mention at *drive_start* is inside option-listing/comparison language.
+
+    Uses positional matching: only returns True if drive_start falls within
+    the span of a listing pattern match (not merely near one). This avoids
+    false-filtering a genuine "drive" recommendation that happens to be
+    within 120 chars of an earlier option-listing phrase.
+    """
+    window_start = max(0, drive_start - 120)
+    window_end = min(len(text), drive_start + 80)
+    window = text[window_start:window_end]
+    offset = drive_start - window_start
+
+    for code in (["en"] if lang == "en" else ["en", lang]):
+        pat = _DRIVE_LISTING.get(code)
+        if pat:
+            for m in pat.finditer(window):
+                if m.start() <= offset < m.end():
+                    return True
+    return False
+
+
 def _score(text: str, lang: str = "en") -> Optional[str]:
     """Return 'drive', 'walk', or None based on keyword presence.
 
     When both keywords are present, the one whose **last** occurrence is later
     in the text wins (end-first principle: the model's final recommendation).
-    Conditional walk mentions (e.g. "only walk if ...") are excluded from the
-    tie-break so that a trailing disclaimer does not override a clear "drive".
+    Conditional walk mentions (e.g. "only walk if ...") and option-listing
+    drive mentions (e.g. "drive or walk", "drive vs walk") are excluded from
+    the tie-break so that framing text does not override the actual answer.
     """
     # Match case-insensitively on the raw text so keyword patterns with
     # capital letters (e.g. German "Auto") work without lowercasing tricks.
@@ -475,10 +631,18 @@ def _score(text: str, lang: str = "en") -> Optional[str]:
         return "walk"
     if has_drive and has_walk:
         # Both present — last occurrence wins (end-first principle)
-        drive_pos = max(
-            (m.start() for kw in drive_kws for m in re.finditer(kw, t, re.IGNORECASE)),
-            default=-1,
-        )
+        # Filter drive positions for option-listing/comparison context
+        all_drive_positions = [
+            m.start()
+            for kw in drive_kws
+            for m in re.finditer(kw, t, re.IGNORECASE)
+        ]
+        non_conditional_drive = [
+            pos for pos in all_drive_positions
+            if not _is_conditional_drive(t, pos, lang)
+        ]
+        drive_pos = max(non_conditional_drive, default=-1)
+
         # Collect all walk positions, filtering out conditional mentions
         all_walk_positions = [
             m.start()
@@ -490,6 +654,12 @@ def _score(text: str, lang: str = "en") -> Optional[str]:
             if not _is_conditional_walk(t, pos, lang)
         ]
         walk_pos = max(non_conditional, default=-1)
+
+        # If both filtered to -1 (all mentions are in listings/comparisons),
+        # no conclusive signal — let the caller try a different strategy
+        if drive_pos == -1 and walk_pos == -1:
+            return None
+
         return "drive" if drive_pos > walk_pos else "walk"
     return None
 
@@ -526,9 +696,11 @@ class CarwashParser(ResponseParser):
         # Promoted above Bold: "Recommendation: Drive" has 100% regex reliability
         # on the annotated data, whereas bolds fire on explanatory bullets like
         # "**Walking costs basically no fuel**" which mislead the scorer.
+        # Bold-aware: handles **Label**: text, **Label**: **text**, **Label: text**
+        # by allowing optional \*{0,2} around the label word and after the colon.
         label_alternation = _build_label_alternation(lang)
         label_match = re_search_last(
-            r"(?:" + label_alternation + r")\s*[:：]\s*([^\n.]{1,120})",
+            r"(?:" + label_alternation + r")(?:\s*\*{0,2})?\s*[:：]\s*(?:\*{0,2}\s*)?([^\n*.]{1,120})",
             text,
             re.IGNORECASE,
         )
@@ -537,6 +709,42 @@ class CarwashParser(ResponseParser):
             if result:
                 return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_line", confidence=0.9)
 
+        # --- Strategy 2a: Bold-label + bold-answer (no colon separator) ---
+        # Covers: **Final Recommendation** **Walk to the carwash**
+        #         **Answer:**\n**walk to the carwash**
+        # Label must start the bold content (modifier-restricted) to prevent
+        # false matches on bolds like **There's no definitive answer**.
+        # Optional colon before closing ** handles **Answer:** form.
+        _BOLD_LABEL_MODIFIERS = r"(?:(?:final|my|the|best|our)\s+)?"
+        bold_label_match = re_search_last(
+            r"\*\*" + _BOLD_LABEL_MODIFIERS
+            + r"(?:" + label_alternation + r")\s*[:：]?\s*\*\*"
+            + r"\s+"
+            + r"\*\*\s*([^*\n]{1,80})\s*\*\*",
+            text, re.IGNORECASE,
+        )
+        if bold_label_match:
+            result = _score(bold_label_match.group(1), lang)
+            if result:
+                return ParsedAnswer(value=result, raw_response=text, parse_strategy="bold_label", confidence=0.9)
+
+        # --- Strategy 2b: Label-newline-answer ---
+        # Handles label on one line, answer on the next:
+        #   ### **Recommendation**\n**Walk to the carwash**
+        #   **Best Option**:  \n**Walk**
+        #   **Answer:**  \nWalk to the carwash.
+        # Optional heading markers (###), optional colon, optional bold wrapping.
+        label_newline_match = re_search_last(
+            r"(?:#{1,4}\s+)?\*{0,2}\s*(?:" + label_alternation + r")"
+            + r"\s*\*{0,2}\s*[:：]?\s*\n"
+            + r"\s*\*{0,2}([^\n*.]{1,80})",
+            text, re.IGNORECASE,
+        )
+        if label_newline_match:
+            result = _score(label_newline_match.group(1), lang)
+            if result:
+                return ParsedAnswer(value=result, raw_response=text, parse_strategy="label_newline", confidence=0.88)
+
         # --- Strategy 3: Bold — score all bolds, filter contextually ---
         # Models bold their answer but also bold explanatory bullet points
         # (e.g. "**Walking back would be awkward**").  For walk-scoring bolds,
@@ -544,12 +752,22 @@ class CarwashParser(ResponseParser):
         # When remaining bolds agree, use the first.  When they conflict
         # (self-correction: "Consider **walking**. Actually no, **drive**.")
         # the last wins.
+        # Label-only bolds (e.g. **Recommendation**, **Answer**) are skipped —
+        # they are labels, not answer content.
+        _label_skip_re = re.compile(
+            r"^" + _BOLD_LABEL_MODIFIERS
+            + r"(?:" + label_alternation + r")\s*:?\s*$",
+            re.IGNORECASE,
+        )
         bolds = list(re.finditer(r"\*\*([^*]{1,50})\*\*", text))
         if bolds:
             text_lower = text.lower()
             bold_results = []  # (result, match) pairs
             for b in bolds:
-                r = _score(b.group(1), lang)
+                bold_text = b.group(1).strip()
+                if _label_skip_re.match(bold_text):
+                    continue  # skip label-only bolds
+                r = _score(bold_text, lang)
                 if r == "walk" and _is_conditional_walk(text_lower, b.start(), lang):
                     continue  # skip walk bolds in conditional/negative context
                 if r:

@@ -1,7 +1,7 @@
 import { useNavigate } from "react-router"
 import { type ColumnDef, type Table } from "@tanstack/react-table"
 import { toast } from "sonner"
-import { Ban, Eye, Loader2, PauseCircle, PlayCircle } from "lucide-react"
+import { Ban, Eye, Loader2, PauseCircle, PlayCircle, StopCircle } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -10,7 +10,7 @@ import { Progress } from "@/components/ui/progress"
 import { DataTable } from "@/components/data-table/data-table"
 import { DataTableFacetedFilter } from "@/components/data-table/data-table-faceted-filter"
 import { PageHeader } from "@/components/layout/page-header"
-import { useJobs, useCancelJob, usePauseJob, useResumeJob } from "@/hooks/use-jobs"
+import { useJobs, useCancelJob, usePauseJob, useResumeJob, useStopAndDumpJob } from "@/hooks/use-jobs"
 import { formatDuration, formatTimestamp, basename } from "@/lib/utils"
 import type { Job } from "@/types"
 
@@ -38,6 +38,7 @@ export default function JobsPage() {
   const cancelMut = useCancelJob()
   const pauseMut = usePauseJob()
   const resumeMut = useResumeJob()
+  const stopDumpMut = useStopAndDumpJob()
 
   const columns: ColumnDef<Job>[] = [
     {
@@ -79,6 +80,13 @@ export default function JobsPage() {
       header: "State",
       cell: ({ row }) => {
         const s = row.original.state
+        const jobId = row.original.id
+        if (pauseMut.isPending && pauseMut.variables === jobId)
+          return <Badge variant="outline" className="gap-1 border-amber-400 bg-amber-50 text-amber-700 dark:bg-amber-950 dark:text-amber-300"><Loader2 className="h-3 w-3 animate-spin" />Pausing</Badge>
+        if (stopDumpMut.isPending && stopDumpMut.variables === jobId)
+          return <Badge variant="outline" className="gap-1 border-blue-400 bg-blue-50 text-blue-700 dark:bg-blue-950 dark:text-blue-300"><Loader2 className="h-3 w-3 animate-spin" />Stopping</Badge>
+        if (resumeMut.isPending && resumeMut.variables === jobId)
+          return <Badge variant="outline" className="gap-1 border-green-400 bg-green-50 text-green-700 dark:bg-green-950 dark:text-green-300"><Loader2 className="h-3 w-3 animate-spin" />Resuming</Badge>
         const b = stateBadge[s] ?? stateBadge.pending
         return (
           <Badge variant={b.variant} className={`gap-1 ${b.className ?? ""}`}>
@@ -127,6 +135,19 @@ export default function JobsPage() {
       cell: ({ row }) => <span className="text-muted-foreground">{formatDuration(row.original.elapsed_seconds)}</span>,
     },
     {
+      id: "eta",
+      header: "ETA",
+      cell: ({ row }) => {
+        const { state, eta_seconds } = row.original
+        return (
+          <span className="block min-w-16 text-muted-foreground">
+            {state === "running" && eta_seconds != null ? formatDuration(eta_seconds) : "—"}
+          </span>
+        )
+      },
+      enableSorting: false,
+    },
+    {
       id: "actions",
       enableHiding: false,
       enableSorting: false,
@@ -150,6 +171,25 @@ export default function JobsPage() {
                   <Loader2 className="h-3.5 w-3.5 animate-spin" />
                 ) : (
                   <PauseCircle className="h-3.5 w-3.5" />
+                )}
+              </Button>
+            )}
+            {(job.state === "running" || job.state === "paused") && !job.model_name.startsWith("judge:") && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-7 px-2 text-blue-600 hover:text-blue-700"
+                onClick={() => stopDumpMut.mutate(job.id, {
+                  onSuccess: () => toast.success(`Stopping and saving results for ${job.model_name}…`),
+                  onError: (err) => toast.error(`Stop failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                })}
+                disabled={stopDumpMut.isPending && stopDumpMut.variables === job.id}
+                title="Stop and save results"
+              >
+                {stopDumpMut.isPending && stopDumpMut.variables === job.id ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <StopCircle className="h-3.5 w-3.5" />
                 )}
               </Button>
             )}

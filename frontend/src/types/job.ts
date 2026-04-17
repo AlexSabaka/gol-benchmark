@@ -14,6 +14,7 @@ export interface Job {
   error?: string
   created_at: number
   elapsed_seconds?: number
+  eta_seconds?: number | null
   paused_at_index?: number | null
   partial_result_path?: string | null
 }

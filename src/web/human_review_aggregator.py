@@ -91,15 +91,38 @@ _PREFIX_STOP_WORDS: set[str] = {
 
 _RESPONSE_CLASSES = (
     "hedge",
+    "truncated",
     "gibberish",
     "refusal",
     "language_error",
+    "verbose",
+    "false_positive",
+    # Legacy — kept for backwards compat with old sidecars/reports.
     "verbose_correct",
     "parser_ok",
     "parser_false_positive",
 )
 
-_NON_RESOLVABLE_CLASSES = {"hedge", "gibberish", "refusal", "language_error"}
+# v3 rename map — applied when reading annotations.
+_CLASS_RENAME: dict[str, str] = {
+    "verbose_correct": "verbose",
+    "parser_false_positive": "false_positive",
+}
+
+_NON_RESOLVABLE_CLASSES = {"hedge", "truncated", "gibberish", "refusal", "language_error"}
+
+
+def _get_response_classes(ann: dict) -> list[str]:
+    """Read response classes from annotation dict, supporting both old
+    (``response_class: str``) and new (``response_classes: list``) schema.
+    Applies renames and drops ``parser_ok``."""
+    rcs = ann.get("response_classes")
+    if rcs is None:
+        rc = ann.get("response_class")
+        rcs = [rc] if rc else []
+    elif isinstance(rcs, str):
+        rcs = [rcs] if rcs else []
+    return [_CLASS_RENAME.get(c, c) for c in rcs if c != "parser_ok"]
 
 _PARSER_MATCH_TYPES = ("correct", "parse_error", "mismatch", "localized_match", "unknown")
 
@@ -134,7 +157,7 @@ def _answer_label_re(language: str) -> re.Pattern:
     return compiled
 
 
-REPORT_FORMAT_VERSION = "2.5"
+REPORT_FORMAT_VERSION = "2.6"
 
 
 # ---------------------------------------------------------------------------
@@ -396,12 +419,13 @@ def _iter_enriched_cases(
 
 def _verdict_of(case: Dict[str, Any]) -> str:
     """Single-string verdict label used by breakdowns. Falls back to a
-    descriptive sentinel for cases with spans but no class, etc."""
+    descriptive sentinel for cases with spans but no class, etc.
+    When multiple classes are set, returns the first one (most specific)."""
     ann = case.get("annotation") or {}
-    rc = ann.get("response_class")
+    rcs = _get_response_classes(ann)
     spans = ann.get("spans") or []
-    if rc:
-        return rc
+    if rcs:
+        return rcs[0]
     if spans:
         return "_with_spans"
     return "_no_class"
@@ -419,7 +443,6 @@ def _session_summary(
     total = 0
     annotated_meta = 0
     skipped = 0
-    parser_was_correct = 0  # annotator endorsed parser (parser_ok)
     parser_false_positive = 0  # annotator flagged parser as wrong
     parser_missed_extractable = 0  # spans present, parser missed
     true_unparseable = 0  # hedge/gibberish/refusal/language_error
@@ -437,26 +460,30 @@ def _session_summary(
         annotated_meta += int(meta.get("annotated_count") or 0)
         skipped += int(meta.get("skipped_count") or 0)
 
+    parser_was_correct = 0
     for _, case in _iter_enriched_cases(annotation_files, result_idx):
         total += 1
         ann = case.get("annotation") or {}
-        rc = ann.get("response_class")
+        rcs = _get_response_classes(ann)
         spans = ann.get("spans") or []
-        if rc == "parser_false_positive":
+        pe = case.get("parser_extracted")
+        if "false_positive" in rcs:
             parser_false_positive += 1
-        elif rc == "parser_ok":
-            parser_was_correct += 1
         elif spans:
-            parser_missed_extractable += 1
-            pe = case.get("parser_extracted")
-            pe_norm = _normalize_answer_text(pe)
-            if not pe_norm:
-                missed_no_parser_output += 1
-            elif any(_is_aligned(pe, (s.get("text") or "")) for s in spans):
-                missed_aligned += 1
+            # Auto-infer parser_ok: if parser_extracted aligns with any span,
+            # count as parser-correct (replaces the manual parser_ok class).
+            if pe and any(_is_aligned(pe, (s.get("text") or "")) for s in spans):
+                parser_was_correct += 1
             else:
-                missed_misaligned += 1
-        elif rc in _NON_RESOLVABLE_CLASSES:
+                parser_missed_extractable += 1
+                pe_norm = _normalize_answer_text(pe)
+                if not pe_norm:
+                    missed_no_parser_output += 1
+                elif any(_is_aligned(pe, (s.get("text") or "")) for s in spans):
+                    missed_aligned += 1
+                else:
+                    missed_misaligned += 1
+        elif any(c in _NON_RESOLVABLE_CLASSES for c in rcs):
             true_unparseable += 1
 
     annotated = annotated_meta if annotated_meta > 0 else total
@@ -580,18 +607,21 @@ def _axis_breakdown(
         if not isinstance(key, str):
             key = str(key)
         ann = case.get("annotation") or {}
-        rc = ann.get("response_class")
+        rcs = _get_response_classes(ann)
         spans = ann.get("spans") or []
+        pe = case.get("parser_extracted")
         totals[key] += 1
-        if rc == "parser_false_positive":
+        if "false_positive" in rcs:
             buckets[key]["parser_false_positive"] += 1
-        elif rc == "parser_ok":
-            buckets[key]["parser_was_correct"] += 1
         elif spans:
-            buckets[key]["parser_missed_extractable"] += 1
-        elif rc in _NON_RESOLVABLE_CLASSES:
+            # Auto-infer parser_ok from span-parser alignment
+            if pe and any(_is_aligned(pe, (s.get("text") or "")) for s in spans):
+                buckets[key]["parser_was_correct"] += 1
+            else:
+                buckets[key]["parser_missed_extractable"] += 1
+        elif any(c in _NON_RESOLVABLE_CLASSES for c in rcs):
             buckets[key]["true_unparseable"] += 1
-        elif rc == "verbose_correct":
+        elif "verbose" in rcs:
             buckets[key]["verbose_correct"] += 1
 
     out: Dict[str, Dict[str, Any]] = {}
@@ -624,14 +654,12 @@ def _strategy_breakdown(
         if not isinstance(strategy, str):
             strategy = str(strategy)
         ann = case.get("annotation") or {}
-        rc = ann.get("response_class")
+        rcs = _get_response_classes(ann)
         spans = ann.get("spans") or []
         buckets[strategy]["total_fired"] += 1
-        if rc == "parser_false_positive":
+        if "false_positive" in rcs:
             buckets[strategy]["parser_false_positive"] += 1
-        elif rc == "parser_ok":
-            buckets[strategy]["parser_ok"] += 1
-        elif spans and rc != "parser_false_positive":
+        elif spans and "false_positive" not in rcs:
             buckets[strategy]["recoverable_miss"] += 1
 
     out: Dict[str, Dict[str, Any]] = {}
@@ -686,8 +714,8 @@ def _answer_when_missed(
         if expected:
             by_expected[expected] += 1
 
-        rc = ann.get("response_class")
-        if rc == "parser_false_positive":
+        rcs = _get_response_classes(ann)
+        if "false_positive" in rcs:
             extracted = _normalize_answer(case.get("parser_extracted"))
             if extracted and expected and extracted != expected:
                 by_distractor[extracted] += 1
@@ -1641,17 +1669,18 @@ def _response_class_counts(
     (count of cases that carry spans) is preserved since it's the only
     number not otherwise present in `summary`.
     """
-    counts: Dict[str, int] = {cls: 0 for cls in _RESPONSE_CLASSES}
+    counts: Dict[str, int] = {}
     parser_missed = 0
     for _, case in _iter_enriched_cases(annotation_files, result_idx):
         ann = case.get("annotation") or {}
-        rc = ann.get("response_class")
+        rcs = _get_response_classes(ann)
         spans = ann.get("spans") or []
-        if rc in counts:
-            counts[rc] += 1
+        for cls in rcs:
+            counts[cls] = counts.get(cls, 0) + 1
         if spans:
             parser_missed += 1
-    counts["parser_missed"] = parser_missed
+    if parser_missed:
+        counts["parser_missed"] = parser_missed
     return {k: v for k, v in counts.items() if v > 0}
 
 
@@ -1764,6 +1793,148 @@ def _collect_notes(
 
 
 # ---------------------------------------------------------------------------
+# v2.6 — new mark-type aggregation (context_anchors, answer_keywords,
+# negative_spans, negative_keywords)
+# ---------------------------------------------------------------------------
+
+
+def _collect_negative_records(
+    annotation_files: List[Dict[str, Any]],
+    result_idx: Dict[Tuple[str, str], Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Flatten all negative_spans + negative_keywords into a list of records.
+
+    Each record carries the mark text, surrounding context, and a pointer back
+    to the annotated correct span (if any) so the agent can see what the parser
+    should have extracted instead.
+    """
+    out: List[Dict[str, Any]] = []
+    for _, case in _iter_enriched_cases(annotation_files, result_idx):
+        ann = case.get("annotation") or {}
+        case_id = case.get("case_id", "")
+        language = case.get("language") or "en"
+        parse_strategy = case.get("parse_strategy") or "unknown"
+        # First answer span text (what the annotator said was the right answer)
+        spans = ann.get("spans") or []
+        correct_span = (spans[0].get("text") or "").strip() if spans else ""
+        # Context windows for back-filling before/after text
+        windows = case.get("context_windows") or []
+        win_by_start = {w.get("char_start"): w for w in windows}
+        for mark_type in ("negative_spans", "negative_keywords"):
+            for mark in (ann.get(mark_type) or []):
+                text = (mark.get("text") or "").strip()
+                if not text:
+                    continue
+                char_start = int(mark.get("char_start") or 0)
+                char_end = int(mark.get("char_end") or 0)
+                # Try to get context from context_windows (same char_start),
+                # fall back to empty strings (context not stored for negative marks yet)
+                cw = win_by_start.get(char_start) or {}
+                out.append({
+                    "mark_type": "negative_keyword" if mark_type == "negative_keywords" else "negative_span",
+                    "text": text,
+                    "char_start": char_start,
+                    "char_end": char_end,
+                    "before": cw.get("before", ""),
+                    "after": cw.get("after", ""),
+                    "case_id": case_id,
+                    "language": language,
+                    "parse_strategy": parse_strategy,
+                    "correct_span": correct_span,
+                })
+    return out
+
+
+def _negative_span_analysis(negative_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Group negative records by normalized text, return a list of group dicts."""
+    from collections import defaultdict
+
+    groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
+    for rec in negative_records:
+        key = _normalize_answer_text(rec["text"]) or rec["text"].lower()
+        groups[key].append(rec)
+
+    out: List[Dict[str, Any]] = []
+    for norm_text, records in sorted(groups.items(), key=lambda x: -len(x[1])):
+        rep_text = records[0]["text"]  # representative raw text
+        # Determine dominant mark_type for this group
+        kw_count = sum(1 for r in records if r["mark_type"] == "negative_keyword")
+        mark_type = "negative_keyword" if kw_count > len(records) / 2 else "negative_span"
+        out.append({
+            "text": rep_text,
+            "normalized_text": norm_text,
+            "count": len(records),
+            "mark_type": mark_type,
+            "example_negatives": [
+                {
+                    "text": r["text"],
+                    "before": r["before"],
+                    "after": r["after"],
+                    "case_id": r["case_id"],
+                    "language": r["language"],
+                    "correct_span": r["correct_span"],
+                    "parse_strategy": r["parse_strategy"],
+                }
+                for r in records[:5]
+            ],
+        })
+    return out
+
+
+def _answer_keyword_distribution(
+    annotation_files: List[Dict[str, Any]],
+    result_idx: Dict[Tuple[str, str], Dict[str, Any]],
+) -> Dict[str, int]:
+    """Return frequency distribution of manually-tagged answer keywords.
+
+    Only populated when at least one annotation has `answer_keywords`. When
+    present, this is higher-confidence signal than the auto-inferred
+    `model_answer_distribution` (which is derived from span text).
+    """
+    counts: Dict[str, int] = {}
+    for _, case in _iter_enriched_cases(annotation_files, result_idx):
+        ann = case.get("annotation") or {}
+        for kw in (ann.get("answer_keywords") or []):
+            text = (kw.get("text") or "").strip()
+            if not text:
+                continue
+            norm = _normalize_answer_text(text) or text.lower()
+            counts[norm] = counts.get(norm, 0) + 1
+    return counts
+
+
+def _context_anchor_groups(
+    annotation_files: List[Dict[str, Any]],
+    result_idx: Dict[Tuple[str, str], Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    """Group manually-marked context anchors by normalized text."""
+    from collections import defaultdict
+
+    # Map norm → (representative_text, [case_ids])
+    groups: Dict[str, tuple] = {}
+    for _, case in _iter_enriched_cases(annotation_files, result_idx):
+        ann = case.get("annotation") or {}
+        case_id = case.get("case_id", "")
+        for anchor in (ann.get("context_anchors") or []):
+            text = (anchor.get("text") or "").strip()
+            if not text:
+                continue
+            norm = text.lower().strip("*_: ")
+            if norm not in groups:
+                groups[norm] = (text, [])
+            groups[norm][1].append(case_id)
+
+    return [
+        {
+            "text": rep_text,
+            "count": len(case_ids),
+            "example_cases": list(dict.fromkeys(case_ids))[:3],
+        }
+        for rep_text, case_ids in sorted(groups.values(), key=lambda v: -len(v[1]))
+    ]
+
+
+# ---------------------------------------------------------------------------
 # Public entrypoint
 # ---------------------------------------------------------------------------
 
@@ -1867,6 +2038,21 @@ def build_report(
         report["ordering_hints"] = ordering_hints
     if annotator_notes:
         report["annotator_notes"] = annotator_notes
+
+    # v2.6 — new mark-type aggregations (omit-when-empty)
+    neg_records = _collect_negative_records(annotation_files, result_idx)
+    if neg_records:
+        negative_span_groups = _negative_span_analysis(neg_records)
+        if negative_span_groups:
+            report["negative_span_groups"] = negative_span_groups
+
+    manual_kw_dist = _answer_keyword_distribution(annotation_files, result_idx)
+    if manual_kw_dist:
+        report["manual_keyword_distribution"] = manual_kw_dist
+
+    anchor_groups = _context_anchor_groups(annotation_files, result_idx)
+    if anchor_groups:
+        report["context_anchor_groups"] = anchor_groups
 
     # Single-bucket axis breakdowns get omitted from the output; data_quality
     # warnings explain why. Keeps the JSON signal-dense.
