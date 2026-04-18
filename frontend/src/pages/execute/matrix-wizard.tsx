@@ -34,23 +34,15 @@ import {
 } from "@/components/model-selection"
 import { useRunMatrixExecution } from "@/hooks/use-matrix"
 import { usePlugins, usePluginSchema } from "@/hooks/use-plugins"
+import { useMetadata } from "@/hooks/use-metadata"
 import { loadCredentials } from "@/lib/credential-store"
 import { favoriteKey, getFavorites, toggleFavorite } from "@/lib/favorite-models"
 import { useLocalStorageState } from "@/lib/local-storage"
+import { LANGUAGE_META } from "@/lib/constants"
 import type { ConfigField, MatrixFieldAxis, MatrixModelGroup, MatrixRunRequest } from "@/types"
 
 // ── Constants ──────────────────────────────────────────────────────────────────
 
-const USER_STYLES = ["minimal", "casual", "linguistic", "examples", "rules_math"]
-const SYSTEM_STYLES = ["analytical", "casual", "adversarial", "none"]
-const LANGUAGES: { code: string; flag: string; label: string }[] = [
-  { code: "en", flag: "🇬🇧", label: "English" },
-  { code: "es", flag: "🇪🇸", label: "Español" },
-  { code: "fr", flag: "🇫🇷", label: "Français" },
-  { code: "de", flag: "🇩🇪", label: "Deutsch" },
-  { code: "zh", flag: "🇨🇳", label: "中文" },
-  { code: "ua", flag: "🇺🇦", label: "Українська" },
-]
 const SUPPORTED_AXIS_TYPES = new Set(["number", "select", "boolean", "multi-select"])
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -159,7 +151,16 @@ let endpointCounter = 1
 export default function MatrixExecutionPage() {
   const navigate = useNavigate()
   const { data: plugins } = usePlugins()
+  const { data: meta } = useMetadata()
   const runMutation = useRunMatrixExecution()
+
+  const userStylesList = meta?.user_styles ?? []
+  const systemStylesList = meta?.system_styles ?? []
+  const languagesList = (meta?.languages ?? []).map((code) => ({
+    code,
+    flag: LANGUAGE_META[code]?.flag ?? code,
+    label: LANGUAGE_META[code]?.label ?? code,
+  }))
 
   // Wizard step
   const [activeStep, setActiveStep] = useLocalStorageState<MatrixStepId>(
@@ -546,7 +547,7 @@ export default function MatrixExecutionPage() {
       />
 
       {/* Step navigation */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-5">
+      <div className="flex items-stretch divide-x overflow-hidden rounded-lg border bg-card">
         {MATRIX_STEPS.map((step, i) => (
           <StepButton
             key={step.id}
@@ -664,7 +665,7 @@ export default function MatrixExecutionPage() {
                 <div className="space-y-2">
                   <Label className="text-xs">User Styles</Label>
                   <div className="space-y-1.5">
-                    {USER_STYLES.map((style) => (
+                    {userStylesList.map((style) => (
                       <label key={style} className="flex cursor-pointer items-center gap-2 text-xs">
                         <Checkbox
                           checked={userStyles.has(style)}
@@ -678,7 +679,7 @@ export default function MatrixExecutionPage() {
                 <div className="space-y-2">
                   <Label className="text-xs">System Styles</Label>
                   <div className="space-y-1.5">
-                    {SYSTEM_STYLES.map((style) => (
+                    {systemStylesList.map((style) => (
                       <label key={style} className="flex cursor-pointer items-center gap-2 text-xs">
                         <Checkbox
                           checked={systemStyles.has(style)}
@@ -700,7 +701,7 @@ export default function MatrixExecutionPage() {
                 <div className="space-y-2">
                   <Label className="text-xs">Languages</Label>
                   <div className="space-y-1.5">
-                    {LANGUAGES.map((language) => (
+                    {languagesList.map((language) => (
                       <label key={language.code} className="flex cursor-pointer items-center gap-2 text-xs">
                         <Checkbox
                           checked={languages.has(language.code)}
@@ -1220,7 +1221,7 @@ export default function MatrixExecutionPage() {
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Languages</p>
                   <p className="text-sm">
                     {Array.from(languages)
-                      .map((code) => LANGUAGES.find((l) => l.code === code)?.flag ?? code)
+                      .map((code) => LANGUAGE_META[code]?.flag ?? code)
                       .join(" ")}
                   </p>
                 </div>

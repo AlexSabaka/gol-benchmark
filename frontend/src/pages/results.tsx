@@ -4,10 +4,15 @@ import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
 import {
   BarChart3,
+  Check,
+  ChevronDown,
   Eraser,
   Eye,
   FileBarChart,
   FileText,
+  LayersIcon,
+  LayoutGrid,
+  LayoutList,
   LineChart,
   Loader2,
   MoreHorizontal,
@@ -19,7 +24,7 @@ import {
   Trash2,
 } from "lucide-react"
 
-import { DataTable } from "@/components/data-table/data-table"
+import { DataTable, DataTableColumnSelector, type Table } from "@/components/data-table/data-table"
 import { GroupedGridSection } from "@/components/grouped-grid-section"
 import { JudgeSetupSheet } from "@/components/judge-setup-sheet"
 import { ImprovementReportDialog } from "@/components/review/improvement-report-dialog"
@@ -44,6 +49,7 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
@@ -62,7 +68,7 @@ import { useDeleteAnnotations } from "@/hooks/use-review"
 import { useTestsets } from "@/hooks/use-testsets"
 import { langFlags } from "@/lib/language-flags"
 import { makeStorageKey, useLocalStorageState } from "@/lib/local-storage"
-import { formatDate, formatDuration, formatPercent } from "@/lib/utils"
+import { cn, formatDate, formatDuration, formatPercent } from "@/lib/utils"
 import type { ModelAnalysis, ResultEntry, ResultSummary, TestsetSummary } from "@/types"
 
 type ViewMode = "table" | "cards"
@@ -222,6 +228,7 @@ export default function ResultsPage() {
   const { data: detail } = useResult(detailTarget)
   const [storedViewMode, setStoredViewMode] = useLocalStorageState<ViewMode>(makeStorageKey(storageScope, "view-mode"), "table")
   const [groupBy, setGroupBy] = useLocalStorageState<GroupMode>(makeStorageKey(storageScope, "group-by"), "none")
+  const [tableInstance, setTableInstance] = useState<Table<ResultSummary> | null>(null)
   const [rerunTarget, setRerunTarget] = useState<string | null>(null)
   const [deleteConfirm, setDeleteConfirm] = useState(false)
   const [judgeOpen, setJudgeOpen] = useState(false)
@@ -299,6 +306,15 @@ export default function ResultsPage() {
   const allFilteredSelected = filteredFilenames.length > 0 && filteredFilenames.every((filename) => selected.has(filename))
   const someFilteredSelected = filteredFilenames.some((filename) => selected.has(filename)) && !allFilteredSelected
   const showFlatOrGroupedTable = viewMode === "table" || groupBy === "none"
+
+  const GROUP_BY_LABEL: Record<GroupMode, string> = {
+    none: "Group",
+    run: "Run",
+    matrix_batch: "Matrix Batch",
+    testset: "Test Set",
+    model: "Model",
+    task_type: "Task",
+  }
 
   const buildDisplayGroups = useCallback((rows: ResultSummary[]) => {
     return buildGroups(rows, groupBy).map((group) => {
@@ -625,118 +641,115 @@ export default function ResultsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Results"
-        description="Browse benchmark results, compare models and generate reports"
-        actions={
-          <div className="flex items-center gap-1">
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={handleReanalyze} disabled={selected.size === 0 || reanalyzeMutation.isPending}>
-                  {reanalyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
-                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Reanalyze</TooltipContent>
-            </Tooltip>
+      <div className="sticky top-0 z-10 space-y-2 bg-background pb-2">
+        <PageHeader
+          className="mb-2"
+          title="Results"
+          actions={
+            <div className="flex items-center gap-0.5">
+              {/* Utility group: analysis actions */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleReanalyze} disabled={selected.size === 0 || reanalyzeMutation.isPending}>
+                    {reanalyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <RefreshCw className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Reanalyze selected</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={handleAnalyze} disabled={selected.size === 0 || analyzeMutation.isPending}>
+                    {analyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Analyze selected</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => nav(`/charts?files=${Array.from(selected).join(",")}`)} disabled={selected.size === 0}>
+                    <LineChart className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>View charts</TooltipContent>
+              </Tooltip>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={handleAnalyze} disabled={selected.size === 0 || analyzeMutation.isPending}>
-                  {analyzeMutation.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <BarChart3 className="h-4 w-4" />}
-                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Analyze</TooltipContent>
-            </Tooltip>
+              <Separator orientation="vertical" className="mx-1 h-5" />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => nav(`/charts?files=${Array.from(selected).join(",")}`)} disabled={selected.size === 0}>
-                  <LineChart className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Charts</TooltipContent>
-            </Tooltip>
+              {/* Editorial group: annotation actions */}
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
+                    <Scale className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>LLM Judge</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8" onClick={() => nav(`/review?files=${Array.from(selected).join(",")}`)} disabled={!reviewEnabled}>
+                    <PenLine className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Review manually — {reviewTooltip}</TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button variant="ghost" size="icon" className="relative h-8 w-8" onClick={() => setReportOpen(true)} disabled={!reportEnabled}>
+                    <FileBarChart className="h-4 w-4" />
+                    {annotatedFiles.length > 0 && (
+                      <span className="absolute -right-0.5 -top-0.5 flex h-3.5 min-w-3.5 items-center justify-center rounded-full bg-primary px-0.5 text-[9px] text-primary-foreground">
+                        {annotatedFiles.length}
+                      </span>
+                    )}
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>Improvement report — {reportTooltip}</TooltipContent>
+              </Tooltip>
 
-            <Separator orientation="vertical" className="mx-1 h-6" />
+              <Separator orientation="vertical" className="mx-1 h-5" />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="outline" size="icon" className="relative h-8 w-8" onClick={() => setJudgeOpen(true)} disabled={selected.size === 0}>
-                  <Scale className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>LLM Judge</TooltipContent>
-            </Tooltip>
+              {/* Overflow: destructive actions */}
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button variant="ghost" size="icon" className="h-8 w-8">
+                    <MoreHorizontal className="h-4 w-4" />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end">
+                  <DropdownMenuItem
+                    className="text-destructive focus:text-destructive"
+                    disabled={selected.size === 0}
+                    onClick={() => setDeleteConfirm(true)}
+                  >
+                    <Trash2 className="mr-2 h-4 w-4" />
+                    Delete {selected.size > 0 ? `${selected.size} selected` : "selected"}
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="relative h-8 w-8"
-                  onClick={() => nav(`/review?files=${Array.from(selected).join(",")}`)}
-                  disabled={!reviewEnabled}
-                >
-                  <PenLine className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Review manually — {reviewTooltip}</TooltipContent>
-            </Tooltip>
+              <Separator orientation="vertical" className="mx-1 h-5" />
 
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button
-                  variant="outline"
-                  size="icon"
-                  className="relative h-8 w-8"
-                  onClick={() => setReportOpen(true)}
-                  disabled={!reportEnabled}
-                >
-                  <FileBarChart className="h-4 w-4" />
-                  {annotatedFiles.length > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{annotatedFiles.length}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Improvement report — {reportTooltip}</TooltipContent>
-            </Tooltip>
+              <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
+                {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
+                Generate Report
+              </Button>
+            </div>
+          }
+        />
 
-            <Separator orientation="vertical" className="mx-1 h-6" />
-
-            <Tooltip>
-              <TooltipTrigger asChild>
-                <Button variant="destructive" size="icon" className="relative h-8 w-8" onClick={() => setDeleteConfirm(true)} disabled={selected.size === 0}>
-                  <Trash2 className="h-4 w-4" />
-                  {selected.size > 0 && <span className="absolute -right-1 -top-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-primary px-0.5 text-[10px] text-primary-foreground">{selected.size}</span>}
-                </Button>
-              </TooltipTrigger>
-              <TooltipContent>Delete</TooltipContent>
-            </Tooltip>
-
-            <Separator orientation="vertical" className="mx-1 h-6" />
-
-            <Button onClick={handleGenerateReport} disabled={selected.size === 0 || reportMutation.isPending}>
-              {reportMutation.isPending ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <FileText className="mr-2 h-4 w-4" />}
-              Generate Report
-            </Button>
-          </div>
-        }
-      />
-
-      <div className="space-y-3 rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-60 flex-1 sm:max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
+          {/* Search */}
+          <div className="relative min-w-40 max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search results..."
-              className="pl-8"
+              className="h-8 pl-7 text-sm"
             />
           </div>
+
+          {/* Filter chips */}
           {modelOptions.length > 1 && (
             <PageFacetFilter title="Model" options={modelOptions} selectedValues={modelFilter} onChange={setModelFilter} />
           )}
@@ -752,59 +765,103 @@ export default function ResultsPage() {
           {systemStyleOptions.length > 1 && (
             <PageFacetFilter title="Sys Style" options={systemStyleOptions} selectedValues={systemStyleFilter} onChange={setSystemStyleFilter} />
           )}
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">Format</span>
-          {([
-            ["table", "Table"],
-            ["cards", "Cards"],
-          ] as const).map(([value, label]) => (
+          {/* Right-side view controls */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            {/* Counter + selection state */}
+            <span className="whitespace-nowrap text-xs tabular-nums text-muted-foreground">
+              {filteredResults.length} results
+              {selected.size > 0 && (
+                <> · <span className="font-medium text-foreground">{selected.size} selected</span></>
+              )}
+            </span>
             <Button
-              key={value}
-              variant={viewMode === value ? "secondary" : "outline"}
+              variant="ghost"
               size="sm"
-              className="h-8 text-xs"
-              onClick={() => setStoredViewMode(value)}
-              disabled={value === "cards" && groupBy === "none"}
-              title={value === "cards" && groupBy === "none" ? "Choose a grouping to enable cards" : undefined}
+              className="h-6 px-1.5 text-xs"
+              onClick={handleSelectAll}
+              disabled={filteredFilenames.length === 0}
             >
-              {label}
+              Select all
             </Button>
-          ))}
-          <Separator orientation="vertical" className="h-6" />
-          <span className="text-xs text-muted-foreground">Group By</span>
-          {([
-            ["none", "None"],
-            ["run", "Run"],
-            ["matrix_batch", "Matrix Batch"],
-            ["testset", "Test Set"],
-            ["model", "Model"],
-            ["task_type", "Task"],
-          ] as const).map(([value, label]) => (
-            <Button
-              key={value}
-              variant={groupBy === value ? "secondary" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => {
-                if (value === "none" && viewMode === "cards") {
-                  setStoredViewMode("table")
-                }
-                setGroupBy(value)
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-          <Badge variant="secondary">{filteredResults.length} visible</Badge>
-          <Badge variant="secondary">{selected.size} selected</Badge>
-          <Button variant="outline" size="sm" className="ml-auto h-8 text-xs" onClick={handleSelectAll} disabled={filteredFilenames.length === 0}>
-            Select Visible
-          </Button>
-          <Button variant="ghost" size="sm" className="h-8 text-xs" onClick={() => setSelected(new Set())} disabled={selected.size === 0}>
-            Clear Selection
-          </Button>
+            {selected.size > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-xs text-muted-foreground"
+                onClick={() => setSelected(new Set())}
+              >
+                Clear
+              </Button>
+            )}
+
+            <Separator orientation="vertical" className="h-5" />
+
+            {/* Format toggle */}
+            <div className="flex items-center rounded-md border p-0.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-6 w-6 p-0", viewMode === "table" && "bg-background shadow-sm")}
+                onClick={() => setStoredViewMode("table")}
+                title="Table view"
+              >
+                <LayoutList className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-6 w-6 p-0", viewMode === "cards" && "bg-background shadow-sm")}
+                onClick={() => setStoredViewMode("cards")}
+                disabled={groupBy === "none"}
+                title={groupBy === "none" ? "Choose a grouping to enable cards" : "Card view"}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {/* Group By dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                  <LayersIcon className="h-3.5 w-3.5" />
+                  {GROUP_BY_LABEL[groupBy]}
+                  <ChevronDown className="h-3 w-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Group by</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {([
+                  ["none", "No grouping"],
+                  ["run", "Run"],
+                  ["matrix_batch", "Matrix Batch"],
+                  ["testset", "Test Set"],
+                  ["model", "Model"],
+                  ["task_type", "Task"],
+                ] as const).map(([value, label]) => (
+                  <DropdownMenuItem
+                    key={value}
+                    onClick={() => {
+                      if (value === "none" && viewMode === "cards") setStoredViewMode("table")
+                      setGroupBy(value)
+                    }}
+                    className="gap-2"
+                  >
+                    {groupBy === value
+                      ? <Check className="h-3.5 w-3.5 text-primary" />
+                      : <span className="h-3.5 w-3.5" />}
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Column selector */}
+            {tableInstance && showFlatOrGroupedTable && (
+              <DataTableColumnSelector table={tableInstance} />
+            )}
+          </div>
         </div>
       </div>
 
@@ -816,6 +873,8 @@ export default function ResultsPage() {
           grouping={groupBy === "none" ? undefined : { buildGroups: buildDisplayGroups }}
           persistKey="results-table"
           getRowId={(row) => row.filename}
+          onTableReady={setTableInstance}
+          hideColumnSelector
         />
       ) : groups.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">

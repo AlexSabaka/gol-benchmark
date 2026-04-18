@@ -153,66 +153,88 @@ export default function JobsPage() {
       enableSorting: false,
       cell: ({ row }) => {
         const job = row.original
+        const isJudge = job.model_name.startsWith("judge:")
+        const isActiveInference = !isJudge && (job.state === "running" || job.state === "paused")
         return (
           <div className="flex items-center gap-1">
-            {job.state === "running" && !job.model_name.startsWith("judge:") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-amber-600 hover:text-amber-700"
-                onClick={() => pauseMut.mutate(job.id, {
-                  onSuccess: () => toast.success(`Pausing job for ${job.model_name}…`),
-                  onError: (err) => toast.error(`Pause failed: ${err instanceof Error ? err.message : "Unknown error"}`),
-                })}
-                disabled={pauseMut.isPending && pauseMut.variables === job.id}
-                title="Pause Job"
-              >
-                {pauseMut.isPending && pauseMut.variables === job.id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PauseCircle className="h-3.5 w-3.5" />
-                )}
-              </Button>
+            {isActiveInference && (
+              <>
+                {/* Pause — enabled when running */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-amber-600 hover:text-amber-700"
+                  onClick={() => pauseMut.mutate(job.id, {
+                    onSuccess: () => toast.success(`Pausing job for ${job.model_name}…`),
+                    onError: (err) => toast.error(`Pause failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                  })}
+                  disabled={job.state !== "running" || (pauseMut.isPending && pauseMut.variables === job.id)}
+                  title="Pause Job"
+                >
+                  {pauseMut.isPending && pauseMut.variables === job.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PauseCircle className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                {/* Resume — enabled when paused */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-green-600 hover:text-green-700"
+                  onClick={() => resumeMut.mutate(job.id, {
+                    onSuccess: () => toast.success(`Resuming job for ${job.model_name}`),
+                    onError: (err) => toast.error(`Resume failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                  })}
+                  disabled={job.state !== "paused" || (resumeMut.isPending && resumeMut.variables === job.id)}
+                  title="Resume Job"
+                >
+                  {resumeMut.isPending && resumeMut.variables === job.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <PlayCircle className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                {/* Stop and save — always enabled */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-blue-600 hover:text-blue-700"
+                  onClick={() => stopDumpMut.mutate(job.id, {
+                    onSuccess: () => toast.success(`Stopping and saving results for ${job.model_name}…`),
+                    onError: (err) => toast.error(`Stop failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                  })}
+                  disabled={stopDumpMut.isPending && stopDumpMut.variables === job.id}
+                  title="Stop and save results"
+                >
+                  {stopDumpMut.isPending && stopDumpMut.variables === job.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <StopCircle className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+                {/* Cancel — enabled when running, disabled when paused */}
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="h-7 px-2 text-destructive"
+                  onClick={() => cancelMut.mutate(job.id, {
+                    onSuccess: () => toast.success(`Cancelled job for ${job.model_name}`),
+                    onError: (err) => toast.error(`Cancel failed: ${err instanceof Error ? err.message : "Unknown error"}`),
+                  })}
+                  disabled={job.state !== "running" || (cancelMut.isPending && cancelMut.variables === job.id)}
+                  title="Cancel Job"
+                >
+                  {cancelMut.isPending && cancelMut.variables === job.id ? (
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                  ) : (
+                    <Ban className="h-3.5 w-3.5" />
+                  )}
+                </Button>
+              </>
             )}
-            {(job.state === "running" || job.state === "paused") && !job.model_name.startsWith("judge:") && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-blue-600 hover:text-blue-700"
-                onClick={() => stopDumpMut.mutate(job.id, {
-                  onSuccess: () => toast.success(`Stopping and saving results for ${job.model_name}…`),
-                  onError: (err) => toast.error(`Stop failed: ${err instanceof Error ? err.message : "Unknown error"}`),
-                })}
-                disabled={stopDumpMut.isPending && stopDumpMut.variables === job.id}
-                title="Stop and save results"
-              >
-                {stopDumpMut.isPending && stopDumpMut.variables === job.id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <StopCircle className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            )}
-            {job.state === "paused" && (
-              <Button
-                variant="ghost"
-                size="sm"
-                className="h-7 px-2 text-green-600 hover:text-green-700"
-                onClick={() => resumeMut.mutate(job.id, {
-                  onSuccess: () => toast.success(`Resuming job for ${job.model_name}`),
-                  onError: (err) => toast.error(`Resume failed: ${err instanceof Error ? err.message : "Unknown error"}`),
-                })}
-                disabled={resumeMut.isPending && resumeMut.variables === job.id}
-                title="Resume Job"
-              >
-                {resumeMut.isPending && resumeMut.variables === job.id ? (
-                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <PlayCircle className="h-3.5 w-3.5" />
-                )}
-              </Button>
-            )}
-            {(job.state === "running" || job.state === "pending") && (
+            {/* Pending or judge-running: just Cancel */}
+            {!isActiveInference && (job.state === "running" || job.state === "pending") && (
               <Button
                 variant="ghost"
                 size="sm"

@@ -1,6 +1,7 @@
 """API router aggregation."""
 from fastapi import APIRouter
 
+from src.web.api.metadata import router as metadata_router
 from src.web.api.plugins import router as plugins_router
 from src.web.api.models import router as models_router
 from src.web.api.testsets import router as testsets_router
@@ -10,6 +11,7 @@ from src.web.api.matrix import router as matrix_router
 from src.web.api.human_review import router as human_review_router
 
 api_router = APIRouter()
+api_router.include_router(metadata_router, prefix="/metadata", tags=["metadata"])
 api_router.include_router(plugins_router, prefix="/plugins", tags=["plugins"])
 api_router.include_router(models_router, prefix="/models", tags=["models"])
 api_router.include_router(testsets_router, prefix="/testsets", tags=["testsets"])

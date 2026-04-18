@@ -4,6 +4,7 @@ import {
   type PaginationState,
   type Row,
   type SortingState,
+  type Table as TanstackTable,
   type VisibilityState,
   flexRender,
   getCoreRowModel,
@@ -14,7 +15,7 @@ import {
   getSortedRowModel,
   useReactTable,
 } from "@tanstack/react-table"
-import { Fragment, useEffect, useMemo, useState } from "react"
+import { Fragment, useEffect, useMemo, useRef, useState } from "react"
 import { ChevronDown, ChevronRight, ChevronsUpDown, ChevronUp, Search, SlidersHorizontal } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -117,6 +118,38 @@ interface DataTableProps<TData, TValue> {
   getRowId?: (row: TData, index: number) => string
   rowExpansion?: DataTableExpansion<TData>
   initialPageSize?: number
+  /** Called once after mount with the table instance, for external column selectors */
+  onTableReady?: (table: TanstackTable<TData>) => void
+  /** Hides the built-in Columns button from the internal toolbar */
+  hideColumnSelector?: boolean
+}
+
+export function DataTableColumnSelector<TData>({ table }: { table: TanstackTable<TData> }) {
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="sm" className="h-8">
+          <SlidersHorizontal className="mr-2 h-4 w-4" />
+          Columns
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="end" className="w-48">
+        {table
+          .getAllColumns()
+          .filter((col) => col.getCanHide())
+          .map((col) => (
+            <DropdownMenuCheckboxItem
+              key={col.id}
+              checked={col.getIsVisible()}
+              onCheckedChange={(v: boolean) => col.toggleVisibility(!!v)}
+              className="capitalize"
+            >
+              {col.id.replace(/_/g, " ")}
+            </DropdownMenuCheckboxItem>
+          ))}
+      </DropdownMenuContent>
+    </DropdownMenu>
+  )
 }
 
 export function DataTable<TData, TValue>({
@@ -132,6 +165,8 @@ export function DataTable<TData, TValue>({
   getRowId,
   rowExpansion,
   initialPageSize = 20,
+  onTableReady,
+  hideColumnSelector,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useLocalStorageState<SortingState>(
     persistKey ? makeStorageKey(persistKey, "sorting") : null,
@@ -182,6 +217,14 @@ export function DataTable<TData, TValue>({
       onFilteredRowsChange(filteredRows.map((r) => r.original))
     }
   }, [filteredRows, onFilteredRowsChange])
+
+  // Expose table instance to parent for external column selectors
+  const onTableReadyRef = useRef(onTableReady)
+  onTableReadyRef.current = onTableReady
+  useEffect(() => {
+    onTableReadyRef.current?.(table)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const sortedRows = table.getSortedRowModel().rows
   const filteredRowCount = table.getFilteredRowModel().rows.length
@@ -253,46 +296,52 @@ export function DataTable<TData, TValue>({
     </Fragment>
   )
 
+  const showToolbar = !!(searchKey || toolbar || !hideColumnSelector)
+
   return (
     <div className="space-y-3">
       {/* Toolbar */}
-      <div className="flex flex-wrap items-center gap-2">
-        {searchKey && (
-          <div className="relative max-w-sm flex-1">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input
-              placeholder={searchPlaceholder}
-              value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
-              onChange={(e: React.ChangeEvent<HTMLInputElement>) => table.getColumn(searchKey)?.setFilterValue(e.target.value)}
-              className="pl-8 h-9"
-            />
-          </div>
-        )}
-        {typeof toolbar === "function" ? toolbar(table) : toolbar}
-        <DropdownMenu>
-          <DropdownMenuTrigger asChild>
-            <Button variant="outline" size="sm" className="ml-auto h-9">
-              <SlidersHorizontal className="mr-2 h-4 w-4" />
-              Columns
-            </Button>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-48">
-            {table
-              .getAllColumns()
-              .filter((col) => col.getCanHide())
-              .map((col) => (
-                <DropdownMenuCheckboxItem
-                  key={col.id}
-                  checked={col.getIsVisible()}
-                  onCheckedChange={(v: boolean) => col.toggleVisibility(!!v)}
-                  className="capitalize"
-                >
-                  {col.id.replace(/_/g, " ")}
-                </DropdownMenuCheckboxItem>
-              ))}
-          </DropdownMenuContent>
-        </DropdownMenu>
-      </div>
+      {showToolbar && (
+        <div className="flex flex-wrap items-center gap-2">
+          {searchKey && (
+            <div className="relative max-w-sm flex-1">
+              <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder={searchPlaceholder}
+                value={(table.getColumn(searchKey)?.getFilterValue() as string) ?? ""}
+                onChange={(e: React.ChangeEvent<HTMLInputElement>) => table.getColumn(searchKey)?.setFilterValue(e.target.value)}
+                className="pl-8 h-9"
+              />
+            </div>
+          )}
+          {typeof toolbar === "function" ? toolbar(table) : toolbar}
+          {!hideColumnSelector && (
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="ml-auto h-9">
+                  <SlidersHorizontal className="mr-2 h-4 w-4" />
+                  Columns
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-48">
+                {table
+                  .getAllColumns()
+                  .filter((col) => col.getCanHide())
+                  .map((col) => (
+                    <DropdownMenuCheckboxItem
+                      key={col.id}
+                      checked={col.getIsVisible()}
+                      onCheckedChange={(v: boolean) => col.toggleVisibility(!!v)}
+                      className="capitalize"
+                    >
+                      {col.id.replace(/_/g, " ")}
+                    </DropdownMenuCheckboxItem>
+                  ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+          )}
+        </div>
+      )}
 
       {/* Table */}
       <div className="rounded-md border">

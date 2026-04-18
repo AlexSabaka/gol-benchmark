@@ -1,5 +1,7 @@
 import { Check } from "lucide-react"
 
+import { cn } from "@/lib/utils"
+
 export interface StepDefinition<Id extends string = string> {
   id: Id
   label: string
@@ -27,33 +29,35 @@ export function StepButton<Id extends string = string>({
     <button
       type="button"
       onClick={onClick}
-      className={`rounded-xl border px-4 py-3 text-left transition-colors ${
-        active
-          ? "border-primary bg-primary/5 shadow-sm"
-          : complete
-            ? "border-border bg-card hover:border-primary/50 hover:bg-accent/30"
-            : "border-border bg-card hover:bg-accent/20"
-      }`}
+      className={cn(
+        "flex min-h-9 flex-1 items-center gap-2 px-3 py-1.5 text-left transition-colors hover:bg-accent/50",
+        active && "bg-primary/5",
+      )}
     >
-      <div className="flex items-start gap-3">
-        <span
-          className={`mt-0.5 flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-semibold ${
-            active
-              ? "bg-primary text-primary-foreground"
-              : complete
-                ? "bg-emerald-600 text-white"
-                : "bg-muted text-muted-foreground"
-          }`}
-        >
-          {complete && !active ? <Check className="h-3.5 w-3.5" /> : index + 1}
-        </span>
-        <div className="min-w-0">
-          <p className="text-sm font-medium">{step.label}</p>
-          <p className="text-xs text-muted-foreground">{step.description}</p>
-          {summary && (
-            <p className="mt-1.5 truncate text-xs text-muted-foreground">{summary}</p>
+      <span
+        className={cn(
+          "flex h-4.5 w-4.5 shrink-0 items-center justify-center rounded-full text-[10px] font-bold",
+          active
+            ? "bg-primary text-primary-foreground"
+            : complete
+              ? "bg-emerald-600 text-white"
+              : "bg-muted text-muted-foreground/70",
+        )}
+      >
+        {complete && !active ? <Check className="h-2.5 w-2.5" /> : index + 1}
+      </span>
+      <div className="min-w-0">
+        <p
+          className={cn(
+            "text-xs font-medium leading-tight",
+            active ? "text-foreground" : complete ? "text-foreground/80" : "text-muted-foreground",
           )}
-        </div>
+        >
+          {step.label}
+        </p>
+        {complete && summary && (
+          <p className="truncate text-[10px] leading-tight text-muted-foreground/70">{summary}</p>
+        )}
       </div>
     </button>
   )

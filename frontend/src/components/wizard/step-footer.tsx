@@ -20,15 +20,11 @@ export function StepFooter({
   return (
     <div className="flex flex-wrap items-center justify-between gap-3 border-t pt-4">
       <div>
-        {onPrevious ? (
+        {onPrevious && (
           <Button variant="outline" onClick={onPrevious}>
             <ArrowLeft className="mr-2 h-4 w-4" />
             {previousLabel ?? "Back"}
           </Button>
-        ) : (
-          <span className="text-xs text-muted-foreground">
-            You can jump between steps at any time.
-          </span>
         )}
       </div>
       {onNext ? (

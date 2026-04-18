@@ -2,9 +2,10 @@ import { useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 import type { ColumnDef } from "@tanstack/react-table"
 import { toast } from "sonner"
-import { Eye, MoreHorizontal, Play, RotateCcw, Search, Trash2 } from "lucide-react"
+import { Check, ChevronDown, Eye, LayoutGrid, LayoutList, Layers, MoreHorizontal, Play, Plus, RotateCcw, Search, Trash2, Upload } from "lucide-react"
 
-import { DataTable } from "@/components/data-table/data-table"
+import { DataTable, DataTableColumnSelector, type Table } from "@/components/data-table/data-table"
+import { ImportTestsetDialog } from "@/components/import-testset-dialog"
 import { GroupedGridSection } from "@/components/grouped-grid-section"
 import { IdentifierLabel } from "@/components/identifier-label"
 import { PageHeader } from "@/components/layout/page-header"
@@ -27,6 +28,8 @@ import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
@@ -41,7 +44,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { useDeleteTestset, useTestset, useTestsets } from "@/hooks/use-testsets"
 import { langFlags } from "@/lib/language-flags"
 import { makeStorageKey, useLocalStorageState } from "@/lib/local-storage"
-import { formatBytes, formatDate } from "@/lib/utils"
+import { cn, formatBytes, formatDate } from "@/lib/utils"
 import type { TestsetSummary } from "@/types"
 
 type ViewMode = "table" | "cards"
@@ -141,6 +144,8 @@ export default function TestSetsPage() {
   const [casesPage, setCasesPage] = useState(1)
   const [storedViewMode, setStoredViewMode] = useLocalStorageState<ViewMode>(makeStorageKey(storageScope, "view-mode"), "table")
   const [groupBy, setGroupBy] = useLocalStorageState<GroupMode>(makeStorageKey(storageScope, "group-by"), "none")
+  const [tableInstance, setTableInstance] = useState<Table<TestsetSummary> | null>(null)
+  const [importOpen, setImportOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useLocalStorageState<string>(makeStorageKey(storageScope, "search"), "")
   const [taskFilter, setTaskFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "task-filter"), [])
   const [languageFilter, setLanguageFilter] = useLocalStorageState<string[]>(makeStorageKey(storageScope, "language-filter"), [])
@@ -306,23 +311,35 @@ export default function TestSetsPage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Test Sets"
-        description="Browse, inspect and manage generated test sets"
-        actions={<Button onClick={() => nav("/configure")}>New Test Set</Button>}
-      />
+      <div className="sticky top-0 z-10 space-y-2 bg-background pb-2">
+        <PageHeader
+          className="mb-2"
+          title="Test Sets"
+          actions={
+            <div className="flex items-center gap-2">
+              <Button variant="outline" onClick={() => setImportOpen(true)}>
+                <Upload className="mr-2 h-4 w-4" />Import
+              </Button>
+              <Button onClick={() => nav("/configure")}>
+                <Plus className="mr-2 h-4 w-4" />New Test Set
+              </Button>
+            </div>
+          }
+        />
 
-      <div className="space-y-3 rounded-lg border bg-card p-4">
-        <div className="flex flex-wrap items-center gap-2">
-          <div className="relative min-w-60 flex-1 sm:max-w-sm">
-            <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
+        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-card px-3 py-2">
+          {/* Search */}
+          <div className="relative min-w-40 max-w-xs flex-1">
+            <Search className="absolute left-2.5 top-2 h-3.5 w-3.5 text-muted-foreground" />
             <Input
               value={searchTerm}
               onChange={(event) => setSearchTerm(event.target.value)}
               placeholder="Search test sets..."
-              className="pl-8"
+              className="h-8 pl-7 text-sm"
             />
           </div>
+
+          {/* Filter chips */}
           {taskOptions.length > 1 && (
             <PageFacetFilter title="Task" options={taskOptions} selectedValues={taskFilter} onChange={setTaskFilter} />
           )}
@@ -335,49 +352,75 @@ export default function TestSetsPage() {
           {systemStyleOptions.length > 1 && (
             <PageFacetFilter title="Sys Style" options={systemStyleOptions} selectedValues={systemStyleFilter} onChange={setSystemStyleFilter} />
           )}
-        </div>
 
-        <div className="flex flex-wrap items-center gap-2">
-          <span className="text-xs text-muted-foreground">Format</span>
-          {([
-            ["table", "Table"],
-            ["cards", "Cards"],
-          ] as const).map(([value, label]) => (
-            <Button
-              key={value}
-              variant={viewMode === value ? "secondary" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => setStoredViewMode(value)}
-              disabled={value === "cards" && groupBy === "none"}
-              title={value === "cards" && groupBy === "none" ? "Choose a grouping to enable cards" : undefined}
-            >
-              {label}
-            </Button>
-          ))}
-          <Separator orientation="vertical" className="h-6" />
-          <span className="text-xs text-muted-foreground">Group By</span>
-          {([
-            ["none", "None"],
-            ["matrix_batch", "Matrix Batch"],
-            ["task_type", "Task"],
-          ] as const).map(([value, label]) => (
-            <Button
-              key={value}
-              variant={groupBy === value ? "secondary" : "outline"}
-              size="sm"
-              className="h-8 text-xs"
-              onClick={() => {
-                if (value === "none" && viewMode === "cards") {
-                  setStoredViewMode("table")
-                }
-                setGroupBy(value)
-              }}
-            >
-              {label}
-            </Button>
-          ))}
-          <Badge variant="secondary" className="ml-auto">{filteredTestsets.length} visible</Badge>
+          {/* Right-side view controls */}
+          <div className="ml-auto flex shrink-0 items-center gap-2">
+            <span className="text-xs tabular-nums text-muted-foreground">{filteredTestsets.length} results</span>
+
+            <Separator orientation="vertical" className="h-5" />
+
+            {/* Format toggle */}
+            <div className="flex items-center rounded-md border p-0.5">
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-6 w-6 p-0", viewMode === "table" && "bg-background shadow-sm")}
+                onClick={() => setStoredViewMode("table")}
+                title="Table view"
+              >
+                <LayoutList className="h-3.5 w-3.5" />
+              </Button>
+              <Button
+                variant="ghost"
+                size="sm"
+                className={cn("h-6 w-6 p-0", viewMode === "cards" && "bg-background shadow-sm")}
+                onClick={() => setStoredViewMode("cards")}
+                disabled={groupBy === "none"}
+                title={groupBy === "none" ? "Choose a grouping to enable cards" : "Card view"}
+              >
+                <LayoutGrid className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+
+            {/* Group By dropdown */}
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs">
+                  <Layers className="h-3.5 w-3.5" />
+                  {groupBy === "none" ? "Group" : groupBy === "matrix_batch" ? "Matrix Batch" : "Task"}
+                  <ChevronDown className="h-3 w-3 opacity-60" />
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-40">
+                <DropdownMenuLabel className="text-xs text-muted-foreground">Group by</DropdownMenuLabel>
+                <DropdownMenuSeparator />
+                {([
+                  ["none", "No grouping"],
+                  ["matrix_batch", "Matrix Batch"],
+                  ["task_type", "Task"],
+                ] as const).map(([value, label]) => (
+                  <DropdownMenuItem
+                    key={value}
+                    onClick={() => {
+                      if (value === "none" && viewMode === "cards") setStoredViewMode("table")
+                      setGroupBy(value)
+                    }}
+                    className="gap-2"
+                  >
+                    {groupBy === value
+                      ? <Check className="h-3.5 w-3.5 text-primary" />
+                      : <span className="h-3.5 w-3.5" />}
+                    {label}
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuContent>
+            </DropdownMenu>
+
+            {/* Column selector */}
+            {tableInstance && showFlatOrGroupedTable && (
+              <DataTableColumnSelector table={tableInstance} />
+            )}
+          </div>
         </div>
       </div>
 
@@ -389,6 +432,8 @@ export default function TestSetsPage() {
           grouping={groupBy === "none" ? undefined : { buildGroups: (rows) => buildGroups(rows, groupBy) }}
           persistKey="testsets-table"
           getRowId={(row) => row.filename}
+          onTableReady={setTableInstance}
+          hideColumnSelector
         />
       ) : groups.length === 0 ? (
         <div className="rounded-lg border border-dashed p-10 text-center text-sm text-muted-foreground">
@@ -424,6 +469,8 @@ export default function TestSetsPage() {
           ))}
         </div>
       )}
+
+      <ImportTestsetDialog open={importOpen} onOpenChange={setImportOpen} />
 
       <Dialog open={!!deleteTarget} onOpenChange={() => setDeleteTarget(null)}>
         <DialogContent className="max-w-lg sm:max-w-lg">

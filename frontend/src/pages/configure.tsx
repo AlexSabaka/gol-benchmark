@@ -10,7 +10,6 @@ import {
   Download,
   Link2,
   Loader2,
-  Upload,
 } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
@@ -38,22 +37,11 @@ import { StepButton, StepFooter } from "@/components/wizard"
 import { ConfigForm } from "@/components/plugin-config/config-form"
 import { fetchPromptFromUrl, configToYaml } from "@/api/testsets"
 import { usePlugins } from "@/hooks/use-plugins"
-import { useGenerateTestset, useUploadYaml, useUploadGz } from "@/hooks/use-testsets"
+import { useGenerateTestset } from "@/hooks/use-testsets"
+import { useMetadata } from "@/hooks/use-metadata"
 import { useLocalStorageState } from "@/lib/local-storage"
+import { LANGUAGE_META } from "@/lib/constants"
 import type { GenerateRequest, PromptConfig } from "@/types"
-
-// ── Constants ──────────────────────────────────────────────────────────────────
-
-const USER_STYLES = ["minimal", "casual", "linguistic", "examples", "rules_math"]
-const SYSTEM_STYLES = ["analytical", "casual", "adversarial", "none"]
-const LANGUAGES: { code: string; flag: string; label: string }[] = [
-  { code: "en", flag: "🇬🇧", label: "English" },
-  { code: "es", flag: "🇪🇸", label: "Español" },
-  { code: "fr", flag: "🇫🇷", label: "Français" },
-  { code: "de", flag: "🇩🇪", label: "Deutsch" },
-  { code: "zh", flag: "🇨🇳", label: "中文" },
-  { code: "ua", flag: "🇺🇦", label: "Українська" },
-]
 
 // ── Step types ─────────────────────────────────────────────────────────────────
 
@@ -76,9 +64,17 @@ const CONFIGURE_STEPS: Array<{
 export default function ConfigurePage() {
   const nav = useNavigate()
   const { data: plugins } = usePlugins()
+  const { data: meta } = useMetadata()
   const genMutation = useGenerateTestset()
-  const yamlMutation = useUploadYaml()
-  const gzMutation = useUploadGz()
+
+  // ── Derived from metadata ──
+  const userStylesList = meta?.user_styles ?? []
+  const systemStylesList = meta?.system_styles ?? []
+  const languagesList = (meta?.languages ?? []).map((code) => ({
+    code,
+    flag: LANGUAGE_META[code]?.flag ?? code,
+    label: LANGUAGE_META[code]?.label ?? code,
+  }))
 
   // ── Wizard step ──
   const [activeStep, setActiveStep] = useLocalStorageState<ConfigureStepId>(
@@ -96,13 +92,6 @@ export default function ConfigurePage() {
   const [name, setName] = useState("web_benchmark")
   const [description, setDescription] = useState("")
   const [seed, setSeed] = useState(42)
-  const [setupMode, setSetupMode] = useState<"build" | "import" | "upload">("build")
-  const [importMethod, setImportMethod] = useState<"file" | "url" | "paste">("file")
-  const [importUrl, setImportUrl] = useState("")
-  const [importPaste, setImportPaste] = useState("")
-  const [fetchingImport, setFetchingImport] = useState(false)
-  const yamlFileRef = useRef<HTMLInputElement>(null)
-  const gzRef = useRef<HTMLInputElement>(null)
 
   // ── Step 2 — Plugins ──
   const [selectedTasks, setSelectedTasks] = useState<Set<string>>(new Set())
@@ -135,7 +124,7 @@ export default function ConfigurePage() {
   const stepSummary = (id: ConfigureStepId): string => {
     switch (id) {
       case "setup":
-        return setupMode === "import" ? "Import config" : name || "Unnamed"
+        return name || "Unnamed"
       case "plugins":
         return selectedTasks.size > 0
           ? `${selectedTasks.size} plugin${selectedTasks.size !== 1 ? "s" : ""} selected`
@@ -232,61 +221,6 @@ export default function ConfigurePage() {
     customSystemPrompt,
   ])
 
-  const handleYamlFileUpload = async () => {
-    const file = yamlFileRef.current?.files?.[0]
-    if (!file) return
-    try {
-      const res = await yamlMutation.mutateAsync(file)
-      toast.success(`Uploaded & generated: ${res.filename}`)
-      nav("/testsets")
-    } catch (err) {
-      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`)
-    }
-  }
-
-  const handleFetchImport = async () => {
-    if (!importUrl) return
-    setFetchingImport(true)
-    try {
-      const res = await fetchPromptFromUrl(importUrl)
-      const blob = new File([res.text], "fetched.yaml", { type: "text/plain" })
-      const result = await yamlMutation.mutateAsync(blob)
-      toast.success(`Generated from URL: ${result.filename}`)
-      nav("/testsets")
-    } catch (err) {
-      toast.error(`Fetch failed: ${err instanceof Error ? err.message : "Unknown error"}`)
-    } finally {
-      setFetchingImport(false)
-    }
-  }
-
-  const handlePasteImport = async () => {
-    if (!importPaste.trim()) return
-    setFetchingImport(true)
-    try {
-      const blob = new File([importPaste], "pasted.yaml", { type: "text/plain" })
-      const result = await yamlMutation.mutateAsync(blob)
-      toast.success(`Generated from pasted config: ${result.filename}`)
-      nav("/testsets")
-    } catch (err) {
-      toast.error(`Failed: ${err instanceof Error ? err.message : "Unknown error"}`)
-    } finally {
-      setFetchingImport(false)
-    }
-  }
-
-  const handleGzUpload = async () => {
-    const file = gzRef.current?.files?.[0]
-    if (!file) return
-    try {
-      const res = await gzMutation.mutateAsync(file)
-      toast.success(`Uploaded: ${res.filename}`)
-      nav("/testsets")
-    } catch (err) {
-      toast.error(`Upload failed: ${err instanceof Error ? err.message : "Unknown error"}`)
-    }
-  }
-
   const handleGenerate = async () => {
     if (selectedTasks.size === 0) {
       toast.error("Select at least one task")
@@ -337,13 +271,10 @@ export default function ConfigurePage() {
 
   return (
     <div className="space-y-6">
-      <PageHeader
-        title="Configure"
-        description="Build a test set configuration or import an existing one"
-      />
+      <PageHeader title="Configure" />
 
       {/* ── Step navigation ── */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
+      <div className="flex items-stretch divide-x overflow-hidden rounded-lg border bg-card">
         {CONFIGURE_STEPS.map((step, i) => (
           <StepButton
             key={step.id}
@@ -362,202 +293,48 @@ export default function ConfigurePage() {
       ══════════════════════════════════════════════════════ */}
       {activeStep === "setup" && (
         <div className="space-y-4">
-          {/* Mode toggle */}
-          <div className="flex items-center gap-1 rounded-lg border bg-muted/40 p-1 w-fit">
-            {(["build", "import", "upload"] as const).map((mode) => (
-              <button
-                key={mode}
-                type="button"
-                onClick={() => setSetupMode(mode)}
-                className={`rounded-md px-4 py-1.5 text-xs font-medium transition-colors ${
-                  setupMode === mode
-                    ? "bg-background shadow-sm text-foreground"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-              >
-                {mode === "build" ? "Build from scratch" : mode === "import" ? "Import config" : "Upload test set"}
-              </button>
-            ))}
-          </div>
-
-          {setupMode === "build" ? (
-            <>
-              {/* Global settings */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Global Settings</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Name</Label>
-                      <Input
-                        value={name}
-                        onChange={(e) => setName(e.target.value)}
-                        className="h-8"
-                        placeholder="web_benchmark"
-                      />
-                    </div>
-                    <div className="space-y-1.5">
-                      <Label className="text-xs">Seed</Label>
-                      <Input
-                        type="number"
-                        value={seed}
-                        onChange={(e) => setSeed(Number(e.target.value))}
-                        className="h-8 w-28"
-                      />
-                    </div>
-                    <div className="space-y-1.5 sm:col-span-2">
-                      <Label className="text-xs">Description</Label>
-                      <Input
-                        value={description}
-                        onChange={(e) => setDescription(e.target.value)}
-                        className="h-8"
-                        placeholder="Optional"
-                      />
-                    </div>
-                  </div>
-                </CardContent>
-              </Card>
-
-              <StepFooter
-                nextLabel="Continue to Plugins"
-                onNext={() => setActiveStep("plugins")}
-                nextDisabled={!name.trim()}
-              />
-            </>
-          ) : setupMode === "import" ? (
-            <>
-              {/* Import config */}
-              <Card>
-                <CardHeader className="pb-3">
-                  <CardTitle className="text-sm">Import Configuration</CardTitle>
-                </CardHeader>
-                <CardContent>
-                  <Tabs value={importMethod} onValueChange={(v) => setImportMethod(v as typeof importMethod)}>
-                    <TabsList className="h-7 mb-4">
-                      <TabsTrigger value="file" className="text-xs h-6 px-2">File Upload</TabsTrigger>
-                      <TabsTrigger value="url" className="text-xs h-6 px-2">Fetch from URL</TabsTrigger>
-                      <TabsTrigger value="paste" className="text-xs h-6 px-2">Paste YAML</TabsTrigger>
-                    </TabsList>
-
-                    <TabsContent value="file" className="mt-0 space-y-3">
-                      <p className="text-xs text-muted-foreground">
-                        Upload a <code className="text-[11px]">.yaml</code> or{" "}
-                        <code className="text-[11px]">.yml</code> configuration file to
-                        generate a test set.
-                      </p>
-                      <div className="flex items-center gap-3">
-                        <Input
-                          ref={yamlFileRef}
-                          type="file"
-                          accept=".yaml,.yml"
-                          className="h-9 max-w-sm"
-                        />
-                        <Button
-                          variant="outline"
-                          onClick={handleYamlFileUpload}
-                          disabled={yamlMutation.isPending}
-                        >
-                          {yamlMutation.isPending ? (
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          ) : (
-                            <Upload className="mr-2 h-4 w-4" />
-                          )}
-                          Upload & Generate
-                        </Button>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="url" className="mt-0 space-y-3">
-                      <p className="text-xs text-muted-foreground">
-                        Fetch a YAML configuration from a URL — e.g. a raw GitHub Gist.
-                      </p>
-                      <div className="flex gap-2">
-                        <Input
-                          value={importUrl}
-                          onChange={(e) => setImportUrl(e.target.value)}
-                          placeholder="https://gist.githubusercontent.com/..."
-                          className="h-8"
-                        />
-                        <Button
-                          variant="outline"
-                          size="sm"
-                          disabled={!importUrl || fetchingImport || yamlMutation.isPending}
-                          onClick={handleFetchImport}
-                        >
-                          {fetchingImport || yamlMutation.isPending ? (
-                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                          ) : (
-                            <Link2 className="h-3.5 w-3.5" />
-                          )}
-                          <span className="ml-1.5">Fetch & Generate</span>
-                        </Button>
-                      </div>
-                    </TabsContent>
-
-                    <TabsContent value="paste" className="mt-0 space-y-3">
-                      <p className="text-xs text-muted-foreground">
-                        Paste a YAML configuration directly to generate a test set.
-                      </p>
-                      <Textarea
-                        value={importPaste}
-                        onChange={(e) => setImportPaste(e.target.value)}
-                        placeholder="metadata:&#10;  name: my_benchmark&#10;  ..."
-                        className="min-h-[160px] font-mono text-xs"
-                      />
-                      <div className="flex justify-end">
-                        <Button
-                          onClick={handlePasteImport}
-                          disabled={!importPaste.trim() || fetchingImport || yamlMutation.isPending}
-                          size="sm"
-                        >
-                          {fetchingImport || yamlMutation.isPending ? (
-                            <Loader2 className="mr-2 h-3.5 w-3.5 animate-spin" />
-                          ) : null}
-                          Use this config
-                        </Button>
-                      </div>
-                    </TabsContent>
-                  </Tabs>
-                </CardContent>
-              </Card>
-
-            </>
-          ) : (
-            /* ── Upload test set mode ── */
-            <Card>
-              <CardHeader className="pb-3">
-                <CardTitle className="text-sm">Upload Pre-Generated Test Set</CardTitle>
-              </CardHeader>
-              <CardContent className="space-y-3">
-                <p className="text-xs text-muted-foreground">
-                  Upload an existing <code className="text-[11px]">.json.gz</code> test set
-                  file directly — skips generation entirely.
-                </p>
-                <div className="flex items-center gap-3">
+          <Card>
+            <CardHeader className="pb-3">
+              <CardTitle className="text-sm">Global Settings</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Name</Label>
                   <Input
-                    ref={gzRef}
-                    type="file"
-                    accept=".gz"
-                    className="h-9 max-w-sm"
+                    value={name}
+                    onChange={(e) => setName(e.target.value)}
+                    className="h-8"
+                    placeholder="web_benchmark"
                   />
-                  <Button
-                    variant="outline"
-                    onClick={handleGzUpload}
-                    disabled={gzMutation.isPending}
-                  >
-                    {gzMutation.isPending ? (
-                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    ) : (
-                      <Upload className="mr-2 h-4 w-4" />
-                    )}
-                    Upload
-                  </Button>
                 </div>
-              </CardContent>
-            </Card>
-          )}
+                <div className="space-y-1.5">
+                  <Label className="text-xs">Seed</Label>
+                  <Input
+                    type="number"
+                    value={seed}
+                    onChange={(e) => setSeed(Number(e.target.value))}
+                    className="h-8 w-28"
+                  />
+                </div>
+                <div className="space-y-1.5 sm:col-span-2">
+                  <Label className="text-xs">Description</Label>
+                  <Input
+                    value={description}
+                    onChange={(e) => setDescription(e.target.value)}
+                    className="h-8"
+                    placeholder="Optional"
+                  />
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+
+          <StepFooter
+            nextLabel="Continue to Plugins"
+            onNext={() => setActiveStep("plugins")}
+            nextDisabled={!name.trim()}
+          />
         </div>
       )}
 
@@ -684,7 +461,7 @@ export default function ConfigurePage() {
                 <div className="space-y-2">
                   <Label className="text-xs">User Styles</Label>
                   <div className="space-y-1.5">
-                    {USER_STYLES.map((s) => (
+                    {userStylesList.map((s) => (
                       <label
                         key={s}
                         className="flex items-center gap-2 text-xs cursor-pointer"
@@ -703,7 +480,7 @@ export default function ConfigurePage() {
                 <div className="space-y-2">
                   <Label className="text-xs">System Styles</Label>
                   <div className="space-y-1.5">
-                    {SYSTEM_STYLES.map((s) => (
+                    {systemStylesList.map((s) => (
                       <label
                         key={s}
                         className="flex items-center gap-2 text-xs cursor-pointer"
@@ -731,7 +508,7 @@ export default function ConfigurePage() {
                 <div className="space-y-2">
                   <Label className="text-xs">Languages</Label>
                   <div className="space-y-1.5">
-                    {LANGUAGES.map((l) => (
+                    {languagesList.map((l) => (
                       <label
                         key={l.code}
                         className="flex items-center gap-2 text-xs cursor-pointer"
@@ -1008,10 +785,7 @@ export default function ConfigurePage() {
                   </p>
                   <p className="text-sm">
                     {Array.from(languages)
-                      .map(
-                        (code) =>
-                          LANGUAGES.find((l) => l.code === code)?.flag ?? code,
-                      )
+                      .map((code) => LANGUAGE_META[code]?.flag ?? code)
                       .join(" ")}
                   </p>
                 </div>

@@ -23,18 +23,9 @@ import {
 import { Textarea } from "@/components/ui/textarea"
 import { useTestset } from "@/hooks/use-testsets"
 import { useGenerateTestset } from "@/hooks/use-testsets"
+import { useMetadata } from "@/hooks/use-metadata"
+import { LANGUAGE_META } from "@/lib/constants"
 import type { ParamOverrides } from "@/types"
-
-const USER_STYLES = ["minimal", "casual", "linguistic", "examples", "rules_math"]
-const SYSTEM_STYLES = ["analytical", "casual", "adversarial", "none"]
-const LANGUAGES = [
-  { value: "en", label: "English" },
-  { value: "es", label: "Espanol" },
-  { value: "fr", label: "Francais" },
-  { value: "de", label: "Deutsch" },
-  { value: "zh", label: "Chinese" },
-  { value: "ua", label: "Ukrainian" },
-]
 
 interface ParamOverrideModalProps {
   open: boolean
@@ -53,6 +44,14 @@ export function ParamOverrideModal({
   const nav = useNavigate()
   const { data: detail, isLoading: detailLoading } = useTestset(open ? testsetFilename : null)
   const generateMutation = useGenerateTestset()
+  const { data: meta } = useMetadata()
+
+  const userStylesList = meta?.user_styles ?? []
+  const systemStylesList = meta?.system_styles ?? []
+  const languagesList = (meta?.languages ?? []).map((code) => ({
+    code,
+    label: `${LANGUAGE_META[code]?.flag ?? ""} ${LANGUAGE_META[code]?.label ?? code}`.trim(),
+  }))
 
   const [overrides, setOverrides] = useState<ParamOverrides>({})
   const [customPrompt, setCustomPrompt] = useState("")
@@ -164,7 +163,7 @@ export function ParamOverrideModal({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">Keep original</SelectItem>
-                  {USER_STYLES.map((s) => (
+                  {userStylesList.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -196,7 +195,7 @@ export function ParamOverrideModal({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">Keep original</SelectItem>
-                  {SYSTEM_STYLES.map((s) => (
+                  {systemStylesList.map((s) => (
                     <SelectItem key={s} value={s}>
                       {s}
                     </SelectItem>
@@ -239,8 +238,8 @@ export function ParamOverrideModal({
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="__default__">Keep original</SelectItem>
-                  {LANGUAGES.map((l) => (
-                    <SelectItem key={l.value} value={l.value}>
+                  {languagesList.map((l) => (
+                    <SelectItem key={l.code} value={l.code}>
                       {l.label}
                     </SelectItem>
                   ))}

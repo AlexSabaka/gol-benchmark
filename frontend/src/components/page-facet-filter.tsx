@@ -1,6 +1,5 @@
-import { Check, PlusCircle } from "lucide-react"
+import { Check, PlusCircle, X } from "lucide-react"
 
-import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import {
   Command,
@@ -16,7 +15,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from "@/components/ui/popover"
-import { Separator } from "@/components/ui/separator"
 import { cn } from "@/lib/utils"
 
 interface PageFacetFilterProps {
@@ -28,34 +26,38 @@ interface PageFacetFilterProps {
 
 export function PageFacetFilter({ title, options, selectedValues, onChange }: PageFacetFilterProps) {
   const selected = new Set(selectedValues)
+  const isActive = selected.size > 0
+
+  const activeLabel = selected.size === 1
+    ? (options.find((o) => selected.has(o.value))?.label ?? "")
+    : `${selected.size} selected`
 
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-9 border-dashed">
-          <PlusCircle className="mr-2 h-4 w-4" />
+        <Button
+          variant={isActive ? "secondary" : "outline"}
+          size="sm"
+          className={cn(
+            "h-8 gap-1 text-xs font-medium",
+            !isActive && "border-dashed text-muted-foreground hover:text-foreground",
+            isActive && "pr-1.5",
+          )}
+        >
+          {!isActive && <PlusCircle className="h-3.5 w-3.5" />}
           {title}
-          {selected.size > 0 && (
+          {isActive && (
             <>
-              <Separator orientation="vertical" className="mx-2 h-4" />
-              <Badge variant="secondary" className="rounded-sm px-1 font-normal lg:hidden">
-                {selected.size}
-              </Badge>
-              <div className="hidden space-x-1 lg:flex">
-                {selected.size > 2 ? (
-                  <Badge variant="secondary" className="rounded-sm px-1 font-normal">
-                    {selected.size} selected
-                  </Badge>
-                ) : (
-                  options
-                    .filter((option) => selected.has(option.value))
-                    .map((option) => (
-                      <Badge key={option.value} variant="secondary" className="rounded-sm px-1 font-normal">
-                        {option.label}
-                      </Badge>
-                    ))
-                )}
-              </div>
+              <span className="text-muted-foreground">:</span>
+              <span className="max-w-28 truncate">{activeLabel}</span>
+              <span
+                role="button"
+                aria-label={`Clear ${title} filter`}
+                className="ml-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm hover:bg-foreground/10"
+                onClick={(e) => { e.stopPropagation(); onChange([]) }}
+              >
+                <X className="h-3 w-3" />
+              </span>
             </>
           )}
         </Button>

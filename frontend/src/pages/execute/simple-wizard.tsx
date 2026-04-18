@@ -432,7 +432,7 @@ export default function ExecutePage() {
         description="Step through test set selection, model selection, overrides, and a final review before launching jobs."
       />
 
-      <div className="grid gap-3 xl:grid-cols-4">
+      <div className="flex items-stretch divide-x overflow-hidden rounded-lg border bg-card">
         {EXECUTE_STEPS.map((step, index) => (
           <StepButton
             key={step.id}
