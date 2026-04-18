@@ -2,6 +2,62 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.25.0] - April 17, 2026
+
+### Picture Algebra — 21st Benchmark Plugin
+
+New plugin: [src/plugins/picture_algebra/](src/plugins/picture_algebra/). System-of-equations puzzles whose variables are rendered as emoji (🍎, 🍌), alpha letters (x, y, z), or nonsense words (FOO, BAR). Operationalizes the GSM-Symbolic finding inside the benchmark suite — run the same seed across the three surface forms and measure the accuracy delta.
+
+#### What it tests
+
+- **Semantic interference**: same linear system, three surface forms. `aggregate_results` emits `semantic_interference_delta = accuracy(alpha) − accuracy(emoji)` when both forms are present in a batch.
+- **Impossible-system sensitivity**: `trick_rate > 0` mixes in underdetermined and inconsistent systems whose correct response is a refusal sentinel (`CANNOT_BE_DETERMINED` / `NO_SOLUTION`). Models that confidently invent a numeric answer are flagged as `system_error_missed`.
+
+#### Generator (sympy-driven)
+
+- 2–3 variables × 2–4 equations; integer solutions verified with `sympy.linsolve` (resamples when rng picks linearly-dependent equations).
+- Coefficient rendering varies by `operations`: `add_only` uses repeated addition (`🍎 + 🍎 + 🍎`), `add_multiply`/`all` use numeric prefix (`3·🍎`), `add_subtract` mixes `+` and `-` signs.
+- Surface forms: `emoji` (sampled from `food` / `animals` / `objects` / `mixed` pools, 24 per pool), `alpha` (`x`, `y`, `z`), `nonsense` (`FOO`, `BAR`, `BAZ`).
+- `question_scope`: `all` (solve for every variable) or `specific` (ask for one randomly chosen variable).
+- Trick generation tries the primary kind (underdetermined/inconsistent) then the alternate if the first fails, before falling through to a unique system.
+
+#### Parser (9 strategies, end-first + multilingual)
+
+1. `cannot_be_determined` — strict sentinel check in the last 3 sentences
+2. `boxed_multivar` — `\boxed{x=5, y=7}` with comma/semicolon/`\\` splits
+3. `label_line` — per-variable `<token> = <number>`; numeric-first pass avoids the `"Solving for y: y = 7"` greedy-consume failure mode; word-number fallback via `build_word_to_int`
+4. `bold_assignments` — `**x = 5**` markdown-bold assignments
+5. `final_answer_block` — tail after `answer:` / `respuesta:` / `відповідь:` / etc.
+6. `foreign_labels` — preserves non-our-token labels (`a = 5, b = 7` when asked about `x, y`) so the evaluator can classify `wrong_variable`
+7. `coord_tuple` — `(5, 7)` positional, only when arity matches
+8. `last_numbers` — last N integers, weakest fallback
+9. `cannot_be_determined_fallback` — weaker sentinel check after extractions fail
+
+All strategies use `re_search_last` / `re.finditer` with end-first semantics. Emoji tokens go through `re.escape()`.
+
+#### Evaluator (8 match types)
+
+- `correct` / `wrong_value` / `wrong_variable` / `partial` (fractional accuracy, `question_scope=all` only) / `parse_error`
+- `system_error` (refused impossible system) / `system_error_missed` (answered numerically) / `system_error_false_positive` (refused a solvable system)
+- Breakdowns by `surface_form`, `emoji_category`, `operations`, `num_variables`, `determinacy`, `question_scope`
+
+#### Files Added
+
+- [src/plugins/picture_algebra/__init__.py](src/plugins/picture_algebra/__init__.py) — `PictureAlgebraPlugin` registration
+- [src/plugins/picture_algebra/generator.py](src/plugins/picture_algebra/generator.py) — sympy-driven system generation + trick cases
+- [src/plugins/picture_algebra/parser.py](src/plugins/picture_algebra/parser.py) — multi-variable extraction, 9 strategies
+- [src/plugins/picture_algebra/evaluator.py](src/plugins/picture_algebra/evaluator.py) — match-type taxonomy + `semantic_interference_delta`
+- [src/plugins/picture_algebra/i18n.yaml](src/plugins/picture_algebra/i18n.yaml) — 6 languages × 3 styles
+- [src/plugins/picture_algebra/data/emoji_pools.py](src/plugins/picture_algebra/data/emoji_pools.py) — `FOOD` / `ANIMALS` / `OBJECTS` / `MIXED`
+- [src/plugins/picture_algebra/README.md](src/plugins/picture_algebra/README.md) — plugin description
+- [tests/plugins/test_picture_algebra.py](tests/plugins/test_picture_algebra.py) — 40 tests (generator / parser / evaluator / integration)
+
+#### Files Modified
+
+- [frontend/src/components/task-badge.tsx](frontend/src/components/task-badge.tsx) — added `picture_algebra` → `neutral` color entry
+
+---
+
 ## [2.24.0] - April 17, 2026
 
 ### Annotation System DX Overhaul — Schema v3, Multi-Mark Types, Leakage Fixes

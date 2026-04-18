@@ -1,0 +1,38 @@
+# Picture Algebra plugin — linear-system puzzles with emoji/alpha/nonsense variables.
+#
+# Variables: {equations}, {variable_list}, {query_target}
+#
+# All three styles are domain-specific (equation framing + integer-solution
+# expectation) and fully overridden.  No style names the technique
+# (substitution vs elimination) to avoid biasing the model toward one method.
+
+body:
+  en: "{equations}\n\nFind {query_target}."
+  es: "{equations}\n\nEncuentra {query_target}."
+  fr: "{equations}\n\nTrouvez {query_target}."
+  de: "{equations}\n\nBestimme {query_target}."
+  zh: "{equations}\n\n求 {query_target}。"
+  ua: "{equations}\n\nЗнайди {query_target}."
+
+overrides:
+  minimal:
+    en: "Each symbol stands for a positive integer. Solve the system:\n\n{equations}\n\nFind {query_target}.\n\nAnswer: "
+    es: "Cada símbolo representa un número entero. Resuelve el sistema:\n\n{equations}\n\nEncuentra {query_target}.\n\nRespuesta: "
+    fr: "Chaque symbole représente un entier. Résolvez le système :\n\n{equations}\n\nTrouvez {query_target}.\n\nRéponse : "
+    de: "Jedes Symbol steht für eine ganze Zahl. Löse das Gleichungssystem:\n\n{equations}\n\nBestimme {query_target}.\n\nAntwort: "
+    zh: "每个符号代表一个整数。求解方程组：\n\n{equations}\n\n求 {query_target}。\n\n答案："
+    ua: "Кожен символ позначає ціле число. Розв'яжіть систему:\n\n{equations}\n\nЗнайди {query_target}.\n\nВідповідь: "
+  casual:
+    en: "Here's a little puzzle for you — each symbol in the equations below stands for an integer. Figure out what each one is:\n\n{equations}\n\nWhat's {query_target}? If the system doesn't have a unique answer, say so instead of guessing."
+    es: "Aquí tienes un pequeño acertijo — cada símbolo en las ecuaciones de abajo representa un número entero. Descubre qué número es cada uno:\n\n{equations}\n\n¿Cuánto vale {query_target}? Si el sistema no tiene una única solución, dilo en lugar de adivinar."
+    fr: "Voici une petite énigme — chaque symbole dans les équations ci-dessous représente un entier. Trouve la valeur de chacun :\n\n{equations}\n\nQue vaut {query_target} ? Si le système n'a pas de solution unique, dis-le plutôt que de deviner."
+    de: "Ein kleines Rätsel — jedes Symbol in den Gleichungen unten steht für eine ganze Zahl. Finde heraus, welche Zahl jedes Symbol repräsentiert:\n\n{equations}\n\nWas ist {query_target}? Falls das System keine eindeutige Lösung hat, sag das lieber, statt zu raten."
+    zh: "这里有一个小谜题——下面方程中的每个符号都代表一个整数。请找出每个符号对应的数：\n\n{equations}\n\n{query_target} 是多少？如果方程组没有唯一解，请直接说明，而不要猜测。"
+    ua: "Ось невеличка головоломка — кожен символ у рівняннях нижче позначає ціле число. З'ясуй, яке число відповідає кожному:\n\n{equations}\n\nЧому дорівнює {query_target}? Якщо система не має єдиного розв'язку, так і скажи, а не вгадуй."
+  linguistic:
+    en: "Consider the following system of equations, in which each distinct symbol denotes a positive integer unknown:\n\n{equations}\n\nDetermine the integer value of {query_target}, or state that the system is underdetermined or inconsistent if it has no unique solution. Show your reasoning and give the final numerical answer(s) clearly labelled."
+    es: "Considera el siguiente sistema de ecuaciones, en el que cada símbolo distinto representa un número entero desconocido:\n\n{equations}\n\nDetermina el valor entero de {query_target}, o indica que el sistema es indeterminado o inconsistente si no tiene solución única. Muestra tu razonamiento y proporciona la(s) respuesta(s) numérica(s) final(es) claramente etiquetada(s)."
+    fr: "Considérez le système d'équations suivant, dans lequel chaque symbole distinct représente un entier inconnu :\n\n{equations}\n\nDéterminez la valeur entière de {query_target}, ou indiquez que le système est indéterminé ou incohérent s'il n'a pas de solution unique. Montrez votre raisonnement et donnez la/les réponse(s) numérique(s) finale(s) clairement étiquetée(s)."
+    de: "Betrachte das folgende Gleichungssystem, in dem jedes unterschiedliche Symbol eine ganzzahlige Unbekannte bezeichnet:\n\n{equations}\n\nBestimme den ganzzahligen Wert von {query_target}, oder gib an, dass das System unterbestimmt oder widersprüchlich ist, falls es keine eindeutige Lösung hat. Zeige deinen Lösungsweg und gib die endgültige(n) numerische(n) Antwort(en) klar beschriftet an."
+    zh: "考虑下面这个方程组，其中每个不同的符号代表一个整数未知量：\n\n{equations}\n\n确定 {query_target} 的整数值；若方程组欠定或不相容而无唯一解，请明确说明。展示你的推理过程，并清楚标注最终的数值答案。"
+    ua: "Розглянемо наступну систему рівнянь, у якій кожен окремий символ позначає ціле невідоме:\n\n{equations}\n\nВизнач ціле значення {query_target}, або вкажи, що система недовизначена чи несумісна, якщо вона не має єдиного розв'язку. Покажи хід розв'язання і наведи остаточну числову відповідь (чи відповіді), чітко їх позначивши."

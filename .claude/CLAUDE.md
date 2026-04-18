@@ -27,6 +27,7 @@
 - **Encoding & Cipher Decoding**: Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection
 - **Symbol Arithmetic**: Custom operation tables on abstract symbol sets — pure rule-following with zero semantic anchor
 - **Picross (Nonogram)**: Grid-based deductive reasoning — solve puzzles from row/column clue constraints
+- **Picture Algebra**: System-of-equations puzzles with emoji/alpha/nonsense variables — measures GSM-Symbolic-style semantic interference under visual substitution
 
 ### Key Characteristics
 
@@ -66,7 +67,7 @@ python -m src.visualization.generate_prompt_benchmark_visualizations results/
 ```
 gol_eval/
 ├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (19 plugins)
+│   ├── plugins/           # Plugin-based benchmark system (21 plugins)
 │   │   ├── base.py        # Abstract base classes for plugins
 │   │   ├── __init__.py    # Plugin registry with auto-discovery
 │   │   ├── parse_utils.py # End-first parsing utilities + multilingual keyword merge
@@ -89,7 +90,8 @@ gol_eval/
 │   │   ├── family_relations/ # Family Relations (perspective-aware counting)
 │   │   ├── encoding_cipher/ # Encoding & Cipher Decoding (Base64, Caesar, Morse)
 │   │   ├── symbol_arithmetic/ # Symbol Arithmetic (custom operation tables)
-│   │   └── picross/       # Picross (Nonogram) grid puzzle solving
+│   │   ├── picross/       # Picross (Nonogram) grid puzzle solving
+│   │   └── picture_algebra/ # Picture Algebra (emoji-variable linear systems)
 │   ├── stages/            # 3-stage pipeline (uses plugin system)
 │   │   ├── generate_testset.py  # Stage 1: YAML → test sets
 │   │   ├── run_testset.py       # Stage 2: Execute tests
@@ -136,7 +138,7 @@ gol_eval/
 
 | File | Purpose |
 |------|---------|
-| **Plugin System (19 plugins)** | |
+| **Plugin System (21 plugins)** | |
 | [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
 | [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
 | [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
@@ -159,6 +161,7 @@ gol_eval/
 | [src/plugins/encoding_cipher/](src/plugins/encoding_cipher/) | Encoding & Cipher Decoding plugin (Base64, Caesar, Morse) |
 | [src/plugins/symbol_arithmetic/](src/plugins/symbol_arithmetic/) | Symbol Arithmetic plugin (custom operation tables) |
 | [src/plugins/picross/](src/plugins/picross/) | Picross (Nonogram) plugin (grid puzzle solving) |
+| [src/plugins/picture_algebra/](src/plugins/picture_algebra/) | Picture Algebra plugin (emoji-variable linear systems) |
 | **3-Stage Pipeline** | |
 | [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
 | [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
@@ -250,7 +253,7 @@ All response parsers follow the principle of searching from the **end** of the m
 
 ### 7. Multilingual Content & Grammar System (v2.15.0+)
 
-All 19 plugins generate test content in 6 languages. Each plugin has:
+All 21 plugins generate test content in 6 languages. Each plugin has:
 - **`prompts.py`** — user prompt templates per language × style
 - **`i18n.py`** or **`*_i18n.py`** — localized vocabulary, question templates, scenario narratives
 - **`data/`** — per-language word lists, data files
@@ -911,10 +914,11 @@ pytest tests/
 ---
 
 *Last updated: 2026-04-17*
-*Version: 2.24.0*
+*Version: 2.25.0*
 
 **Recent key additions:**
 
+- **Picture Algebra plugin (v2.25.0)** — 21st benchmark. Linear-system puzzles where variables are rendered as emoji / alpha / nonsense tokens. sympy-driven integer-solution generation, trick cases (underdetermined / inconsistent systems with refusal sentinels), 9-strategy multilingual parser (`cannot_be_determined` sentinel + `boxed_multivar` + `label_line` two-pass numeric-first + `bold_assignments` + `final_answer_block` + `foreign_labels` for `wrong_variable` detection + `coord_tuple` + `last_numbers` + weaker sentinel fallback), 8-match-type evaluator (`correct`/`wrong_value`/`wrong_variable`/`partial`/`system_error`/`system_error_missed`/`system_error_false_positive`/`parse_error`), `semantic_interference_delta = accuracy(alpha) − accuracy(emoji)` surfaced at aggregation time when both surface forms are present (the GSM-Symbolic score this plugin exists to measure). 40 unit tests, 6 languages × 3 styles
 - **Annotation DX Overhaul (v2.24.0 / annotation schema v3)** — Multi-select classification (`response_classes: list[str]`), v3 class renames (`verbose_correct`→`verbose`, `parser_false_positive`→`false_positive`, dropped `parser_ok`), new `truncated` class. Five mark types (answer span / context anchor / answer keyword / negative span / negative keyword) via modifier+click with warm/cool visual treatment; adjacent marks auto-merge. `onMouseDown` suppresses browser selection-extension for Shift/Alt modifier keys. `Finish` button on last case navigates to `/results`. `?` help modal (keyboard shortcut + mark-type guide). Sidecar key migrated to `case_id::response_hash` (fixes leakage across language × user_style × system_style variants). `DELETE /annotations` now busts review-cases React Query cache. Response hash validation drops contaminated sidecar entries from pre-fix sessions.
 - **Improvement Report v2.6** — `REPORT_FORMAT_VERSION = "2.6"`. New sections: `negative_span_groups[]` (aggregated negative spans/keywords with `correct_span` + `parse_strategy` per example), `context_anchor_groups[]` (manually-tagged anchor labels), `manual_keyword_distribution` (higher-confidence signal than auto-inferred `model_answer_distribution`). `parser_was_correct` auto-inferred from span-parser alignment (replaces manual `parser_ok` class). New **Negatives tab** in improvement-report-dialog.
 - **Carwash parser Round 4 — option-listing filter + label expansion** — annotation-driven (v2.6 report, 223 cases). New `_is_conditional_drive()` with positional matching filters drive keywords in option-listing/comparison text (`"walk or drive"`, `"drive vs walk"`). Symmetric `"walk or drive"` pattern added to `_WALK_CONDITIONAL`. When both keywords fully filtered in a fragment, `_score()` returns `None` (fall-through) instead of guessing. 6 new label words (DE: zusammenfassung/kurzantwort/handlungsanleitung, FR: action recommandée/choix, ES: resumen). "therefore"/"daher"/"donc"/"por lo tanto" added to `_STRONG_INTRO` with comma tolerance. 93 total carwash tests (22 new), 0 regressions
@@ -944,7 +948,7 @@ pytest tests/
 - **Plugin task types auto-discovered** — `_KNOWN_TASK_TYPES` and `_TASK_TYPE_SUFFIXES` derived from `PluginRegistry`; fixed missing `picross` in reanalyze inference
 - **`TASK_COLORS`** — added missing entries for `time_arithmetic`, `false_premise`, `symbol_arithmetic`, `picross`
 - **LLM-as-a-Judge** — `/judge` page; verdicts: `true_incorrect`, `false_negative`, `parser_failure`; Markdown export
-- **Multilingual content** — deep localization + grammatical gender across all 19 plugins
+- **Multilingual content** — deep localization + grammatical gender across all 21 plugins
 - **React SPA** — Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui
 - **Job persistence + pause/resume** — `src/web/job_store.py` single-place JSON backend (swap for NoSQL without touching other files); `PAUSED` state with checkpoint index; resume continues from `paused_at_index`, merging partial results; history survives server restarts; `GOL_JOBS_FILE` env var configures path
 

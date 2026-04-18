@@ -21,6 +21,7 @@ const TASK_COLORS: Record<string, string> = {
   symbol_arithmetic: "bg-zinc-100 text-zinc-800 dark:bg-zinc-900 dark:text-zinc-200",
   picross: "bg-slate-100 text-slate-800 dark:bg-slate-900 dark:text-slate-200",
   fancy_unicode: "bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200",
+  picture_algebra: "bg-neutral-100 text-neutral-800 dark:bg-neutral-900 dark:text-neutral-200",
 }
 
 export function TaskBadge({ task }: { task: string }) {
