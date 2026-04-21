@@ -451,6 +451,320 @@ class TestEvaluator:
 # ── Integration ──────────────────────────────────────────────────────────
 
 
+# ── Round 1 regression tests ─────────────────────────────────────────────
+#
+# Each case below is seeded from a real annotation-report span
+# (qwen3.5:0.8b, 2026-04-19).  When any of these regress, the parser is
+# back to shipping `foreign_labels` / `last_numbers` instead of the clean
+# emoji extraction — see `docs/picture-algebra-parser-round-1.md`.
+
+
+class TestRound1Regressions:
+    """Round 1 annotation-data-driven regression tests (v2.25.1)."""
+
+    @staticmethod
+    def _params(tokens, expected, **overrides):
+        tp = {
+            "variables": list(tokens),
+            "num_variables": len(tokens),
+            "language": "en",
+            "question_scope": "all",
+            "determinacy": "unique",
+            "expected_answer": expected,
+        }
+        tp.update(overrides)
+        return tp
+
+    def _parse_and_evaluate(self, response, tokens, expected, **tp_overrides):
+        from src.plugins.picture_algebra.evaluator import PictureAlgebraEvaluator
+        parser = PictureAlgebraParser()
+        evaluator = PictureAlgebraEvaluator()
+        tp = self._params(tokens, expected, **tp_overrides)
+        parsed = parser.parse(response, tp)
+        result = evaluator.evaluate(parsed, expected, tp)
+        return parsed, result
+
+    # 1. LaTeX \text{<emoji>} wrapping — case 0001 shape
+    def test_latex_text_wrapped_emoji(self):
+        response = "Answer: $\\text{🚲} = 18, \\text{🧸} = 3$"
+        parsed, result = self._parse_and_evaluate(
+            response, ["🚲", "🧸"], {"🚲": 18, "🧸": 3},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert result.match_type == "correct"
+
+    # 2. Dollar-dollar inline LaTeX with \quad — case 0015 shape
+    def test_latex_dollardollar_quad_separator(self):
+        response = (
+            "Solving:\n"
+            "$$\n"
+            "\\text{🍌} = 5, \\quad \\text{🍟} = 17\n"
+            "$$"
+        )
+        parsed, result = self._parse_and_evaluate(
+            response, ["🍌", "🍟"], {"🍌": 5, "🍟": 17},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert result.match_type == "correct"
+
+    # 3. "This matches" in reasoning MUST NOT strip the conclusion
+    def test_mid_response_verification_does_not_strip_conclusion(self):
+        response = (
+            "From eq1: -4(11) + 8 = -36 (Correct)\n"
+            "From eq2: -4(11) + 4 = -40 (Correct)\n"
+            "(This matches the second equation.)\n\n"
+            "### Conclusion\n"
+            "The values for the variables are:\n"
+            "- **🦏 = 11**\n"
+            "- **🧀 = 4**"
+        )
+        parsed, result = self._parse_and_evaluate(
+            response, ["🦏", "🧀"], {"🦏": 11, "🧀": 4},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert result.match_type == "correct"
+        assert parsed.value == {"🦏": 11, "🧀": 4}
+
+    # 4. Bold-on-token-only (**🦆** = 4)
+    def test_bold_on_token_only(self):
+        response = "Final answer:\n*   **🦆** = 4\n*   **🥐** = 10"
+        parsed, result = self._parse_and_evaluate(
+            response, ["🦆", "🥐"], {"🦆": 4, "🥐": 10},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert result.match_type == "correct"
+
+    # 5. Bold on value only (🦆 = **4**)
+    def test_bold_on_value_only(self):
+        response = "After solving: 🦆 = **4**, 🥐 = **10**."
+        parsed, result = self._parse_and_evaluate(
+            response, ["🦆", "🥐"], {"🦆": 4, "🥐": 10},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert result.match_type == "correct"
+
+    # 6. \boxed{\text{...}} — LaTeX inside boxed
+    def test_boxed_with_latex_text(self):
+        response = r"Therefore \boxed{\text{🚲} = 18, \text{🧸} = 3}."
+        parsed, result = self._parse_and_evaluate(
+            response, ["🚲", "🧸"], {"🚲": 18, "🧸": 3},
+        )
+        assert parsed.parse_strategy == "boxed_multivar"
+        assert result.match_type == "correct"
+
+    # 7. foreign_labels guard: emoji answer present → don't use reasoning's x/y
+    def test_foreign_labels_guard_when_emoji_present(self):
+        response = (
+            "Let x = 🍎 and y = 🍌.\n"
+            "Solving: x = 3, y = 5.\n"
+            "### Answer\n"
+            "🍎 = 3, 🍌 = 5."
+        )
+        parsed, result = self._parse_and_evaluate(
+            response, ["🍎", "🍌"], {"🍎": 3, "🍌": 5},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert "x" not in parsed.value and "y" not in parsed.value
+        assert result.match_type == "correct"
+
+    # 8. Alias remap: `Let x = 🍎` declared, model only answers with x/y
+    def test_alias_detection_remaps_to_emoji(self):
+        response = (
+            "Let x = 🐯 and y = 🧸.\n"
+            "From the equations we get x = 14, y = 18."
+        )
+        parsed, result = self._parse_and_evaluate(
+            response, ["🐯", "🧸"], {"🐯": 14, "🧸": 18},
+        )
+        assert parsed.parse_strategy == "foreign_labels_aliased"
+        assert parsed.value == {"🐯": 14, "🧸": 18}
+        assert result.match_type == "correct"
+        assert result.details.get("alias_remap_applied") is True
+
+    # 9. Alias via dollar-wrap + "represent" phrasing (from manual_keyword_distribution)
+    def test_alias_with_dollar_wrap_and_represent(self):
+        response = (
+            "Let $x$ represent the value of the symbol **🐯**.\n"
+            "Let $y$ represent the value of the symbol **🧸**.\n"
+            "After solving: $$x = 14, \\quad y = 18$$"
+        )
+        parsed, result = self._parse_and_evaluate(
+            response, ["🐯", "🧸"], {"🐯": 14, "🧸": 18},
+        )
+        assert parsed.parse_strategy == "foreign_labels_aliased"
+        assert result.match_type == "correct"
+        assert result.details.get("alias_remap_applied") is True
+
+    # 10. Non-integer prediction surfaces as wrong_value + non_integer_prediction flag
+    def test_non_integer_prediction_flagged(self):
+        # Model got one value wrong with a decimal; expected integers
+        response = "- 🎁 = 57\n- 🐴 = 22.2"
+        parsed, result = self._parse_and_evaluate(
+            response, ["🎁", "🐴"], {"🎁": 57, "🐴": 22},
+        )
+        # 🎁 correct, 🐴 non-integer → partial (one correct, one wrong)
+        assert result.match_type == "partial"
+        assert result.details.get("non_integer_prediction") is True
+        # Predicted 🐴 kept as float so the flag is meaningful
+        assert isinstance(parsed.value["🐴"], float)
+
+    # 11. List-marker prefixes (``*   🐶 = 13``)
+    def test_list_marker_prefix(self):
+        response = "The values for the variables are:\n*   🐶 = 13\n*   🎳 = 3"
+        parsed, result = self._parse_and_evaluate(
+            response, ["🐶", "🎳"], {"🐶": 13, "🎳": 3},
+        )
+        assert parsed.parse_strategy == "label_line"
+        assert result.match_type == "correct"
+
+    # 12. Integer comparison no longer silently truncates float predictions
+    def test_integer_expected_rejects_float_prediction(self):
+        """Regression: `int(22.2) == 22` used to score as correct.  Compare
+        as floats now so fractional predictions are graded wrong."""
+        from src.plugins.base import ParsedAnswer
+        from src.plugins.picture_algebra.evaluator import PictureAlgebraEvaluator
+        e = PictureAlgebraEvaluator()
+        # Parser-shaped ParsedAnswer with a float value
+        parsed = ParsedAnswer(
+            value={"🐴": 22.2}, raw_response="", parse_strategy="label_line",
+        )
+        tp = self._params(["🐴"], {"🐴": 22}, question_scope="specific",
+                          queried_variable="🐴")
+        result = e.evaluate(parsed, {"🐴": 22}, tp)
+        assert result.match_type == "wrong_value"
+        assert result.details.get("non_integer_prediction") is True
+
+
+# ── Round 2 multilingual regression tests ────────────────────────────────
+#
+# Each case below is seeded from a real annotation-report span across 5
+# models × 6 languages (gemma3 12b/27b cloud, gpt-5.4-mini ×2, rnj-1 8b).
+# When any of these regress, multilingual sentinel detection or
+# single-value boxed handling has broken — see Round 2 plan and
+# CHANGELOG v2.25.2.
+
+
+class TestRound2Multilingual:
+    """Round 2 multilingual sentinel + boxed regression tests (v2.25.2)."""
+
+    @staticmethod
+    def _params(tokens, language="en", **overrides):
+        tp = {
+            "variables": list(tokens),
+            "num_variables": len(tokens),
+            "language": language,
+            "question_scope": "all",
+            "determinacy": "underdetermined",
+        }
+        tp.update(overrides)
+        return tp
+
+    # ── multilingual sentinel coverage ──────────────────────────────
+
+    def test_es_sentinel_no_unique_solution(self):
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "Resolviendo el sistema… **Respuesta:** El sistema no tiene una única solución.",
+            self._params(["🧸", "🍪", "🦊"], language="es"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+        assert r.value in ("CANNOT_BE_DETERMINED", "NO_SOLUTION")
+
+    def test_fr_sentinel_pas_solution_unique(self):
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "Après calcul… **Réponse :** Le système n'a pas de solution unique.",
+            self._params(["🐢"], language="fr"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+        assert r.value in ("CANNOT_BE_DETERMINED", "NO_SOLUTION")
+
+    def test_de_sentinel_keine_eindeutige_loesung_first_sentence(self):
+        """Models often LEAD with the conclusion — strict mode must check first sentences too."""
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "Das System hat **keine eindeutige Lösung**.\n\n"
+            "Es gibt 2 Gleichungen mit 3 Unbekannten:\n"
+            "4·🎁 + 🍓 - 5·🥑 = -69. Wenn wir 🥑 = -304 setzen, dann gilt …",
+            self._params(["🎁", "🍓", "🥑"], language="de"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+
+    def test_zh_sentinel_no_unique_solution(self):
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "解方程组得到 x = 4, y = 2, z = 41\n\n**结论:** 方程组没有唯一解",
+            self._params(["🍞"], language="zh", question_scope="specific",
+                         queried_variable="🍞"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+
+    def test_ua_sentinel_with_curly_apostrophe(self):
+        """Curly apostrophe (U+2019) must be normalized to straight (U+0027) for matching."""
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "Розв’язуючи… Система не має єдиного розв’язку.",
+            self._params(["🐯", "🧸"], language="ua"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+
+    def test_ua_sentinel_with_straight_apostrophe(self):
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "Розв'язуючи… Система не має єдиного розв'язку.",
+            self._params(["🐯", "🧸"], language="ua"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+
+    def test_es_parametric_partial_answer(self):
+        """Model gave one variable + said the rest are parametric — that's underdetermined."""
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "**Respuesta:**\n*   🦊 = 9\n*   🍓 y 🦒 pueden tomar múltiples valores enteros, "
+            "donde 🦒 = 56 - 2·🍓",
+            self._params(["🦊", "🍓", "🦒"], language="es"),
+        )
+        assert r.parse_strategy == "cannot_be_determined"
+
+    # ── boxed_single_value coverage ─────────────────────────────────
+
+    def test_boxed_single_value_specific_scope(self):
+        """`\\boxed{11}` with question_scope='specific' assigns to queried_variable."""
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "After calculation, all paths give the same result.\n\n"
+            r"Final Answer: The final answer is $\boxed{11}$",
+            self._params(["🐶"], language="en",
+                         question_scope="specific", queried_variable="🐶"),
+        )
+        assert r.parse_strategy == "boxed_single_value"
+        assert r.value == {"🐶": 11}
+
+    def test_boxed_single_value_with_preceding_token(self):
+        """`<token> est : \\[\\boxed{N}\\]` — nearest preceding token wins."""
+        p = PictureAlgebraParser()
+        r = p.parse(
+            "Calculons les équations.\ny = 2\n\n"
+            "Ainsi, la valeur de 🐢 est :\n\n"
+            r"\[" "\n" r"\boxed{2}" "\n" r"\]",
+            self._params(["🐢"], language="fr",
+                         question_scope="all"),
+        )
+        assert r.parse_strategy == "boxed_single_value"
+        assert r.value == {"🐢": 2}
+
+    def test_boxed_single_value_inline_token(self):
+        """`🐢 = $ \\boxed{2} $` — token immediately precedes boxed."""
+        p = PictureAlgebraParser()
+        r = p.parse(
+            r"After all checks: 🐢 = $ \boxed{2} $",
+            self._params(["🐢"], language="en",
+                         question_scope="specific", queried_variable="🐢"),
+        )
+        assert r.parse_strategy == "boxed_single_value"
+        assert r.value == {"🐢": 2}
+
+
 class TestIntegration:
     def test_end_to_end(self):
         """Generate → fake correct response → parse → evaluate → correct."""

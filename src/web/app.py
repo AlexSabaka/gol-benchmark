@@ -1,4 +1,5 @@
 """FastAPI application — serves API endpoints and React SPA."""
+import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
@@ -9,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src import __version__
 from src.web.api import api_router
+from src.web.config import web_config
 from src.web.job_store import JobStore
 from src.web.jobs import job_manager
 
@@ -16,9 +18,22 @@ _WEB_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _WEB_DIR.resolve().parent.parent
 _SPA_DIR = _PROJECT_ROOT / "frontend" / "dist"
 
-# Job persistence — path configurable via GOL_JOBS_FILE env var.
-_jobs_file = Path(os.environ.get("GOL_JOBS_FILE", str(_PROJECT_ROOT / "jobs.json")))
-_job_store = JobStore(_jobs_file)
+_logger = logging.getLogger(__name__)
+
+# Job persistence — per-job files under web_config.jobs_dir.
+# `GOL_JOBS_FILE` is retained as a deprecated alias: if set, its parent directory
+# is used as the jobs dir (per-job files live alongside the old monolithic file).
+_legacy_jobs_file = os.environ.get("GOL_JOBS_FILE")
+if _legacy_jobs_file:
+    _logger.warning(
+        "GOL_JOBS_FILE is deprecated; use GOL_DATA_ROOT or move the parent "
+        "directory. Falling back to %s's parent as jobs_dir.",
+        _legacy_jobs_file,
+    )
+    _jobs_dir = Path(_legacy_jobs_file).parent
+else:
+    _jobs_dir = Path(web_config.jobs_dir)
+_job_store = JobStore(_jobs_dir)
 
 # Wire store into the singleton manager so it can persist/load jobs.
 job_manager._store = _job_store

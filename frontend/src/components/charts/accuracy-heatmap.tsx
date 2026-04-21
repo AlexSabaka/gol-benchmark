@@ -1,13 +1,18 @@
 import { memo, useState, useMemo, useCallback } from "react"
 import { accuracyBucket, accuracyColor, accuracyTextColor } from "@/lib/chart-colors"
 import { suffixDisplay } from "@/lib/utils"
+import { wilsonCI, LOW_SAMPLE_THRESHOLD } from "@/lib/stats"
 import type { HeatmapCell } from "@/types"
 import { ModelBadge } from "./model-badge"
+import { SvgModelTick } from "./svg-model-tick"
+import { familyOf, isFamilyActive } from "./family-legend"
+import { getThemeColors } from "./chart-theme"
 
 interface AccuracyHeatmapProps {
   data: HeatmapCell[]
   xKey: "model" | "task"
   yKey: "model" | "task"
+  highlightedFamilies?: Set<string>
 }
 
 interface TooltipState {
@@ -32,8 +37,15 @@ function axisLabel(value: string, axis: "model" | "task", maxLen: number): strin
   return axis === "model" ? suffixDisplay(value, maxLen) : truncate(formatLabel(value), maxLen)
 }
 
-export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey }: AccuracyHeatmapProps) {
+export const AccuracyHeatmap = memo(function AccuracyHeatmap({
+  data,
+  xKey,
+  yKey,
+  highlightedFamilies,
+}: AccuracyHeatmapProps) {
+  const highlighted = highlightedFamilies ?? new Set<string>()
   const [tooltip, setTooltip] = useState<TooltipState | null>(null)
+  const theme = getThemeColors()
 
   // Build axes and lookup
   const { xLabels, yLabels, lookup } = useMemo(() => {
@@ -73,6 +85,26 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
 
   const handleMouseLeave = useCallback(() => setTooltip(null), [])
 
+  /** For a given (x,y) pair, decide whether either axis's model is hidden by the family filter. */
+  const cellActive = useCallback(
+    (xVal: string, yVal: string): boolean => {
+      if (highlighted.size === 0) return true
+      if (xKey === "model" && !isFamilyActive(familyOf(xVal), highlighted)) return false
+      if (yKey === "model" && !isFamilyActive(familyOf(yVal), highlighted)) return false
+      return true
+    },
+    [highlighted, xKey, yKey],
+  )
+
+  const modelActive = useCallback(
+    (axis: "model" | "task", label: string): boolean => {
+      if (highlighted.size === 0) return true
+      if (axis !== "model") return true
+      return isFamilyActive(familyOf(label), highlighted)
+    },
+    [highlighted],
+  )
+
   if (!data.length || !xLabels.length || !yLabels.length) {
     return <div className="flex h-full items-center justify-center text-muted-foreground">No data available</div>
   }
@@ -104,22 +136,20 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
       <svg width={svgW} height={svgH} className="select-none" role="img" aria-label={`Accuracy heatmap: ${yLabels.length} ${yKey}s by ${xLabels.length} ${xKey}s`}>
         <title>Accuracy Heatmap</title>
         <desc>Heatmap showing benchmark accuracy for each {yKey} and {xKey} combination</desc>
-        {/* Y-axis labels — full ModelBadge when axis is models, plain text otherwise */}
+        {/* Y-axis labels — pure SVG badge when axis is models (survives PNG export) */}
         {yLabels.map((label, yi) => {
           const cy = marginTop + yi * (cellSize + gap) + cellSize / 2
+          const active = modelActive(yKey, label)
           if (yKey === "model") {
             return (
-              <foreignObject
+              <SvgModelTick
                 key={`y-${label}`}
-                x={0}
-                y={cy - cellSize / 2}
+                model={label}
+                rightEdge={marginLeft - 8}
+                y={cy}
                 width={marginLeft - 8}
-                height={cellSize}
-              >
-                <div className="flex h-full items-center justify-end pr-1">
-                  <ModelBadge model={label} layout="stacked" />
-                </div>
-              </foreignObject>
+                active={active}
+              />
             )
           }
           return (
@@ -129,27 +159,38 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
               y={cy}
               textAnchor="end"
               dominantBaseline="central"
-              className="fill-foreground text-xs"
+              fontSize={12}
+              fill={theme.foreground}
+              opacity={active ? 1 : 0.3}
             >
               {yDisplayLabels[yi]}
             </text>
           )
         })}
 
-        {/* X-axis labels (rotated) */}
-        {xLabels.map((label, xi) => (
-          <text
-            key={`x-${label}`}
-            x={0}
-            y={0}
-            textAnchor="end"
-            dominantBaseline="central"
-            className="fill-foreground text-xs"
-            transform={`translate(${marginLeft + xi * (cellSize + gap) + cellSize / 2}, ${marginTop - 8}) rotate(-45)`}
-          >
-            {xDisplayLabels[xi]}
-          </text>
-        ))}
+        {/* X-axis labels — pivot at the label's bottom-left corner so adjacent
+            labels fan out in parallel up-right, preventing the overlap that
+            occurred with a center-pivot rotation. */}
+        {xLabels.map((label, xi) => {
+          const active = modelActive(xKey, label)
+          const pivotX = marginLeft + xi * (cellSize + gap) + cellSize / 2
+          const pivotY = marginTop - 6
+          return (
+            <text
+              key={`x-${label}`}
+              x={0}
+              y={0}
+              textAnchor="start"
+              dominantBaseline="text-after-edge"
+              fontSize={12}
+              fill={theme.foreground}
+              opacity={active ? 1 : 0.3}
+              transform={`translate(${pivotX}, ${pivotY}) rotate(-45)`}
+            >
+              {xDisplayLabels[xi]}
+            </text>
+          )
+        })}
 
         {/* Heatmap cells */}
         {xLabels.map((xLabel, xi) =>
@@ -157,6 +198,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
             const cell = lookup.get(`${xLabel}|${yLabel}`)
             if (!cell) return null
             const bucket = accuracyBucket(cell.accuracy)
+            const active = cellActive(xLabel, yLabel)
             return (
               <rect
                 key={`${xLabel}-${yLabel}`}
@@ -169,7 +211,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
                 stroke="rgba(255,255,255,0.45)"
                 strokeWidth={bucket === "high" ? 2 : 1.25}
                 strokeDasharray={bucket === "low" ? "5 3" : bucket === "mid" ? "2 2" : undefined}
-                opacity={0.95}
+                opacity={active ? 0.95 : 0.2}
                 className="cursor-pointer transition-opacity hover:opacity-100"
                 onMouseEnter={(e) => handleMouseEnter(e, cell)}
                 onMouseLeave={handleMouseLeave}
@@ -183,6 +225,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
           yLabels.map((yLabel, yi) => {
             const cell = lookup.get(`${xLabel}|${yLabel}`)
             if (!cell) return null
+            const active = cellActive(xLabel, yLabel)
             return (
               <text
                 key={`v-${xLabel}-${yLabel}`}
@@ -193,6 +236,7 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
                 fontSize={valueFontSize}
                 className="pointer-events-none font-semibold"
                 fill={accuracyTextColor(cell.accuracy)}
+                opacity={active ? 1 : 0.3}
               >
                 {(cell.accuracy * 100).toFixed(0)}
               </text>
@@ -220,7 +264,8 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
         <text
           x={marginLeft + gridW + 36}
           y={marginTop + 6}
-          className="fill-muted-foreground text-xs"
+          fontSize={12}
+          fill={theme.mutedForeground}
           dominantBaseline="central"
         >
           100%
@@ -228,7 +273,8 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
         <text
           x={marginLeft + gridW + 36}
           y={marginTop + gridH / 2}
-          className="fill-muted-foreground text-xs"
+          fontSize={12}
+          fill={theme.mutedForeground}
           dominantBaseline="central"
         >
           50%
@@ -236,7 +282,8 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
         <text
           x={marginLeft + gridW + 36}
           y={marginTop + gridH - 6}
-          className="fill-muted-foreground text-xs"
+          fontSize={12}
+          fill={theme.mutedForeground}
           dominantBaseline="central"
         >
           0%
@@ -244,30 +291,43 @@ export const AccuracyHeatmap = memo(function AccuracyHeatmap({ data, xKey, yKey 
       </svg>
 
       {/* Tooltip */}
-      {tooltip && (
-        <div
-          className="pointer-events-none absolute z-50 space-y-1.5 rounded-md border bg-popover px-3 py-2 text-sm shadow-md"
-          style={{
-            left: Math.max(80, tooltip.x),
-            top: Math.max(40, tooltip.y),
-            transform: "translate(-50%, -100%)",
-          }}
-        >
-          <ModelBadge
-            model={tooltip.cell.model}
-            layout="inline"
-            mergedCount={tooltip.cell.aliases?.length}
-          />
-          <p className="text-xs text-muted-foreground">{formatLabel(tooltip.cell.task)}</p>
-          <p className="text-xs">Accuracy: {(tooltip.cell.accuracy * 100).toFixed(1)}%</p>
-          <p className="text-xs">Tests: {tooltip.cell.total}</p>
-          {tooltip.cell.aliases && tooltip.cell.aliases.length > 1 && (
-            <p className="text-[10px] text-muted-foreground">
-              Merged from: {tooltip.cell.aliases.join(", ")}
+      {tooltip && (() => {
+        const correct = Math.round(tooltip.cell.accuracy * tooltip.cell.total)
+        const { low, high } = wilsonCI(correct, tooltip.cell.total)
+        const lowSample = tooltip.cell.total < LOW_SAMPLE_THRESHOLD
+        return (
+          <div
+            className="pointer-events-none absolute z-50 space-y-1.5 rounded-md border bg-popover px-3 py-2 text-sm shadow-md"
+            style={{
+              left: Math.max(80, tooltip.x),
+              top: Math.max(40, tooltip.y),
+              transform: "translate(-50%, -100%)",
+            }}
+          >
+            <ModelBadge
+              model={tooltip.cell.model}
+              layout="inline"
+              mergedCount={tooltip.cell.aliases?.length}
+            />
+            <p className="text-xs text-muted-foreground">{formatLabel(tooltip.cell.task)}</p>
+            <p className="text-xs">
+              Accuracy: {(tooltip.cell.accuracy * 100).toFixed(1)}%{" "}
+              <span className="text-muted-foreground">(n={tooltip.cell.total.toLocaleString()})</span>
             </p>
-          )}
-        </div>
-      )}
+            <p className="text-xs text-muted-foreground">
+              95% CI [{(low * 100).toFixed(1)}%, {(high * 100).toFixed(1)}%]
+            </p>
+            {lowSample && (
+              <p className="text-[10px] text-amber-600 dark:text-amber-400">Low sample size — CI is wide.</p>
+            )}
+            {tooltip.cell.aliases && tooltip.cell.aliases.length > 1 && (
+              <p className="text-[10px] text-muted-foreground">
+                Merged from: {tooltip.cell.aliases.join(", ")}
+              </p>
+            )}
+          </div>
+        )
+      })()}
 
       <div className="mt-2 flex flex-wrap items-center gap-4 text-xs text-muted-foreground">
         <span className="font-medium">Encoding:</span>

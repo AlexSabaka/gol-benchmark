@@ -15,9 +15,15 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from src.web.crypto import decrypt_str, encrypt_str
 from src.web.job_store import JobStore
 
 logger = logging.getLogger(__name__)
+
+# Bumped when the stored-dict shape changes in a way that requires differentiated
+# deserialization. v2 introduces Fernet-encrypted credential fields (TD-085):
+# ``api_key_enc`` / ``api_base_enc`` replace the plaintext ``api_key`` / ``api_base``.
+JOB_SCHEMA_VERSION = 2
 
 
 class JobState(str, Enum):
@@ -119,8 +125,14 @@ class Job:
         }
 
     def to_storable_dict(self) -> Dict[str, Any]:
-        """Serialize all persistent fields for the JobStore (no computed fields)."""
+        """Serialize all persistent fields for the JobStore (no computed fields).
+
+        Credentials (``api_key`` / ``api_base``) are Fernet-encrypted at rest
+        under keys ``api_key_enc`` / ``api_base_enc`` — see ``src/web/crypto.py``.
+        The plaintext keys are intentionally never written by v2 records.
+        """
         return {
+            "schema_version": JOB_SCHEMA_VERSION,
             "id": self.id,
             "model_name": self.model_name,
             "testset_path": self.testset_path,
@@ -141,8 +153,8 @@ class Job:
             "temperature": self.temperature,
             "max_tokens": self.max_tokens,
             "no_think": self.no_think,
-            "api_key": self.api_key,
-            "api_base": self.api_base,
+            "api_key_enc": encrypt_str(self.api_key),
+            "api_base_enc": encrypt_str(self.api_base),
             "accumulated_elapsed_seconds": self.accumulated_elapsed_seconds,
             "start_index": self.start_index,
             "hidden": self.hidden,
@@ -150,12 +162,30 @@ class Job:
 
     @classmethod
     def from_stored_dict(cls, d: Dict[str, Any]) -> "Job":
-        """Reconstruct a Job from a stored dict (ignores unknown keys)."""
+        """Reconstruct a Job from a stored dict (ignores unknown keys).
+
+        Accepts both v2 (encrypted credential envelope) and legacy plaintext
+        records. Legacy records upgrade to v2 on the next ``_persist_job()``
+        call naturally — no migration script needed.
+        """
         known = {f for f in cls.__dataclass_fields__}
         filtered = {k: v for k, v in d.items() if k in known}
         # Coerce state string back to enum
         if "state" in filtered and isinstance(filtered["state"], str):
             filtered["state"] = JobState(filtered["state"])
+
+        # Credential resolution: encrypted fields take precedence when present,
+        # so a v2 record with stale plaintext leftovers prefers the ciphertext.
+        if "api_key_enc" in d:
+            filtered["api_key"] = decrypt_str(d.get("api_key_enc"))
+        if "api_base_enc" in d:
+            filtered["api_base"] = decrypt_str(d.get("api_base_enc"))
+        if d.get("schema_version") is None and ("api_key" in d or "api_base" in d):
+            logger.debug(
+                "Legacy plaintext credentials in job %s — will be encrypted on next save.",
+                d.get("id"),
+            )
+
         return cls(**filtered)
 
 
@@ -476,7 +506,12 @@ def _save_partial_results(
         },
         "results": results_list,
     }
-    partial_path = os.path.join(output_dir, f"partial_{job_id}.json.gz")
+    # Pause checkpoints live under web_config.partial_dir (data/jobs/partial/)
+    # so the results directory stays clean. `output_dir` is still needed for
+    # finalized result files but not for transient checkpoints.
+    from src.web.config import web_config
+    partial_path = str(web_config.partial_path_for(job_id))
+    os.makedirs(os.path.dirname(partial_path), exist_ok=True)
     with gzip.open(partial_path, "wt", encoding="utf-8") as f:
         json.dump(partial_data, f, indent=2, default=str)
     return partial_path

@@ -227,18 +227,25 @@ __marimo__/
 # Project specific ignores
 known_patterns/
 
-# Runtime job history (may contain plaintext API keys — do not commit)
+# Runtime job history (legacy — pre-migration, may contain plaintext API keys)
 jobs.json
+jobs.json.migrated
 partial_*.json.gz
 
-# Data directory - ignore contents but keep structure
-data/conways_life/
+# All runtime artifacts live under data/ (see scripts/migrate_data_layout.py).
+# Kept out of VCS because they're per-machine and contain run outputs. API
+# credentials in data/jobs/*.json are Fernet-encrypted at rest (TD-085) using
+# the key at data/.secret_key (also ignored below).
+data/
+data/.secret_key
 
-# Results directory
+# Legacy runtime dirs (empty post-migration but listed so stragglers don't leak)
 results/
 results_*/
 testsets/
+reports/
 benchmark_configs/
+gol_eval.log
 
 
 configs/**/*.yaml
@@ -246,7 +253,6 @@ configs/**/*.yaml
 # Misc
 .DS_Store
 share/*
-/reports
 *.png
 
 # Frontend (React SPA)

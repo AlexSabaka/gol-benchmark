@@ -118,6 +118,7 @@ export interface ScatterPoint {
   model: string
   paramCount: number | null
   accuracy: number
+  total: number
   /** Raw provider tags that were merged into this canonical model (for tooltip disclosure). */
   aliases?: string[]
 }

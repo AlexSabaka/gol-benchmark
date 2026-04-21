@@ -44,11 +44,19 @@ def _results_dirs() -> List[Path]:
 
 
 def _find_result_files() -> List[Path]:
-    """Find all result .json.gz files across result directories."""
+    """Find all result .json.gz files across result directories.
+
+    Excludes any stale ``*_annotations.json.gz`` sidecars that might be sitting
+    in the results dir from a pre-data-layout install — without this guard they
+    would match ``results_*.json.gz`` and show up as phantom ``unknown`` rows.
+    """
     files = []
     for d in _results_dirs():
         if d.exists():
-            files.extend(d.glob("results_*.json.gz"))
+            for p in d.glob("results_*.json.gz"):
+                if "_annotations." in p.name:
+                    continue
+                files.append(p)
     return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
 
 
@@ -78,15 +86,11 @@ def _load_result(filepath: Path) -> dict:
 
 
 def _annotation_sidecar_exists(filepath: Path) -> bool:
-    """Check whether a `_annotations.json.gz` sidecar exists next to a result file."""
-    name = filepath.name
-    if name.endswith(".json.gz"):
-        stem = name[: -len(".json.gz")]
-    elif name.endswith(".json"):
-        stem = name[: -len(".json")]
-    else:
-        stem = filepath.stem
-    return (filepath.parent / f"{stem}_annotations.json.gz").exists()
+    """Check whether an annotation sidecar exists for a given result file.
+
+    Sidecars live under ``web_config.annotations_dir`` (``data/annotations/``).
+    """
+    return web_config.annotation_path_for(filepath.name).exists()
 
 
 def _summarize_result(filepath: Path) -> dict:

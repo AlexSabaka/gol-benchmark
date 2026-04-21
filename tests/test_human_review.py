@@ -222,9 +222,16 @@ def fake_result(tmp_path: Path, monkeypatch):
     # Patch results-dir lookup for both routers.
     monkeypatch.setattr(analysis, "_results_dirs", lambda: [results_dir])
 
+    # Sandbox annotations dir so the test doesn't see real sidecars from data/.
+    annot_dir = tmp_path / "annotations"
+    annot_dir.mkdir()
+    from src.web.config import web_config
+    monkeypatch.setattr(web_config, "annotations_dir", str(annot_dir))
+
     yield rf
 
     shutil.rmtree(results_dir, ignore_errors=True)
+    shutil.rmtree(annot_dir, ignore_errors=True)
 
 
 def test_cases_endpoint_returns_non_empty_filters_empty(fake_result: Path):

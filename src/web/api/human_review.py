@@ -1,8 +1,9 @@
 """Human Review & annotation endpoints.
 
-Annotations are stored as gzipped JSON sidecars next to their result files
-(`{stem}_annotations.json.gz`), following the convention used by the
-LLM-as-a-Judge feature. Writes are atomic (temp file + rename).
+Annotations are stored as gzipped JSON files under ``web_config.annotations_dir``
+(``data/annotations/{result_stem}.json.gz``), keyed by result-file stem. They
+live in their own directory (not next to result files) so the ``results_*.json.gz``
+glob can't pick them up as phantom entries. Writes are atomic (temp file + rename).
 
 Route order: specific routes come before any `{filename}` catch-all so the
 FastAPI router doesn't accidentally capture `cases` / `annotate` / `report` as
@@ -91,15 +92,14 @@ def _migrate_annotation(ann: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _annotation_path(result_file: Path) -> Path:
-    """Return the annotation sidecar path for a given result file."""
-    name = result_file.name
-    if name.endswith(".json.gz"):
-        stem = name[: -len(".json.gz")]
-    elif name.endswith(".json"):
-        stem = name[: -len(".json")]
-    else:
-        stem = result_file.stem
-    return result_file.parent / f"{stem}_annotations.json.gz"
+    """Return the annotation sidecar path for a given result file.
+
+    Sidecars live in ``web_config.annotations_dir`` (default ``data/annotations/``),
+    not next to result files. This prevents the ``results_*.json.gz`` glob from
+    picking them up as phantom result entries.
+    """
+    from src.web.config import web_config
+    return web_config.annotation_path_for(result_file.name)
 
 
 def _load_annotations(path: Path) -> Optional[Dict[str, Any]]:

@@ -97,33 +97,50 @@ class PictureAlgebraEvaluator(ResultEvaluator):
             )
 
         # ── compare values on overlapping keys ─────────────────────
+        # Compare as floats so that a non-integer prediction (e.g. 22.2 vs
+        # expected 22) is correctly graded *wrong* instead of silently
+        # truncating via ``int(22.2) == 22``.
         correct_count = 0
         wrong_count = 0
         missing_count = 0
+        non_integer_prediction = False
         for key, exp_val in expected_map.items():
             if key not in predicted:
                 missing_count += 1
                 continue
+            pred_raw = predicted[key]
+            if isinstance(pred_raw, bool):
+                wrong_count += 1
+                continue
             try:
-                pred_val = int(predicted[key])
+                pred_num = float(pred_raw)
             except (ValueError, TypeError):
                 wrong_count += 1
                 continue
-            if pred_val == exp_val:
+            if isinstance(pred_raw, float) and not pred_raw.is_integer():
+                non_integer_prediction = True
+            if pred_num == float(exp_val):
                 correct_count += 1
             else:
                 wrong_count += 1
 
         total_requested = len(expected_map)
         question_scope = str(task_params.get("question_scope", "all"))
+        extra_details: Dict[str, Any] = {
+            "correct_count": correct_count,
+            "wrong_count": wrong_count,
+            "missing_count": missing_count,
+        }
+        if non_integer_prediction:
+            extra_details["non_integer_prediction"] = True
+        if parsed_answer.parse_strategy == "foreign_labels_aliased":
+            extra_details["alias_remap_applied"] = True
 
         if correct_count == total_requested and wrong_count == 0 and missing_count == 0:
             return EvaluationResult(
                 correct=True, match_type="correct", accuracy=1.0,
                 details=_details(parsed_answer, expected_answer, task_params,
-                                 correct_count=correct_count,
-                                 wrong_count=wrong_count,
-                                 missing_count=missing_count),
+                                 **extra_details),
             )
 
         # Partial only applies when the user asked for all variables; otherwise
@@ -138,17 +155,13 @@ class PictureAlgebraEvaluator(ResultEvaluator):
             return EvaluationResult(
                 correct=False, match_type="partial", accuracy=accuracy,
                 details=_details(parsed_answer, expected_answer, task_params,
-                                 correct_count=correct_count,
-                                 wrong_count=wrong_count,
-                                 missing_count=missing_count),
+                                 **extra_details),
             )
 
         return EvaluationResult(
             correct=False, match_type="wrong_value", accuracy=0.0,
             details=_details(parsed_answer, expected_answer, task_params,
-                             correct_count=correct_count,
-                             wrong_count=wrong_count,
-                             missing_count=missing_count),
+                             **extra_details),
         )
 
     # ── aggregation ────────────────────────────────────────────────

@@ -1,358 +1,193 @@
-# GoL Procedural Benchmark
+# gol-eval
 
-A procedural benchmark suite for testing multilingual LLM reasoning capabilities across tasks requiring step-by-step logic and systematic rule application.
+> A procedural benchmark suite for stress-testing LLM reasoning. Started as a weekend project to benchmark Conway's Game of Life across local models. Got out of control. Now 21 plugins, 6 languages, three-stage pipeline, web UI with human-in-the-loop annotation.
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Python 3.8+](https://img.shields.io/badge/python-3.8+-blue.svg)](https://www.python.org/downloads/)
+[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
 
 ---
 
-## What Is This?
+## What this is
 
-GoL Benchmark is a **semi *vibe* coded pet project evolved to experimental playground** for stress-testing how well language models handle **structured reasoning tasks** across different:
+gol-eval is a benchmark framework built around one claim:
 
-- **Languages** (English, Spanish, French, German, Chinese, Ukrainian)
-- **Prompt styles** (linguistic, casual, minimal — each plugin owns its templates)
-- **Representations** (numeric `1/0` vs emoji `🟩/🟥` and etc)
-- **Complexity levels** (from easy to nightmare mode)
+> **Failure isn't a binary model property. It's a controllable variable, and the system prompt is the dominant control lever.**
 
-Think of it as a systematic benchmark for LLMs to expose their reasoning gaps, biases, and quirks.
+Every test case is procedurally generated from a seed (no static dataset to memorize), every answer is parsed deterministically (no LLM-as-judge for primary scoring), and the same case is run across crossed axes of prompt style × system prompt × language so behavior can be attributed to specific inputs rather than vibes.
 
----
-
-## What Gets Tested?
-
-| # | Task | What It Tests |
-| --- | ------ | --------------- |
-| 1 | **Game of Life (GoL)** | Conway's cellular automaton — predict next grid state |
-| 2 | **Arithmetic (ARI)** | Math expression parsing and evaluation |
-| 3 | **Linda Conjunction Fallacy** | Cognitive bias — conjunction fallacy detection |
-| 4 | **Cellular Automata 1D (C14)** | Wolfram 1D rule application (rules 0–255) |
-| 5 | **ASCII Shapes** | Spatial reasoning on ASCII art (dimensions, counts, positions) |
-| 6 | **Object Tracking** | Physical state tracking through container inversions |
-| 7 | **Sally-Anne Test** | Theory of Mind — false belief reasoning |
-| 8 | **Carwash Paradox** | Practical goal tracking — walk or drive? (always drive) |
-| 9 | **Inverted Cup** | Spatial orientation — sealed top/open bottom cup (flip it) |
-| 10 | **Strawberry** | Character-level reasoning: letter counting, word reversal, nth-letter, anagram, pangram, lipogram |
-| 11 | **Measure Comparison** | Quantity comparison with units, conversion traps, and decimal framing sensitivity |
-| 12 | **Grid Tasks** | Table reasoning — cell lookups, row sums, column counts |
-| 13 | **Time Arithmetic** | Temporal reasoning — intervals, calendar math, impossible dates, AM/PM traps |
-| 14 | **Misquote Attribution** | Sycophancy detection — false quote attributions with social-pressure framings |
-| 15 | **False Premise** | Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic) |
-| 16 | **Family Relations** | Perspective-aware family counting puzzles — sibling count, shared children, generational, perspective shift |
-| 17 | **Encoding & Cipher Decoding** | Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection |
-| 18 | **Symbol Arithmetic** | Evaluate expressions under arbitrary binary operations (custom operation tables, commutativity/associativity detection) |
-| 19 | **Picross (Nonogram)** | Grid-based deductive reasoning — solve puzzles from row/column clue constraints |
+Across the current multilingual study (2 × 2 × 6 matrix — linguistic vs minimal user prompt × analytical vs adversarial system prompt × 6 languages, ~25 models, 1,200 cases per model), system prompt condition produces swings of **up to 48 percentage points within a single model**.
 
 ---
 
-## Quick Start
+## Design principles
+
+- **Procedural generation.** Seeds in, test cases out. Same seed + same config = identical cases.
+- **Crossed axes.** User prompt style × system prompt × language are independent variables. Run the same model through all combinations and compare.
+- **Deterministic parsing.** Every plugin has a multi-strategy parser with explicit confidence levels (boxed=0.95, bold=0.90, label=0.85, pattern=0.80, keyword=0.70, fallback=0.50). LLM-as-judge is available as a secondary audit tool, never as the primary score.
+- **Multilingual to the bone.** Content — not just prompt wrappers — generated in 6 languages (EN / ES / FR / DE / ZH / UA). Grammar, gender, case handling per language.
+- **Failure modes that actually matter.** Sally-Anne, carwash paradox, inverted cup, misquote attribution, false premise detection, strawberry-style character reasoning — the stuff that shows up in screenshots on r/LocalLLaMA.
+
+---
+
+## What's inside the box
+
+21 plugins grouped by what they probe. Each is self-contained in `src/plugins/<n>/` with its own generator, parser, and evaluator.
+
+### Spatial & simulation
+
+| Plugin                 | Tests                                               | Answer          |
+| ---------------------- | --------------------------------------------------- | --------------- |
+| `game_of_life`         | Conway's rules applied to a grid                    | 2D binary grid  |
+| `cellular_automata_1d` | Wolfram elementary rules (0–255)                    | 1D binary array |
+| `ascii_shapes`         | Dimensions / count / position on ASCII art          | int / bool      |
+| `picross`              | Nonogram deduction from row/col clues               | 2D binary grid  |
+| `inverted_cup`         | Orientation — cup sealed top, open bottom           | "flip"          |
+| `object_tracking`      | Track object through container moves and inversions | location name   |
+
+### Computation
+
+| Plugin               | Tests                                                                                                                                             | Answer                              |
+| -------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------- | ----------------------------------- |
+| `arithmetic`         | Expression evaluation with controlled complexity                                                                                                  | number                              |
+| `symbol_arithmetic`  | Rule-following on arbitrary binary operation tables — detects silent assumption of commutativity/associativity                                    | symbol                              |
+| `picture_algebra`    | Systems of linear equations with variables rendered as emoji / alpha letters / nonsense words — measures GSM-Symbolic-style semantic interference | per-variable values                 |
+| `grid_tasks`         | Cell lookup / row sum / column count on formatted tables                                                                                          | varies                              |
+| `time_arithmetic`    | Intervals, midnight-crossing, AM/PM traps, impossible dates, leap years                                                                           | time / day / "impossible"           |
+| `measure_comparison` | Quantity comparison with unit conversion, equal-value tricks, incomparables, adversarial decimal framing                                          | quantity / "equal" / "incomparable" |
+
+### Reasoning traps
+
+| Plugin             | Tests                                                                             | Answer                       |
+| ------------------ | --------------------------------------------------------------------------------- | ---------------------------- |
+| `sally_anne`       | Theory of Mind false belief — belief location vs reality                          | container name               |
+| `carwash`          | Practical goal tracking — proximity framing tempts walk, answer is always "drive" | "drive"                      |
+| `linda_fallacy`    | Conjunction fallacy via probability ranking                                       | ordered ranking              |
+| `family_relations` | Perspective-aware counting — classic self-as-sibling trap                         | integer                      |
+| `false_premise`    | Dangerous / impossible premise detection across 5 domains                         | refusal / compliance / hedge |
+| `misquote`         | Sycophancy probe — false attribution with social-pressure framings                | yes/no (two-part)            |
+
+### Character & encoding
+
+| Plugin            | Tests                                                                                                                               | Answer                       |
+| ----------------- | ----------------------------------------------------------------------------------------------------------------------------------- | ---------------------------- |
+| `strawberry`      | Letter count, word reversal, nth-letter, anagram, pangram, lipogram — six sub-types probing sub-token reasoning                     | int / str / bool             |
+| `encoding_cipher` | Decode Base64 / Caesar / Morse, optionally follow embedded instruction — with hallucinated-execution detection                      | decoded text / response word |
+| `fancy_unicode`   | Decorative Unicode normalization (mathematical alphanumeric, fullwidth, circled) — silent encoding, model must recognize unprompted | original text                |
+
+See [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md) for each plugin's config schema, parsing strategies, and failure taxonomy.
+
+---
+
+## Quick start
 
 ### Prerequisites
 
-- **Python 3.8+**
-- **[Ollama](https://ollama.ai/)** (for running local LLMs)
+- Python 3.9+
+- [Ollama](https://ollama.com/) for local models (or an OpenAI-compatible endpoint / OpenRouter API key)
 
-### Installation
+### Install
 
 ```bash
-# Clone the repo
-git clone https://github.com/AlexSabaka/gol-benchmark.git
-cd gol-benchmark
-
-# Install dependencies
+git clone https://github.com/AlexSabaka/gol-eval.git
+cd gol-eval
 pip install -r requirements.txt
-
-# Make sure Ollama is running
-ollama serve
-
-# (Optional) use a remote Ollama instance
-# Pass --ollama-host http://remote-host:11434 to run_testset.py
+ollama serve   # or point to a remote instance below
 ```
 
-### Run Your First Benchmark
-
-**Web UI (Recommended)**
+### Web UI (recommended)
 
 ```bash
-# Start the backend + frontend
 python -m src.web
-# Open http://127.0.0.1:8000/ in your browser
-
-# The web UI is a React SPA (Vite + React 19 + TypeScript + Tailwind CSS + shadcn/ui)
-# Frontend source in frontend/, served at /
-# REST API at /api/
+# Then navigate to http://127.0.0.1:8000/
 ```
 
-**CLI — 3-Stage Pipeline**
+Configure a run through the 4-step wizard (Setup → Plugins → Prompts → Review), submit, watch the Jobs page for live progress, then browse Results / Charts / Reports. The Human Review tool lets you annotate parser misses and auto-generate regex improvement reports.
+
+### CLI — three-stage pipeline
 
 ```bash
-# Stage 1: Generate test set from YAML config
+# 1. Generate test set from YAML config
 python src/stages/generate_testset.py configs/my_benchmark.yaml
 
-# Stage 2: Run against a model
+# 2. Run against a model
 python src/stages/run_testset.py testsets/testset_*.json.gz \
     --model qwen3:0.6b --provider ollama
 
-# Stage 3: Analyze results
+#    Remote Ollama:
+#    --provider ollama --ollama-host http://host:11434
+#
+#    OpenAI-compatible (OpenRouter, vLLM, LM Studio, etc.):
+#    --provider openai --endpoint https://openrouter.ai/api/v1 --model openai/gpt-4o-mini
+
+# 3. Analyze
 python src/stages/analyze_results.py results/*.json.gz --visualize
 ```
 
-**CLI — Legacy Benchmark Scripts**
+Each stage is independent. Stage 2 (execution) is designed to be portable — minimal dependencies, just Python and a model endpoint — so it can be relocated to a remote machine for long-running jobs. This path isn't extensively tested in practice; the common case is running all three stages on one host.
 
-```bash
-# Game of Life
-python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty medium \
-    --batch-size 20 --no-think --live-dead-cell-markers "1,0"
+---
 
-# Arithmetic
-python -m src.benchmarks.ari_eval --model llama3.2:3b --difficulty 3 --batch-size 10
+## Architecture
 
-# Linda fallacy in Spanish
-python -m src.benchmarks.linda_eval --model gemma3:1b --language es --trials 10
+```plain
+Stage 1:
+    Step 1: Create YAML config
+    Step 2: Generate test set .json.gz
+Stage 2: 
+    Step 1: Run test set
+    Step 2: Collect results .json.gz
+Stage 3: 
+    Step 1: Analyze results
+    Step 2: Generate reports and charts
 ```
 
----
-
-## 📊 Model Performance Leaderboard
-
-### Overall Rankings (Best to Worst)
-
-| Rank | Model | Best Config | Accuracy | Notes |
-|------|-------|-------------|----------|-------|
-| 🥇 **1** | **gemma3:1b** | linguistic + casual | **83.33%** | Peak performer, high sensitivity to prompts |
-| 🥈 **2** | **qwen3:0.6b** | linguistic + casual | **63.89%** | Pragmatist, prefers adversarial prompts |
-| 🥉 **3** | **AceMath-1.5B (Q2_K)** | minimal/linguistic + casual | **50.00%** | Surprising: extreme quantization → better performance |
-| 4 | AceMath-1.5B (Q4_K_M) | minimal + casual | 46.30% | Balanced quantization |
-| 5 | AceMath-1.5B (F16) | minimal + casual | 40.74% | Full precision baseline |
-| 6 | AceMath-1.5B (Q8_0) | minimal + casual | 40.74% | Underperformer among quantizations |
-
-### Study 1: General Purpose Models (972 evaluations)
-
-**Gemma3 vs Qwen3 Across 9 Prompt Configurations**
-
-![Performance Radar](./docs/images/original_gemma3_qwen3/radar_all_combinations.png)
-
-| Configuration | qwen3:0.6b | gemma3:1b | Winner |
-|---------------|-----------|-----------|--------|
-| Minimal + Adversarial | 53.70% | 27.78% | qwen3 ✓ |
-| Minimal + Casual | 35.19% | 35.05% | Tie |
-| Minimal + Analytical | 35.19% | 57.41% | gemma3 ✓ |
-| Casual + Adversarial | 43.52% | 39.81% | qwen3 ✓ |
-| Casual + Casual | 34.26% | 36.11% | gemma3 ✓ |
-| Casual + Analytical | 50.00% | 52.78% | gemma3 ✓ |
-| Linguistic + Adversarial | 62.96% | 79.63% | gemma3 ✓ |
-| Linguistic + Casual | 63.89% | **83.33%** | gemma3 ✓✓ |
-| Linguistic + Analytical | 47.22% | 75.00% | gemma3 ✓ |
-
-**Key Finding:** gemma3:1b peaks at **83.33%** (linguistic user + casual system)
+All 21 plugins are auto-discovered by `PluginRegistry` at runtime — adding a new plugin is a subdirectory under `src/plugins/`, no pipeline edits needed. See [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md) for the plugin contract and [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md) for the full system layout.
 
 ---
 
-### Study 2: AceMath-1.5B Quantization Analysis (3,888 evaluations)
+## Web UI
 
-**Four Quantization Formats Across 9 Configurations**
+Single-page React app (Vite 6 + React 19 + TypeScript + Tailwind v4 + shadcn/ui) backed by FastAPI. Feature surface:
 
-![AceMath Heatmap](./docs/images/acemath_quantization/01_heatmap_all_configurations.png)
-
-| Rank | Format | Average | Range | Best Config | Use Case |
-|------|--------|---------|-------|-------------|----------|
-| 🥇 | **Q2_K** | **37.76%** | 30.56-50.00% | **50.00%** | Research, edge deployment |
-| 🥈 | Q4_K_M | 33.23% | 24.07-46.30% | 46.30% | Balanced production |
-| 🥉 | F16 | 31.58% | 26.85-40.74% | 40.74% | Stable production |
-| 4 | Q8_0 | 31.17% | 25.93-40.74% | 40.74% | Stable production |
-
-**Key Finding:** Q2_K (2-bit extreme quantization) achieves **+6.18% improvement** over F16 baseline with **87.5% compression**  
-
-### Key Discoveries
-
-#### 1. System Prompts Act as Reasoning Switches 🧠
-
-System prompts don't just set tone—they **activate different reasoning strategies**:
-
-- **gemma3:1b with analytical system prompt:** +22.4 points vs casual baseline
-- **qwen3:0.6b with adversarial system prompt:** +18.5 points vs casual baseline
-- Same model, same task, different system prompt = fundamentally different reasoning approach
-
-#### 2. Models Have Opposite Personalities 🎭
-
-- **qwen3:0.6b:** "The Pragmatist" — thrives with efficiency-first (adversarial) prompts
-- **gemma3:1b:** "The Analyst" — thrives with depth-focused (analytical) prompts
-
-This reflects their architectural design: qwen optimizes for speed, gemma for accuracy.
-
-#### 3. Instruction Saturation Effect ⚠️
-
-When both user AND system prompts are highly detailed, performance can DROP:
-
-```
-gemma3:1b with detailed (linguistic) user prompts:
-  Casual system:      83.33% (BEST)
-  Analytical system:  75.00% (DROPS 8.3 points due to over-constraint!)
-```
-
-Too much guidance creates interference rather than synergy.
-
-#### 4. User Prompt Quality Matters Most 📝
-
-Improvement from minimal → linguistic user prompts:
-- qwen3:0.6b: +28.7 points
-- gemma3:1b: +48.3 points
-
-**Investment in detailed user prompt guidance has massive ROI.**
-
-#### 5. Model Robustness Differs 1.93×
-
-- **qwen3:0.6b:** 35-63% performance range = ROBUST to poor prompts
-- **gemma3:1b:** 27-83% performance range = SENSITIVE to prompt engineering
+- **Configure** — 4-step wizard, YAML import/export, per-plugin config schemas rendered from `ConfigField` introspection
+- **Execute** — simple (single-model) and matrix (cross-product sweep) modes
+- **Jobs** — live progress, cooperative pause/resume/cancel of running inference and judge work
+- **Results** — faceted browsing, reanalysis without re-inference, param-override rerun
+- **LLM-as-Judge** — optional audit pass on incorrect responses using a separate judge model
+- **Human Review** — per-case annotation with 7 response classes (including `parser_false_positive`), response-hash-keyed sidecars, improvement report with auto-generated regex candidates
+- **Charts** — per-axis breakdowns, language filters with flags, log-scale toggles
 
 ---
 
-## Key Findings from Game of Life & Other Tasks
+## Known limitations
 
-### The Emoji Catastrophe 🟩🟥 *(Fixed in v2.10.1)*
+Things worth knowing before you run anything:
 
-**Historical note:** Using emoji markers (`🟩/🟥`) instead of numeric (`1/0`) used to cause complete failure due to a generator bug. This has been fixed — custom cell markers (including emoji) now work correctly.
+- **Three plugins are EN-only.** `measure_comparison` decimal-framing sub-type, `encoding_cipher`, and `fancy_unicode` currently fall back to English templates in other languages — they run, but they aren't really multilingual for those sub-types (TD-003 / TD-004 / TD-092).
+- **Carwash ZH data artifact.** ~10 of 93 Chinese carwash prompts contain the phrase "开去" (drive to) in the premise, which inflates ZH accuracy for that plugin. Flagged; not retroactively re-run.
+- **13 plugin tests are red on `dev`.** Across `ascii_shapes`, `cellular_automata_1d`, `linda_fallacy`. Pre-existing, not caused by the most recent changes; tracked as TD-101 but mentioned here so you know the full plugin suite isn't green.
 
-However, models still perform significantly better with numeric markers:
-
-| Model | Numeric (1/0) | Emoji (🟩/🟥) |
-|-------|---------------|----------------|
-| qwen3:0.6b | 61.67% | **0.00%** |
-| gemma3:1b | 66.11% | **0.00%** |
-
-> The accuracy difference above reflects both the old generator bug and genuine model difficulty with emoji grids. With the fix, emoji markers are a valid robustness test.
-
-### Prompt Style Impact
-
-- **Examples-based prompts** work best for GoL (66% accuracy)
-- **Minimal prompts** show surprising resilience (56-60% accuracy)
-- **"Thinking" mode** (chain-of-thought) often hurts performance on structured tasks
+Full register of technical debt and known limitations: [`TECHDEBT.md`](TECHDEBT.md).
 
 ---
 
----
+## Documentation
 
-## 🚀 AceMath-1.5B Quantization Analysis
-
----
-
-## 📖 Documentation & Analysis
-
-All analysis reports and visualizations have been organized in the `docs/` directory:
-
-### Reports
-- **[docs/PROMPT_ANALYSIS_REPORT.md](./docs/PROMPT_ANALYSIS_REPORT.md)** — Detailed analysis of qwen3 vs gemma3 (550+ lines, 9 configurations)
-- **[docs/ACEMATH_QUANTIZATION_REPORT.md](./docs/ACEMATH_QUANTIZATION_REPORT.md)** — Comprehensive AceMath quantization study (522 lines, 4 formats)
-- **[docs/ACEMATH_QUANTIZATION_STUDY_SUMMARY.md](./docs/ACEMATH_QUANTIZATION_STUDY_SUMMARY.md)** — Quick reference summary of findings
-- **[docs/VISUALIZATIONS_GUIDE.md](./docs/VISUALIZATIONS_GUIDE.md)** — Interpretation guide for all charts
-
-### Visualizations
-- **[docs/images/original_gemma3_qwen3/](./docs/images/original_gemma3_qwen3/)** — 9 charts from qwen3/gemma3 study (300 DPI)
-- **[docs/images/acemath_quantization/](./docs/images/acemath_quantization/)** — 11 charts from AceMath quantization study (300 DPI)
-
-### Reproducible Analysis Scripts
-- **[docs/generate_prompt_analysis_visualizations.py](./docs/generate_prompt_analysis_visualizations.py)** — Generate qwen3/gemma3 visualizations
-- **[docs/generate_acemath_quantization_visualizations.py](./docs/generate_acemath_quantization_visualizations.py)** — Generate AceMath visualizations
+| Document                                                                       | Purpose                                                           |
+| ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
+| [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md)                         | Architecture, pipeline, directory layout, quick reference         |
+| [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md)                                 | Plugin contract, adding new plugins, end-first parsing convention |
+| [`docs/architecture/MODEL_PROVIDERS.md`](docs/architecture/MODEL_PROVIDERS.md) | Ollama / HuggingFace / OpenAI-compatible provider reference       |
+| [`docs/prompt-engine/SYSTEM_PROMPTS.md`](docs/prompt-engine/SYSTEM_PROMPTS.md) | System prompt styles (analytical / casual / adversarial)          |
+| [`CHANGELOG.md`](CHANGELOG.md)                                                 | Version history                                                   |
+| [`TECHDEBT.md`](TECHDEBT.md)                                                   | Open technical debt, incomplete refactors, god-module candidates  |
 
 ---
 
-## Configuration Options
+## Status
 
-### Key Parameters
-
-```bash
-# Prompt styles (user prompt)
---prompt-style minimal|casual|linguistic|examples|rules_math
-
-# System prompt styles
---system-prompt-style analytical|casual|adversarial|none
-
-# Languages
---prompt-language en|es|fr|de|zh|ua
-
-# Cell markers (GoL only — numeric recommended for best accuracy)
---live-dead-cell-markers "1,0"
-
-# Disable chain-of-thought (recommended for structured tasks)
---no-think
-
-# Reproducibility
---seed 42
-```
-
-See [CLAUDE.md](.claude/CLAUDE.md) for full configuration reference.
-
----
-
-## Contributing
-
-This is a **personal experiment**, but if you're curious and want to:
-
-- Add new benchmark tasks
-- Test more models
-- Improve prompt engineering
-- Fix bugs or add features
-
-**Pull requests are welcomed!**
-
----
-
-## Roadmap
-
-### ✅ Completed
-
-- [x] Plugin-based benchmark architecture — **19** tasks with auto-discovery (v2.1.0+)
-- [x] 3-stage pipeline: generate → execute → analyze
-- [x] React SPA web UI (Vite + React 19 + TypeScript + shadcn/ui) (v2.11.0)
-- [x] Plugin config schema introspection (`ConfigField` system)
-- [x] PromptEngine with 6 languages, 5 user styles, 4 system styles
-- [x] Remote Ollama + OpenAI-compatible + HuggingFace providers
-- [x] Token counting throughout pipeline
-- [x] End-first parsing convention across all parsers
-- [x] Verification-section stripping for end-first parsers (v2.10.3, ~91 false negatives fixed)
-- [x] Carwash parser expanded conditional/dismissive walk filtering (v2.10.4, 15 false negatives fixed)
-- [x] Measure comparison parser overhaul (v2.10.5, 38 false negatives fixed — smart quote normalization, pipeline reorder, expanded keyword patterns)
-- [x] Object tracking, time arithmetic, inverted cup, encoding cipher parser fixes (v2.10.6, 28 false negatives fixed — first-bold/first-sentence strategies, validity yes/no detection, tilt/tip patterns, Unicode whitespace normalization)
-- [x] False premise parser overhaul (v2.10.7, 61 false negatives fixed — smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, expanded refusal/impossibility patterns)
-- [x] Web UI improvements: Jobs page, faceted filters, plugin descriptions from README, Configure/Execute page split (v2.12.0)
-- [x] Full multilingual support: all 19 plugins have 6-language prompts, multilingual data files (strawberry, encoding_cipher), and multilingual response parsing across all 13 heuristic parsers
-- [x] UI & Workflow improvements: reanalysis endpoint, custom system prompts, chart filtering (task/language/log scale), Param Override Modal, favorites sidebar, encrypted credential storage (v2.14.0)
-- [x] Deep multilingual content localization: all 19 plugins generate test content in 6 languages, not just prompt wrappers (v2.15.0)
-- [x] LLM-as-a-Judge: audit incorrect model responses via judge LLM with web UI setup and background job execution
-- [x] Test Sets and Results browsing upgrade: independent `Table/Cards` format toggle plus collapsible Airtable-style grouped rows in table mode (v2.17.0)
-- [x] Web UI workflow polish: Execute now uses a paginated checkbox grid for test set multi-select, Results language filters match Test Sets with flag + full-name labels, long filenames no longer break dialog CTA layouts, and Jobs can cancel already-running inference/judge work cooperatively (v2.17.1)
-- [x] Web UI refinement pass: persistent table/view state, stable Jobs pagination during polling, Judge expandable review rows, suffix-biased identifiers, Execute wizard setup with review step, and chart readability/accessibility upgrades (v2.17.2)
-- [x] Configure page wizard redesign: 4-step flow (Setup → Plugins → Prompts → Review), import via URL/paste, expandable plugin table rows, custom system prompt hidden behind toggle, YAML copy/download from review step (v2.18.0)
-- [x] Matrix Exec 5-step wizard + merged Execute landing: `/execute` now shows two choice tiles (Simple / Matrix), each lazy-loads its own sub-wizard via `?mode=` query param; shared `StepButton`/`StepFooter` and model-selection components extracted into `components/wizard/` and `components/model-selection/` (v2.19.0)
-
-### 🔄 In Progress
-
-- [x] Cross-lingual/cross-cultural generation problems
-
-### 📋 Planned
-
-- [x] Multi-language validation (French, Spanish, German, Chinese, Ukrainian)
-- [ ] More languages (Japanese, Arabic, Hindi)
-- [ ] Cross-lingual transfer tests
-- [ ] Fine-grained system prompt optimization
-- [ ] Chain-of-thought impact analysis
-- [ ] Scaling studies (7B, 13B, 70B models)
-- [ ] Add statistical significance testing
-- [ ] Production recommendation framework
-
----
+Active development. Solo-maintained pet project that got out of control and intends to keep going, regardless of whether anyone else shows up. Current version: **v2.25.2** (April 2026). PRs welcome for new plugins, model coverage, or parser fixes — annotation sidecars and improvement reports from the Human Review tool make parser contributions particularly high-leverage.
 
 ## License
 
-See [LICENSE](LICENSE) for details.
-
----
-
-## 🙏 Acknowledgments
-
-- Conway's Game of Life rules
-- The Ollama team for making local LLM testing accessible
-- Anthropic AI team
-- OpenSource community
-- Every model that crashed on tests
+MIT. See [LICENSE](LICENSE).

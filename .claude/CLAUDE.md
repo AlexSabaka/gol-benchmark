@@ -28,6 +28,8 @@
 - **Symbol Arithmetic**: Custom operation tables on abstract symbol sets — pure rule-following with zero semantic anchor
 - **Picross (Nonogram)**: Grid-based deductive reasoning — solve puzzles from row/column clue constraints
 - **Picture Algebra**: System-of-equations puzzles with emoji/alpha/nonsense variables — measures GSM-Symbolic-style semantic interference under visual substitution
+- **Time Arithmetic**: Temporal reasoning — date/time addition, duration, validity checks
+- **Fancy Unicode**: Decorative-Unicode normalization — math-script, fullwidth, small caps, circled (12 families across 3 tiers)
 
 ### Key Characteristics
 
@@ -188,7 +190,7 @@ gol_eval/
 
 ## Architecture Patterns
 
-### 1. Plugin Pattern (v2.2.0)
+### 1. Plugin Pattern
 Self-contained benchmark modules with auto-discovery via package scanning.
 ```python
 from src.plugins import PluginRegistry
@@ -251,7 +253,7 @@ All response parsers follow the principle of searching from the **end** of the m
 
 ---
 
-### 7. Multilingual Content & Grammar System (v2.15.0+)
+### 7. Multilingual Content & Grammar System
 
 All 21 plugins generate test content in 6 languages. Each plugin has:
 - **`prompts.py`** — user prompt templates per language × style
@@ -266,7 +268,7 @@ All 21 plugins generate test content in 6 languages. Each plugin has:
 
 **Subject gender** is randomly assigned (m/f) per test case and stored in `task_params["subject_gender"]`.
 
-### 8. LLM-as-a-Judge (v2.16.0)
+### 8. LLM-as-a-Judge
 
 Audit incorrect model responses via a judge LLM:
 - **Backend**: `src/web/judge.py` — `run_judge_worker()` + default system/user prompts
@@ -275,14 +277,14 @@ Audit incorrect model responses via a judge LLM:
 - **Verdicts**: `true_incorrect`, `false_negative`, `parser_failure` (with issue sub-types)
 - **Export**: Markdown report structured for agent consumption — grouped by task type, with language, response samples, and actionable summary
 
-### 9. Version Management (v2.19.0+)
+### 9. Version Management
 
 - **Single source of truth**: `src/__init__.py` — `__version__` field
 - `src/web/app.py` imports `__version__` automatically; no separate hardcoding needed
 - `frontend/package.json` is the npm source of truth — kept in sync manually when cutting releases
 - **All locations to update when bumping version**: `src/__init__.py`, `frontend/package.json` (+`package-lock.json`), `.github/copilot-instructions.md`, CHANGELOG.md, CLAUDE.md footer
 
-### 11. Human Review & Annotation (v2.20.0 + Improvement Report v2.1 → v2.6)
+### 10. Human Review & Annotation
 
 Human annotation workflow for parser diagnosis and improvement. Every labelled response becomes a parser test case in waiting. The **Improvement Report** aggregates annotations into a JSON artifact whose explicit purpose is to seed a coding-agent task refactoring plugin parsers — so its shape is agent-facing and has iterated fast.
 
@@ -305,17 +307,7 @@ Human annotation workflow for parser diagnosis and improvement. Every labelled r
   - Adjacent marks of the same type auto-merge. `onMouseDown` suppresses browser selection-extension when Shift/Alt held so click handlers fire correctly.
 - Frontend `/review` ([pages/review.tsx](frontend/src/pages/review.tsx)): two-column editorial workspace; keyboard shortcuts `←/→` navigate, `1`–`7` toggle-classify, `S` skip, `?` help modal, `Space`/`Enter` commit drag-selection, `→` on last case navigates to `/results`
 
-**Improvement Report schema — `format_version` rolls forward additively:**
-
-| Version | Additions |
-|---------|-----------|
-| `"2"` (v2.20.0) | `summary`, `span_groups`, `ordering_hints`, `response_classes`, `confusion_matrix`, `language_breakdown` / `config_breakdown` / `user_style_breakdown`, `strategy_breakdown`, `answer_when_missed`, `anchor_frequency`, `annotator_notes`, `false_positive_rate` |
-| `"2.1"` | Span examples gain `sentence` (containing-sentence extract); each span group gains `structural_ratios` (`line_start` / `paragraph_start` / `list_marker` / `label_colon` / `bold_wrap` / `quote_wrap` / `answer_label_match`), `prefix_anchors` (trailing N-gram phrases of `before`), `regex_test` harness with `match_rate` / `matched_count` / `total`. Context window widened from 24 → **120 chars** |
-| `"2.2"` | **Context-anchored regex generator** — replaces span-text LCP as primary regex shape. Emits `context_anchor` / `format_only` / `text_pattern` kinds. Span examples gain `parser_extracted` + `parser_match_type` (inline parser-vs-annotator diff). Per-group `label_taxonomy` breaks down `answer_label_match` into specific label words. `model_answer_distribution` (markdown-stripped histogram of annotated spans) |
-| `"2.3"` | Top-level **`parser_span_alignment`** — `aligned_with_parser` / `misaligned_with_parser` / `no_parser_output` split, resolving the "parser_missed: N" framing when `parser_extracted` is actually aligned with the annotated span. Summary gains `parser_missed_aligned` / `parser_missed_misaligned` / `parser_missed_no_output`. Regex harness gains `capture_exact_rate` / `capture_contains_rate` / `sample_captures` (capture quality ≠ match rate). Top-level **`data_quality.warnings[]` + `suppressed_sections[]`** — auto-detects `no_parse_strategy`, `uniform_language` / `uniform_system_style` / `uniform_user_style`, `uniform_expected`. Single-bucket axis breakdowns are **omitted from output** and reported as suppressed |
-| `"2.4"` | **Merged label disjunction** — when a group has ≥2 distinct label-type atoms, emits `(?i)(?:atom1\|atom2)\s*[:：]\s*{capture}` as highest-priority candidate (`kind: "merged_label_disjunction"`, `participating_atoms`). Prefix anchors gain **`type`**: `label` / `format` / `phrase` (label > format > phrase at equal count). Post-harness **low-support filter** drops candidates with `match_rate < 0.1 AND capture_contains_rate < 0.1` and `support < 2 AND support/group_size < 0.1` (always keeps `format_only`). New **`model_answer_variants`** preserves raw text variants per normalized bucket (top 10) so the agent sees `Walk` / `WALK` / `**Walk**` / `Walk to the carwash` separately under `walk` |
-| `"2.5"` | **Tactical cut** — ~30% smaller JSON, zero new computed fields. Deletes `confusion_matrix` (duplicated `summary`), top-level `anchor_frequency` (subsumed by per-group `prefix_anchors`), top-level `response_classes` (folded into `summary.response_class_counts`, non-zero only). Suppresses `strategy_breakdown` under `no_parse_strategy` warning and `answer_when_missed.by_expected` under `uniform_expected` (both reported in `data_quality.suppressed_sections`). New **`long_tail_groups`** — span groups with `count < 4` collapse to compact `{position, format, count, example}` stubs so per-group rollups stay signal-dense (guard: only when ≥1 rich group exists, so small-N sessions keep full detail). Empty `ordering_hints` / `annotator_notes` omitted entirely from output |
-| `"2.6"` | **Negative span annotations** — first negative-span support. New top-level `negative_span_groups[]` — aggregated negative spans with `text`, `normalized_text`, `count`, `mark_type` (`negative_span` / `negative_keyword`), `example_negatives[]` (each with `correct_span`, `parse_strategy`). New top-level `context_anchor_groups[]` — aggregated label anchors with `text`, `count`, `example_cases`. New top-level `manual_keyword_distribution` — annotator-tagged answer keywords (distinct from auto-detected `model_answer_distribution`). Multi-source support: `source_files[]` array replaces single-source assumption |
+**Improvement Report schema (current `format_version` = `"2.6"`):** rolls forward additively — older sidecars continue to produce older report shapes. Top-level sections: `summary`, `span_groups`, `long_tail_groups`, `negative_span_groups`, `context_anchor_groups`, `parser_span_alignment`, `ordering_hints`, `language_breakdown` / `config_breakdown` / `user_style_breakdown`, `strategy_breakdown`, `answer_when_missed`, `manual_keyword_distribution`, `model_answer_distribution` / `model_answer_variants`, `data_quality.warnings[]` + `suppressed_sections[]`, `annotator_notes`, `source_files[]`. Per-span-group: `structural_ratios`, `prefix_anchors` (`type`: label / format / phrase), `label_taxonomy`, `regex_test` harness (`match_rate`, `capture_exact_rate`, `capture_contains_rate`, `sample_captures`), candidates carry weighted `kind` (`merged_label_disjunction` > `context_anchor` > `format_only` > `text_pattern`) with `support` + post-harness low-support filtering. Per-version add history lives in [CHANGELOG.md](../CHANGELOG.md).
 
 **Key agent-facing distinctions (future-you, read this):**
 
@@ -327,16 +319,16 @@ Human annotation workflow for parser diagnosis and improvement. Every labelled r
 
 **One-click word marking** + drag-select + sticky annotation dock + parser-match highlight (amber dashed underline) + persistent parser-disagreement callout + 🌐 translation panels (`select-none` — translated text is never an annotation target).
 
-### 12. Plugin Task Type List — Single Source of Truth (v2.19.0+)
+### 11. Plugin Task Type List — Single Source of Truth
 
 `PluginRegistry.list_task_types()` is the canonical list of active plugin task types — **do not maintain separate hardcoded lists**.
 
 - `src/stages/analyze_results.py` — `_KNOWN_TASK_TYPES` is derived from the registry at import time
 - `src/web/reanalyze.py` — `_TASK_TYPE_SUFFIXES` is derived from the registry at import time
 - Adding a new plugin in `src/plugins/` automatically propagates to all task-type inference and badge detection with no other changes required
-- `_LEGACY_TASK_TYPES = ["fancy_unicode"]` — the only manually maintained list; for task types removed from the plugin system that may still appear in old result files
+- `_LEGACY_TASK_TYPES` — manually maintained list for task types that have been removed from the plugin system but may still appear in old result files. Currently contains `"fancy_unicode"` as a historical artifact — the plugin is still actively registered, so the entry is a no-op and safe to drop if it ever causes confusion.
 
-### 13. Job Persistence & Pause/Resume (v2.21.0+)
+### 12. Job Persistence & Pause/Resume
 
 All job I/O is confined to **`src/web/job_store.py`** (`JobStore` class) — the single place to swap when upgrading to NoSQL/Redis. To change the backend, only `job_store.py` changes.
 
@@ -353,7 +345,7 @@ All job I/O is confined to **`src/web/job_store.py`** (`JobStore` class) — the
 
 ## Adding New Features
 
-### New Benchmark Task (Plugin System - v2.1.0)
+### New Benchmark Task (Plugin System)
 
 **Modern approach using the plugin system:**
 
@@ -565,11 +557,13 @@ All job I/O is confined to **`src/web/job_store.py`** (`JobStore` class) — the
     - `path_manager.py` truncates task list if >120 chars → `N_tasks`, total filename capped at 240 chars
     - Without truncation, configs with many test types could produce filenames too long for some filesystems
 
-11. **`jobs.json` is a runtime artifact — add to `.gitignore`**
-    - Created at server startup if not present; accumulates all job history across restarts
-    - Contains `api_key` / `api_base` in plaintext if non-Ollama providers were used — do not commit (see TECHDEBT TD-085)
-    - `partial_<job_id>.json.gz` files in the results dir are intermediate pause checkpoints; orphaned if server crashes between pause signal and worker exit (see TECHDEBT TD-087)
-    - If `jobs.json` becomes corrupt the server starts cleanly — store returns `[]` on parse error and logs a warning
+11. **Job records are encrypted-at-rest under `data/jobs/` — preserve the key**
+    - `data/jobs/<id>.json` is created per-job and survives restarts
+    - `api_key` / `api_base` are Fernet-encrypted at rest (`api_key_enc` / `api_base_enc`) using the key from `GOL_SECRET_KEY` env var (if set) or auto-generated `data/.secret_key` (0600) on first run — see [src/web/crypto.py](src/web/crypto.py) (TD-085 resolved)
+    - **Back up `data/.secret_key` alongside `data/jobs/`** — losing the key means existing encrypted credentials become unrecoverable (jobs still load, credentials decrypt to `""` with a WARNING, user re-enters to resume). Both are in `.gitignore`
+    - `partial_<job_id>.json.gz` files under `data/jobs/partial/` are intermediate pause checkpoints (no credentials); orphaned if server crashes between pause signal and worker exit (see TECHDEBT TD-087)
+    - If a job file becomes corrupt the server starts cleanly — `JobStore.load_all()` skips the record and logs a warning
+    - Legacy plaintext records (pre-v2 schema) still load and auto-upgrade to encrypted on next persist
 
 12. **Annotation invariant is relaxed** (v2.20.0)
     - Pre-v2.20.0 rule was `spans XOR response_class`; that was too strict
@@ -913,43 +907,7 @@ pytest tests/
 
 ---
 
-*Last updated: 2026-04-17*
-*Version: 2.25.0*
+*Last updated: 2026-04-20*
+*Version: 2.26.0*
 
-**Recent key additions:**
-
-- **Picture Algebra plugin (v2.25.0)** — 21st benchmark. Linear-system puzzles where variables are rendered as emoji / alpha / nonsense tokens. sympy-driven integer-solution generation, trick cases (underdetermined / inconsistent systems with refusal sentinels), 9-strategy multilingual parser (`cannot_be_determined` sentinel + `boxed_multivar` + `label_line` two-pass numeric-first + `bold_assignments` + `final_answer_block` + `foreign_labels` for `wrong_variable` detection + `coord_tuple` + `last_numbers` + weaker sentinel fallback), 8-match-type evaluator (`correct`/`wrong_value`/`wrong_variable`/`partial`/`system_error`/`system_error_missed`/`system_error_false_positive`/`parse_error`), `semantic_interference_delta = accuracy(alpha) − accuracy(emoji)` surfaced at aggregation time when both surface forms are present (the GSM-Symbolic score this plugin exists to measure). 40 unit tests, 6 languages × 3 styles
-- **Annotation DX Overhaul (v2.24.0 / annotation schema v3)** — Multi-select classification (`response_classes: list[str]`), v3 class renames (`verbose_correct`→`verbose`, `parser_false_positive`→`false_positive`, dropped `parser_ok`), new `truncated` class. Five mark types (answer span / context anchor / answer keyword / negative span / negative keyword) via modifier+click with warm/cool visual treatment; adjacent marks auto-merge. `onMouseDown` suppresses browser selection-extension for Shift/Alt modifier keys. `Finish` button on last case navigates to `/results`. `?` help modal (keyboard shortcut + mark-type guide). Sidecar key migrated to `case_id::response_hash` (fixes leakage across language × user_style × system_style variants). `DELETE /annotations` now busts review-cases React Query cache. Response hash validation drops contaminated sidecar entries from pre-fix sessions.
-- **Improvement Report v2.6** — `REPORT_FORMAT_VERSION = "2.6"`. New sections: `negative_span_groups[]` (aggregated negative spans/keywords with `correct_span` + `parse_strategy` per example), `context_anchor_groups[]` (manually-tagged anchor labels), `manual_keyword_distribution` (higher-confidence signal than auto-inferred `model_answer_distribution`). `parser_was_correct` auto-inferred from span-parser alignment (replaces manual `parser_ok` class). New **Negatives tab** in improvement-report-dialog.
-- **Carwash parser Round 4 — option-listing filter + label expansion** — annotation-driven (v2.6 report, 223 cases). New `_is_conditional_drive()` with positional matching filters drive keywords in option-listing/comparison text (`"walk or drive"`, `"drive vs walk"`). Symmetric `"walk or drive"` pattern added to `_WALK_CONDITIONAL`. When both keywords fully filtered in a fragment, `_score()` returns `None` (fall-through) instead of guessing. 6 new label words (DE: zusammenfassung/kurzantwort/handlungsanleitung, FR: action recommandée/choix, ES: resumen). "therefore"/"daher"/"donc"/"por lo tanto" added to `_STRONG_INTRO` with comma tolerance. 93 total carwash tests (22 new), 0 regressions
-- **Carwash parser Rounds 1–3** — annotation-driven parser overhaul across 3 sessions (26 EN → 26 EN re-annotated → 197 multilingual cases). Round 1: label_line promoted above bold; bold_label + label_newline strategies added; label-only bold filtering; negative patterns (`_PRE_WALK_CONDITIONAL`, `_WALK_CONDITIONAL`, `_WALK_NEGATIVE`). Round 2: bold_label colon fix; label_newline heading patterns. Round 3: multilingual verb conjugation coverage (FR marche[zs]?/conduis\w*, ES camin[aeo]\w*, DE geh(e|st|t)/fahr(e|en|t|st)/compound verbs)
-- **Improvement Report v2.6** — first negative-span support. `negative_span_groups[]`, `context_anchor_groups[]`, `manual_keyword_distribution`, multi-source `source_files[]`
-- **Improvement Report v2.5** — tactical cut of the v2.4 seed artifact driven by a post-carwash-refactor retrospective (`docs/improvement_report_v2.5_plan.md`). ~30% smaller JSON with zero new computed fields: deletes `confusion_matrix` / top-level `anchor_frequency` / top-level `response_classes` (the last folded into `summary.response_class_counts`, non-zero only); suppresses `strategy_breakdown` under `no_parse_strategy` and `answer_when_missed.by_expected` under `uniform_expected` (both reported via `data_quality.suppressed_sections`); adds **`long_tail_groups`** to collapse span groups with `count < 4` into compact stubs (guarded: only fires when ≥1 rich group exists so small-N sessions keep full detail); empty `ordering_hints` / `annotator_notes` omitted. Frontend drops Anchors tab, rewires Classes to read `summary.response_class_counts`, renders long-tail stubs as a dimmed trailing section in the Spans tab
-- **Improvement Report v2.4** — `format_version: "2.4"`, agent-facing seed artifact for parser refactor work. Context-anchored regex generator replaces legacy span-text LCP (locates via `before` prefix + format-aware capture); merged label disjunction synthesizes across multiple `Label:` anchors into one pattern (carwash: `recommendation:` + `conclusion:` → single ~100% regex); regex candidates carry weighted `kind` (`merged_label_disjunction` > `context_anchor` > `format_only` > `text_pattern`) with `support` + post-harness low-support filtering
-- **Capture quality metrics (v2.3)** — `regex_test[]` rows now carry `capture_exact_rate` / `capture_contains_rate` / `sample_captures` so `match_rate` is never read in isolation; frontend `CaptureQualityPill` tones on capture quality
-- **Parser-span alignment (v2.3)** — top-level `parser_span_alignment` splits "parser missed" into `aligned` / `misaligned` / `no_output`, corrects the "parser_missed: 100" misleading headline when parser_extracted is actually correct but annotator didn't mark `parser_ok`
-- **Data quality warnings + auto-suppression (v2.3)** — `data_quality.warnings[]` flags `no_parse_strategy`, `uniform_language`/`uniform_system_style`/`uniform_user_style`/`uniform_expected`; single-bucket axis breakdowns are **omitted from the JSON** (not emitted empty); frontend surfaces as collapsible amber banner
-- **Span context enrichment (v2.1 → v2.2)** — context windows widened 24 → 120 chars, each span example carries a `sentence` field + `parser_extracted` + `parser_match_type` (inline parser-vs-annotator diff); per-group `structural_ratios` (line_start / label_colon / bold_wrap / answer_label_match / …), `prefix_anchors` with `type` (label / format / phrase), `label_taxonomy` (specific label-word counts)
-- **Model answer distribution + variants** — `model_answer_distribution` (normalized histogram) + `model_answer_variants` (raw text forms per normalized bucket) so the agent sees both "model mostly says walk" and "it writes `Walk` / `WALK` / `**Walk**` / `Walk to the carwash`"
-- **New span formats: italic / strikethrough / header** — frontend `autoFormat` detects `_walk_` / `*walk*` / `~~walk~~` / `# heading`; backend `FORMAT_TO_STRATEGY` maps to `italic_keyword` / `strikethrough_keyword` / `header_line`
-- **Modal UX polish** — dialog auto-fits content up to `min(95vw, 1200px)` (no more truncated tabs); 9 tabs kept on one row via horizontal scroll; Summary grid balanced to 4×2 with a `Parser accuracy` card; SpanGroupCard expansion reveals structural signals chips, prefix anchors table (type-chipped), and regex test rows with capture quality + click-to-expand sample captures
-- **Human Review & Annotation** (`/review`, v2.20.0) — two-column editorial workspace for human labelling of model responses; 7 response classes including `parser_false_positive` which uniquely coexists with answer spans; one-click word-marking with hover affordance; drag-select with sticky annotation dock; parser-match highlight + "Jump to parser match"; persistent parser-disagreement callout; session-wide target-language preference
-- **Annotation sidecars** — gzipped JSON (`{stem}_annotations.json.gz`) next to result files; atomic temp+rename writes; `has_annotations` flag surfaced on every result summary → `PenLine` badge on annotated rows; DELETE endpoint is idempotent
-- **Machine translation** — `deep-translator` wrapper with LRU cache; provider configurable via `TRANSLATOR_PROVIDER` env var (default `google`, zero-config); read-only translation panels (select-none preserves span offsets); language selector in Review header
-- **Invariant relaxation** — spans and `response_class` may now coexist (pre-v2.20.0 was `spans XOR response_class`); unlocks `verbose_correct` + span and `parser_false_positive` + span workflows
-- **Execute page unified** — `/execute` landing with "Simple run" / "Matrix run" tiles; `?mode=simple|matrix` deep-links; lazy-loaded sub-wizards (`pages/execute/simple-wizard.tsx`, `pages/execute/matrix-wizard.tsx`); `/matrix-execution` redirects via `<Navigate />`
-- **Matrix Exec wizard** — 5-step flow: Setup → Axes → Models → Settings → Review; reuses `StepButton`/`StepFooter` primitives
-- **Shared component extraction** — `components/wizard/` (StepButton, StepFooter) + `components/model-selection/` (ModelList, OllamaSection, OpenAIEndpointSection, HuggingFaceSection); removes ~300 lines of duplication
-- **Configure page wizard** — 4-step Setup → Plugins → Prompts → Review; import via URL/paste YAML; expandable plugin rows; custom system prompt toggle; YAML copy/download split button
-- **`POST /api/testsets/config-to-yaml`** — returns YAML string from `GenerateRequest` without generating a file
-- **Picross (Nonogram) plugin** — 19th benchmark; grid-based deductive reasoning with line solver, 3 clue formats, partial-solution mode
-- **Backend simplification** — extracted `_build_yaml_config()` and `_find_result_file()` helpers eliminating ~80 lines of duplication; fixed `cancel()` dead code; moved inline imports to module level; bare `except` blocks now log warnings
-- **Version single-sourced** — `src/__init__.py` is canonical; `src/web/app.py` imports `__version__` automatically
-- **Plugin task types auto-discovered** — `_KNOWN_TASK_TYPES` and `_TASK_TYPE_SUFFIXES` derived from `PluginRegistry`; fixed missing `picross` in reanalyze inference
-- **`TASK_COLORS`** — added missing entries for `time_arithmetic`, `false_premise`, `symbol_arithmetic`, `picross`
-- **LLM-as-a-Judge** — `/judge` page; verdicts: `true_incorrect`, `false_negative`, `parser_failure`; Markdown export
-- **Multilingual content** — deep localization + grammatical gender across all 21 plugins
-- **React SPA** — Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui
-- **Job persistence + pause/resume** — `src/web/job_store.py` single-place JSON backend (swap for NoSQL without touching other files); `PAUSED` state with checkpoint index; resume continues from `paused_at_index`, merging partial results; history survives server restarts; `GOL_JOBS_FILE` env var configures path
-
-*For questions or issues: Check [README.md](README.md) or create an issue*
+*For per-release history see [CHANGELOG.md](../CHANGELOG.md). For questions or issues: check [README.md](../README.md) or open an issue.*

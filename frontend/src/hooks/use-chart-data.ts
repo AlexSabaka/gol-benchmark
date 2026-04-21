@@ -93,6 +93,7 @@ function transformAnalyzeResponse(data: AnalyzeResponse): ChartData {
       model,
       paramCount: getModelSize(model),
       accuracy: bucket.total > 0 ? bucket.correct / bucket.total : 0,
+      total: bucket.total,
       aliases: bucket.aliases.length > 1 ? [...bucket.aliases] : undefined,
     }
   })

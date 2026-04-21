@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useDeferredValue, useEffect } from "react"
+import { useMemo, useCallback, useDeferredValue, useEffect, useState } from "react"
 import { useSearchParams } from "react-router"
 import { PageHeader } from "@/components/layout/page-header"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
@@ -24,6 +24,7 @@ import { AccuracyHeatmap } from "@/components/charts/accuracy-heatmap"
 import { ModelBarChart } from "@/components/charts/model-bar-chart"
 import { ScalingScatter } from "@/components/charts/scaling-scatter"
 import { DimensionBarChart } from "@/components/charts/dimension-bar-chart"
+import { FamilyLegend, buildFamilyEntries } from "@/components/charts/family-legend"
 import { languageLabel } from "@/components/language-filter-chip"
 import { useResults } from "@/hooks/use-results"
 import { useChartData } from "@/hooks/use-chart-data"
@@ -94,6 +95,23 @@ export default function ChartsPage() {
   )
   const [dimTab, setDimTab] = useLocalStorageState<DimensionTab>(makeStorageKey(storageScope, "dimension-tab"), "language")
   const [activeTab, setActiveTab] = useLocalStorageState<ChartTab>(makeStorageKey(storageScope, "active-tab"), "heatmap")
+  // Per-visit (not persisted) — the highlight is a transient interaction state
+  const [highlightedFamilies, setHighlightedFamilies] = useState<Set<string>>(new Set())
+
+  const handleFamilyToggle = useCallback((family: string, additive: boolean) => {
+    setHighlightedFamilies((prev) => {
+      if (additive) {
+        const next = new Set(prev)
+        if (next.has(family)) next.delete(family)
+        else next.add(family)
+        return next
+      }
+      if (prev.size === 1 && prev.has(family)) return new Set()
+      return new Set([family])
+    })
+  }, [])
+
+  const clearFamilyHighlight = useCallback(() => setHighlightedFamilies(new Set()), [])
 
   useEffect(() => {
     if (initialFiles.length === 0) return
@@ -172,6 +190,7 @@ export default function ChartsPage() {
         model,
         paramCount: getModelSize(model),
         accuracy: b.total > 0 ? b.correct / b.total : 0,
+        total: b.total,
         aliases: b.aliases.length > 1 ? b.aliases : undefined,
       }))
       .filter((d) => d.accuracy > 0)
@@ -185,6 +204,11 @@ export default function ChartsPage() {
     // through the barTask dropdown selector instead.
     return raw
   }, [chartData, barTask])
+
+  const familyEntries = useMemo(
+    () => buildFamilyEntries(chartData?.models ?? []),
+    [chartData],
+  )
 
   // Grouped + filtered results
   const grouped = useMemo(() => {
@@ -437,7 +461,22 @@ export default function ChartsPage() {
                 </div>
               }
             >
-              <AccuracyHeatmap data={filteredHeatmapData} xKey={heatmapX} yKey={heatmapY} />
+              <div className="space-y-3">
+                {familyEntries.length > 1 && (
+                  <FamilyLegend
+                    entries={familyEntries}
+                    highlighted={highlightedFamilies}
+                    onToggle={handleFamilyToggle}
+                    onClear={clearFamilyHighlight}
+                  />
+                )}
+                <AccuracyHeatmap
+                  data={filteredHeatmapData}
+                  xKey={heatmapX}
+                  yKey={heatmapY}
+                  highlightedFamilies={highlightedFamilies}
+                />
+              </div>
             </ChartCard>
           </TabsContent>
 
@@ -475,7 +514,17 @@ export default function ChartsPage() {
                 </div>
               }
             >
-              <ModelBarChart data={barData} />
+              <div className="space-y-3">
+                {familyEntries.length > 1 && (
+                  <FamilyLegend
+                    entries={familyEntries}
+                    highlighted={highlightedFamilies}
+                    onToggle={handleFamilyToggle}
+                    onClear={clearFamilyHighlight}
+                  />
+                )}
+                <ModelBarChart data={barData} highlightedFamilies={highlightedFamilies} />
+              </div>
             </ChartCard>
           </TabsContent>
 
@@ -514,7 +563,22 @@ export default function ChartsPage() {
                 </div>
               }
             >
-              <ScalingScatter data={filteredScatterData} logScale={logScale} labelMode={scatterLabelMode} />
+              <div className="space-y-3">
+                {familyEntries.length > 1 && (
+                  <FamilyLegend
+                    entries={familyEntries}
+                    highlighted={highlightedFamilies}
+                    onToggle={handleFamilyToggle}
+                    onClear={clearFamilyHighlight}
+                  />
+                )}
+                <ScalingScatter
+                  data={filteredScatterData}
+                  logScale={logScale}
+                  labelMode={scatterLabelMode}
+                  highlightedFamilies={highlightedFamilies}
+                />
+              </div>
             </ChartCard>
           </TabsContent>
 

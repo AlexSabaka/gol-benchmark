@@ -1,18 +1,21 @@
-"""Job persistence layer — serializes/deserializes Job records to a JSON file.
+"""Job persistence layer — per-job JSON files under a jobs directory.
 
 All JSON I/O is confined to this module. To switch backends (e.g. MongoDB, Redis),
 replace the implementation of JobStore without touching any other file.
 
-Storage format (jobs.json):
-    {
-        "version": 1,
-        "jobs": {
-            "<job_id>": { <job record dict> },
-            ...
-        }
-    }
+Storage layout::
 
-Configure path via GOL_JOBS_FILE env var (default: jobs.json at project root).
+    data/jobs/
+    ├── <job_id_1>.json
+    ├── <job_id_2>.json
+    └── ...
+
+Each file contains a single job record dict. Atomic writes via
+``tempfile.mkstemp`` + ``os.replace``.
+
+Path resolution: ``src/web/app.py`` constructs ``JobStore(web_config.jobs_dir)``.
+A legacy ``GOL_JOBS_FILE`` env var is accepted and maps to the parent directory
+of the referenced file (per-job JSONs live alongside the old monolithic file).
 """
 from __future__ import annotations
 
@@ -25,76 +28,101 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
-_SCHEMA_VERSION = 1
+
+def _safe_id(job_id: str) -> str:
+    """Reject path-traversal attempts in job IDs. Call before touching the FS."""
+    if not job_id or "/" in job_id or "\\" in job_id or job_id in (".", ".."):
+        raise ValueError(f"Unsafe job id: {job_id!r}")
+    return job_id
 
 
 class JobStore:
-    """Persistence layer for Job records.
+    """Persistence layer for Job records — per-job files under ``jobs_dir``.
 
     Interface is intentionally minimal so it can be backed by any store:
         load_all()         → list[dict]
         save_job(d)        → None
         save_all(ds)       → None
         delete_job(id)     → None
+
+    Backwards-compat: if ``jobs_dir`` is a path to a legacy ``jobs.json`` file,
+    its parent directory is used instead. The legacy monolithic file is not
+    read — run ``scripts/migrate_data_layout.py`` to split it.
     """
 
-    def __init__(self, path: Path) -> None:
-        self._path = Path(path)
+    def __init__(self, jobs_dir: Path | str) -> None:
+        p = Path(jobs_dir)
+        if p.suffix == ".json" and not p.is_dir():
+            # Legacy path — caller handed us a jobs.json file. Use parent dir.
+            p = p.parent
+        self._dir = p
+        self._dir.mkdir(parents=True, exist_ok=True)
 
     # ── Public interface ──────────────────────────────────────────────────────
 
     def load_all(self) -> list[dict[str, Any]]:
-        """Return all saved job records. Returns [] if file is missing or corrupt."""
-        if not self._path.exists():
+        """Return all saved job records. Returns [] if dir is empty or unreadable."""
+        if not self._dir.exists():
             return []
-        try:
-            with self._path.open("r", encoding="utf-8") as f:
-                data = json.load(f)
-            jobs_map: dict = data.get("jobs", {})
-            return list(jobs_map.values())
-        except Exception as exc:
-            logger.warning("Could not load jobs from %s: %s", self._path, exc)
-            return []
+        records: list[dict[str, Any]] = []
+        for f in self._dir.glob("*.json"):
+            try:
+                with f.open("r", encoding="utf-8") as fh:
+                    records.append(json.load(fh))
+            except Exception as exc:
+                logger.warning("Could not load job file %s: %s", f, exc)
+        # Stable ordering on the /jobs page — oldest first, newest last by
+        # created_at (strings compare lexicographically for ISO-8601, and
+        # numeric epoch floats compare numerically via mixed sort key below).
+        records.sort(key=lambda d: d.get("created_at") or 0)
+        return records
 
     def save_job(self, job_dict: dict[str, Any]) -> None:
         """Upsert a single job record. Atomic write (temp file → rename)."""
-        data = self._read_raw()
-        data.setdefault("jobs", {})[job_dict["id"]] = job_dict
-        self._write_raw(data)
+        job_id = _safe_id(str(job_dict.get("id", "")))
+        self._write_one(job_id, job_dict)
 
     def save_all(self, job_dicts: list[dict[str, Any]]) -> None:
-        """Bulk-save all job records, replacing existing file contents."""
-        data = {"version": _SCHEMA_VERSION, "jobs": {d["id"]: d for d in job_dicts}}
-        self._write_raw(data)
+        """Bulk-save all job records; delete any on-disk files not in the list."""
+        incoming_ids = set()
+        for d in job_dicts:
+            jid = _safe_id(str(d.get("id", "")))
+            incoming_ids.add(jid)
+            self._write_one(jid, d)
+        # Prune files that no longer correspond to known jobs.
+        for f in self._dir.glob("*.json"):
+            if f.stem not in incoming_ids:
+                try:
+                    f.unlink()
+                except OSError as exc:
+                    logger.warning("Could not prune stale job file %s: %s", f, exc)
 
     def delete_job(self, job_id: str) -> None:
         """Remove a job record by ID (no-op if not present)."""
-        data = self._read_raw()
-        data.setdefault("jobs", {}).pop(job_id, None)
-        self._write_raw(data)
+        jid = _safe_id(job_id)
+        target = self._dir / f"{jid}.json"
+        try:
+            target.unlink()
+        except FileNotFoundError:
+            pass
+        except OSError as exc:
+            logger.warning("Could not delete job file %s: %s", target, exc)
 
     # ── Internal helpers ──────────────────────────────────────────────────────
 
-    def _read_raw(self) -> dict:
-        if not self._path.exists():
-            return {"version": _SCHEMA_VERSION, "jobs": {}}
-        try:
-            with self._path.open("r", encoding="utf-8") as f:
-                return json.load(f)
-        except Exception as exc:
-            logger.warning("Corrupt jobs file %s, starting fresh: %s", self._path, exc)
-            return {"version": _SCHEMA_VERSION, "jobs": {}}
-
-    def _write_raw(self, data: dict) -> None:
+    def _write_one(self, job_id: str, data: dict[str, Any]) -> None:
         """Atomic write: write to temp file in same directory, then rename."""
-        self._path.parent.mkdir(parents=True, exist_ok=True)
-        fd, tmp = tempfile.mkstemp(suffix=".json", dir=self._path.parent)
+        target = self._dir / f"{job_id}.json"
+        fd, tmp = tempfile.mkstemp(prefix=".job-", suffix=".json", dir=str(self._dir))
         try:
             os.close(fd)
             with open(tmp, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=2, default=str)
-            os.replace(tmp, self._path)
+            os.replace(tmp, target)
         except Exception:
             if os.path.exists(tmp):
-                os.unlink(tmp)
+                try:
+                    os.unlink(tmp)
+                except OSError:
+                    pass
             raise

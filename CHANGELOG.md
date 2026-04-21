@@ -2,6 +2,167 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [2.26.0] - April 20, 2026
+
+### Encryption-at-rest for persisted API credentials — TD-085 resolved
+
+Closes TECHDEBT [TD-085](TECHDEBT.md). `api_key` / `api_base` on each persisted job in `data/jobs/<id>.json` used to land as plaintext; anyone with read access to the repo directory (shared dev machine, backup, accidental `tar` into a gist, agent scrolling `data/`) saw the keys. The frontend was already encrypting the same pair in `localStorage` via Web Crypto AES-GCM ([frontend/src/lib/credential-store.ts](frontend/src/lib/credential-store.ts)); the backend is now consistent with that posture.
+
+#### What changed
+
+- **New module [src/web/crypto.py](src/web/crypto.py)** — Fernet-backed `encrypt_str` / `decrypt_str` + process-cached `get_fernet()`. Key resolution order (first match wins):
+  1. `GOL_SECRET_KEY` env var — Fernet-format (32 url-safe base64 bytes).
+  2. `<data_root>/.secret_key` file — created on first run with mode 0600.
+  3. Auto-generate a fresh key, persist it, log a WARNING with the path.
+- **Job schema v2** — [src/web/jobs.py](src/web/jobs.py) `Job.to_storable_dict()` emits `schema_version: 2` + `api_key_enc` / `api_base_enc` (Fernet tokens). The plaintext `api_key` / `api_base` keys are no longer written.
+- **`JobStore` unchanged** — the crypto envelope lives at the `Job` serialization boundary, not in the store (the store stays a backend-agnostic dict persister per its docstring contract, so a future Redis/Mongo swap doesn't re-implement crypto).
+- **Legacy records keep working** — `Job.from_stored_dict()` accepts dicts without `schema_version` and reads plaintext `api_key` / `api_base` as-is. Each legacy record upgrades to the encrypted shape on its next `_persist_job()` call; no migration script needed.
+- **Tamper / missing-key graceful degradation** — `decrypt_str()` on an `InvalidToken` logs a WARNING and returns `""`. The job still loads; the user re-enters credentials to resume. Matches the existing `JobStore.load_all()` skip-corrupt-record posture.
+
+#### Tests
+
+6 new tests in [tests/test_job_encryption.py](tests/test_job_encryption.py):
+
+- Round-trip: `api_key` / `api_base` encrypted on write, recovered on read; plaintext absent from stored dict.
+- Empty credentials emit `None` (no cipher for empty values).
+- Legacy plaintext records still load.
+- Tampered ciphertext → `api_key=""` + WARNING (no exception).
+- Missing key file auto-generates at `data/.secret_key` with 0600 mode.
+- `GOL_SECRET_KEY` env var beats an existing on-disk key file.
+
+All 88 tests across `test_job_encryption`, `test_job_manager_cancel`, `test_matrix_execution_api`, `test_human_review`, `test_run_testset` pass.
+
+#### Operational notes
+
+- **Back up `data/.secret_key`** alongside `data/jobs/` — losing the key leaves existing encrypted credentials unrecoverable (jobs still load, creds decrypt to `""` with a WARNING).
+- Both are in `.gitignore`; CLAUDE.md Known Issue #11 rewritten.
+- No new required env var — `GOL_SECRET_KEY` is optional (auto-generated file is the fallback).
+
+#### Dependency
+
+- `cryptography>=42.0.0` added to [requirements.txt](requirements.txt).
+
+---
+
+## [2.25.2] - April 18, 2026
+
+### Picture Algebra Parser — Round 2 (multilingual, annotation-data-driven)
+
+Second annotation round — 121 cases across 5 models (gemma3 12b/27b cloud, gpt-5.4-mini ×2, rnj-1 8b cloud) covering all 6 prompt languages (EN/ES/FR/DE/ZH/UA). Round 1 fixed the structural bugs but only on an English-only run; this round shipped the multilingual surface area. Result before fix: 117/121 misses, alignment_ratio = 0. Local reproduction split the failures into 4 distinct categories, three of which are real parser bugs (the fourth is model-correctness noise the parser is reporting accurately).
+
+#### Root causes (locally reproduced)
+
+1. **Multilingual sentinel keyword gaps** — the per-language refusal lists in [parser.py](src/plugins/picture_algebra/parser.py) were sparse. Spanish "no tiene una única solución", Chinese "方程组没有唯一解", Ukrainian "не має єдиного розв'язку" (with both `'` and `’` apostrophes), German "keine eindeutige Lösung" all silently fell through to numeric extraction.
+2. **Sentinel detection only checked the last 3 sentences.** Many models lead with the conclusion (`"Das System hat keine eindeutige Lösung. Hier ist warum: …"`) — the refusal phrase is in sentence 1, not sentence N.
+3. **`\boxed{N}` (single number, no token inside) had no extraction path.** Real cases: `\boxed{11}`, `\[\n\boxed{2}\n\]`, `🐢 = $\boxed{2}$`. Without a single-value extraction strategy, parser fell through to `last_numbers` (which got correct answers occasionally by coincidence) or `foreign_labels` (which extracted x/y from reasoning aliases).
+4. **U+2019 vs U+0027 apostrophes** — Ukrainian responses mixed both. A keyword with one variant missed responses using the other.
+
+#### Fixes
+
+- **Comprehensive multilingual keyword expansion** — ~60 new phrases across `_CANNOT_DETERMINE_KEYWORDS` and `_NO_SOLUTION_KEYWORDS`, each verbatim from `model_answer_distribution`. Covers: ES "no tiene una única solución" / "podría no tener una solución única" / "múltiples valores"; FR "n'a pas de solution unique" / "pas de solution unique"; DE "keine eindeutige Lösung" / "keine eindeutige ganzzahlige lösung"; ZH "没有唯一解" / "解不唯一" / "不能唯一确定" / "没有整数解"; UA "не має єдиного розв'язку" / "безліч цілих розв'язків" / "несумісна" / "єдиного набору значень немає"; EN "no unique answer" / "doesn't have a unique answer" / "no unique integer solution".
+- **`_detect_sentinel(strict=True)` now checks first 2 + last 3 sentences** — covers both lead-with-conclusion and answer-at-end response shapes. Inline sentence split adds Chinese punctuation `。！？` so Chinese text isn't treated as one mega-sentence (the shared `last_sentences` util only handles ASCII punctuation).
+- **Apostrophe normalization** — `haystack.replace("\u2019", "'")` before substring match; one apostrophe variant in keywords now catches both glyphs.
+- **`_strategy_boxed` extended with `boxed_single_value` path** — when `\boxed{...}` inner is a bare number:
+  - If `question_scope == "specific"` → assign to `queried_variable`
+  - Else → scan backward ≤200 chars for the nearest emoji token, assign to it
+  - Strategy returns `"boxed_single_value"` (new entry in `get_strategies()`); confidence 0.85
+- **`question_scope` and `queried_variable` now flow through `parse()`** to `_strategy_boxed` via keyword args.
+
+Strategy ordering: sentinel(strict, first+last) → normalize → `boxed_multivar` → `boxed_single_value` → `label_line` → `bold_assignments` → `final_answer_block` → guard → `foreign_labels[_aliased]` → `coord_tuple` → `last_numbers` → sentinel(fallback).
+
+#### Tests (10 new under `TestRound2Multilingual`)
+
+All under [tests/plugins/test_picture_algebra.py](tests/plugins/test_picture_algebra.py), each seeded from a real `model_answer_distribution` entry:
+
+- `test_es_sentinel_no_unique_solution` — `"El sistema no tiene una única solución"`
+- `test_fr_sentinel_pas_solution_unique` — `"Le système n'a pas de solution unique"`
+- `test_de_sentinel_keine_eindeutige_loesung_first_sentence` — refusal in sentence 1, math after
+- `test_zh_sentinel_no_unique_solution` — `"方程组没有唯一解"`
+- `test_ua_sentinel_with_curly_apostrophe` — `розв’язку` (U+2019)
+- `test_ua_sentinel_with_straight_apostrophe` — `розв'язку` (U+0027)
+- `test_es_parametric_partial_answer` — `"🦊 = 9 ... 🍓 y 🦒 pueden tomar múltiples valores"` → sentinel
+- `test_boxed_single_value_specific_scope` — `\boxed{11}` + `question_scope=specific`
+- `test_boxed_single_value_with_preceding_token` — `🐢 est : \[\boxed{2}\]`
+- `test_boxed_single_value_inline_token` — `🐢 = $\boxed{2}$`
+
+Test suite: 63/63 passing (53 + 10 new); full plugin suite: 654/667 (same 13 pre-existing failures, TD-101).
+
+#### Files Modified
+
+- [src/plugins/picture_algebra/parser.py](src/plugins/picture_algebra/parser.py) — keyword expansion, `_detect_sentinel` first+last + Chinese punctuation + apostrophe normalization, `_strategy_boxed` `boxed_single_value` path, `parse()` wires `question_scope`/`queried_variable`
+- [tests/plugins/test_picture_algebra.py](tests/plugins/test_picture_algebra.py) — 10 new regression tests
+
+#### Expected impact on re-analyzed results
+
+On replay of the 121 multilingual cases: alignment_ratio 0.0 → 0.5+ expected. Residuals split between (a) genuine model errors (model gave wrong number; parser correctly extracts that wrong number) and (b) `system_error_false_positive` cases where the parser correctly classifies a model's refusal of a solvable system. Both are correct parser behavior; the alignment metric undercounts them as misses.
+
+---
+
+## [2.25.1] - April 18, 2026
+
+### Picture Algebra Parser — Round 1 (annotation-data-driven)
+
+First annotation round on qwen3.5:0.8b surfaced a catastrophic miss rate: 92 of 99 cases classified `parser_missed_misaligned` (alignment ratio = 0.0), with `label_line` firing only **once** and `foreign_labels` firing **84** times. Two root causes identified and fixed; ten regression tests added seeded from real annotation spans.
+
+#### Root cause A — `strip_verification_tail` decapitated responses
+
+Models verify inline during reasoning (`"(This matches the second equation.)"`) and then print the final answer under `### Conclusion`. The shared `strip_verification_tail` utility treated "This matches" as a section header and removed everything after it — including the final emoji answers. `label_line` then saw only reasoning (which used `x, y` aliases), returned nothing, and `foreign_labels` picked up the reasoning's algebraic intermediates.
+
+**Fix:** Dropped the `strip_verification_tail` call entirely from [parser.py](src/plugins/picture_algebra/parser.py). Multi-step algebra doesn't have a verification-at-the-end structure; the heuristic doesn't apply.
+
+#### Root cause B — LaTeX `\text{<emoji>}` wrapping broke label matching
+
+`$\text{🚲} = 18$` puts `}` between the emoji and `=`, so `🚲\s*=\s*<num>` could never match. ~15% of responses used this format.
+
+**Fix:** New `_normalize_for_label_matching()` preprocessor runs before every extraction strategy:
+- `\text{X}` / `\mathbf{X}` / `\mathrm{X}` / etc. → `X` (iterated up to 3× for nested wrappers)
+- `\quad` / `\qquad` / `\,` / `\;` / `\:` / `\!` → single space
+- `$$` and `$` math delimiters → single space
+
+Sentinel detection still runs on the raw text so refusal phrasing isn't mangled.
+
+#### Structural improvements
+
+- **Separator pattern relaxed with markdown tolerance** (`_MD_WRAP = (?:\s*[*_]+)?`) — handles `**🦆** = 4`, `= **4**`, `*🦆* = 4`, `_🦆_ = 4`.
+- **`foreign_labels` guarded** by `_text_contains_token_assignment()` — only fires when NO `<token>\s*=\s*<num>` pattern exists anywhere in normalized text. Prevents shipping reasoning's `x = 11, y = 4` when the model also wrote `🦏 = 11, 🧀 = 4`.
+- **Alias remap** — new `_detect_aliases()` helper parses declarations like `Let x = 🍎`, `Let $x$ represent the symbol **🍎**`, `🍎 for x`, `🍎 = x`. When `foreign_labels` would ship `{x: 3, y: 5}` and aliases are detected, remap to `{🍎: 3, 🍌: 5}` and emit as `foreign_labels_aliased` (confidence 0.75). Evaluator scores these as `correct` and adds `details.alias_remap_applied = True`. Partial alias maps (only some letters declared) remap only what's declared.
+- **Non-integer prediction surfacing** — `_try_parse_number()` replaces `_try_parse_int()`, returning `int | float | None`. Numeric capture widened to `(-?\d+(?:\.\d+)?)`. Evaluator compares predictions as floats (`float(22.2) != float(22)`) so fractional answers are correctly scored wrong; adds `details.non_integer_prediction = True` when a captured value wasn't an integer. Fixes the silent-truncation bug where `int(22.2) == 22` scored correct.
+
+#### Strategy ordering
+
+Revised: sentinel(strict) → normalize → `boxed_multivar` → `label_line` → `bold_assignments` → `final_answer_block` → guard → `foreign_labels` / `foreign_labels_aliased` → `coord_tuple` → `last_numbers` → sentinel(fallback).
+
+#### Tests (10 new, seeded from real annotation spans)
+
+All under `TestRound1Regressions` in [test_picture_algebra.py](tests/plugins/test_picture_algebra.py):
+
+- `test_latex_text_wrapped_emoji` — `$\text{🚲} = 18$`
+- `test_latex_dollardollar_quad_separator` — `$$\text{🍌} = 5, \quad \text{🍟} = 17$$`
+- `test_mid_response_verification_does_not_strip_conclusion` — reasoning with "(This matches...)" + `### Conclusion` bold emoji list
+- `test_bold_on_token_only` — `**🦆** = 4`
+- `test_bold_on_value_only` — `🦆 = **4**`
+- `test_boxed_with_latex_text` — `\boxed{\text{🚲} = 18, \text{🧸} = 3}`
+- `test_foreign_labels_guard_when_emoji_present` — reasoning has x/y + answer has emoji
+- `test_alias_detection_remaps_to_emoji` — `Let x = 🐯 ... x = 14 ...`
+- `test_alias_with_dollar_wrap_and_represent` — `Let $x$ represent the value of **🐯**`
+- `test_non_integer_prediction_flagged` — `🐴 = 22.2` expected `22` → partial + non_integer flag
+- `test_list_marker_prefix` — `*   🐶 = 13`
+- `test_integer_expected_rejects_float_prediction` — regression: `int(22.2) == 22` silent truncation
+
+Test suite: 53/53 passing (up from 41); full plugin suite: 644/657 (same 13 pre-existing failures in ascii_shapes/cellular_automata_1d/linda_fallacy — TD-101).
+
+#### Files Modified
+
+- [src/plugins/picture_algebra/parser.py](src/plugins/picture_algebra/parser.py) — normalization + alias detection + guard + remap + widened numeric capture
+- [src/plugins/picture_algebra/evaluator.py](src/plugins/picture_algebra/evaluator.py) — float comparison + non_integer_prediction flag + alias_remap_applied flag
+- [tests/plugins/test_picture_algebra.py](tests/plugins/test_picture_algebra.py) — 12 new regression tests
+
+#### Expected impact on re-analyzed results
+
+On replay of the qwen3.5:0.8b annotation run: `alignment_ratio` 0.0 → ~0.7+ expected, with residuals being genuine model errors (wrong math, fractional answers, hallucinated "no solution"). Three `system_error_false_positive` cases are unchanged — the parser was correctly classifying model refusals; the alignment metric treats sentinel strings as misaligned from "No solution" text, which is a report-layer artifact, not a parser issue.
+
+---
+
 ## [2.25.0] - April 17, 2026
 
 ### Picture Algebra — 21st Benchmark Plugin

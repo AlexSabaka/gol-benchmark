@@ -37,11 +37,17 @@ function ExportChartButton({ target, filename }: { target: React.RefObject<HTMLD
   const [busy, setBusy] = useState(false)
 
   const resolveBg = (): string => {
-    // Grab the current card background from computed styles so light/dark mode
-    // both render without a transparent slice. Fallback to solid white.
-    if (target.current) {
-      const bg = getComputedStyle(target.current).getPropertyValue("background-color").trim()
-      if (bg && bg !== "rgba(0, 0, 0, 0)") return bg
+    // CardContent is often transparent — walk up the ancestor chain until we
+    // hit an element with a real background color (e.g. the Card's `bg-card`,
+    // or eventually the page body). Falls through to white only as a last
+    // resort for light-mode users without an explicit root bg.
+    let el: HTMLElement | null = target.current
+    while (el) {
+      const bg = getComputedStyle(el).backgroundColor.trim()
+      if (bg && bg !== "rgba(0, 0, 0, 0)" && bg !== "transparent") {
+        return bg
+      }
+      el = el.parentElement
     }
     return "#ffffff"
   }
