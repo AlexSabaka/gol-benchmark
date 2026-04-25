@@ -29,6 +29,7 @@ from src.plugins.base import ResponseParser, ParsedAnswer
 from src.plugins.parse_utils import (
     re_search_last, last_sentences,
     merge_keywords, merge_patterns, build_answer_label_re, get_language,
+    has_contextual_marker, normalize_unicode,
 )
 
 
@@ -501,23 +502,11 @@ _WALK_NEGATIVE = {
 
 def _is_conditional_walk(text: str, walk_start: int, lang: str = "en") -> bool:
     """Return True if the walk mention at *walk_start* is inside conditional language."""
-    # Check a window around the walk mention
-    window_start = max(0, walk_start - 120)
-    window_end = min(len(text), walk_start + 80)
-    window = text[window_start:window_end]
-
-    # Check EN patterns always, plus target language patterns
-    for code in (["en"] if lang == "en" else ["en", lang]):
-        pat = _PRE_WALK_CONDITIONAL.get(code)
-        if pat and pat.search(window):
-            return True
-        pat = _WALK_CONDITIONAL.get(code)
-        if pat and pat.search(window):
-            return True
-        pat = _WALK_NEGATIVE.get(code)
-        if pat and pat.search(window):
-            return True
-    return False
+    return has_contextual_marker(
+        text, walk_start,
+        [_PRE_WALK_CONDITIONAL, _WALK_CONDITIONAL, _WALK_NEGATIVE],
+        lang, pre_window=120, post_window=80, positional=False,
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -578,23 +567,17 @@ _DRIVE_LISTING = {
 def _is_conditional_drive(text: str, drive_start: int, lang: str = "en") -> bool:
     """Return True if the drive mention at *drive_start* is inside option-listing/comparison language.
 
-    Uses positional matching: only returns True if drive_start falls within
-    the span of a listing pattern match (not merely near one). This avoids
-    false-filtering a genuine "drive" recommendation that happens to be
-    within 120 chars of an earlier option-listing phrase.
+    Uses positional matching via ``has_contextual_marker(..., positional=True)``:
+    drive_start must fall within the span of a listing-pattern match, not
+    merely within the surrounding window.  This avoids false-filtering a
+    genuine drive recommendation that happens to sit within 120 chars of
+    an earlier option-listing phrase.
     """
-    window_start = max(0, drive_start - 120)
-    window_end = min(len(text), drive_start + 80)
-    window = text[window_start:window_end]
-    offset = drive_start - window_start
-
-    for code in (["en"] if lang == "en" else ["en", lang]):
-        pat = _DRIVE_LISTING.get(code)
-        if pat:
-            for m in pat.finditer(window):
-                if m.start() <= offset < m.end():
-                    return True
-    return False
+    return has_contextual_marker(
+        text, drive_start,
+        [_DRIVE_LISTING],
+        lang, pre_window=120, post_window=80, positional=True,
+    )
 
 
 def _score(text: str, lang: str = "en") -> Optional[str]:
@@ -682,7 +665,7 @@ class CarwashParser(ResponseParser):
                 error="Empty response",
             )
 
-        text = response.strip()
+        text = normalize_unicode(response.strip())
         lang = get_language(task_params or {})
 
         # --- Strategy 1: LaTeX boxed (last match) ---

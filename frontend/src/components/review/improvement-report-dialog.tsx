@@ -958,15 +958,18 @@ function OrderingTab({ hints }: { hints: ImprovementReport["ordering_hints"] }) 
 }
 
 const CLASS_TONE: Record<string, string> = {
+  // v4 canonical classes.
   hedge: "bg-amber-500",
   truncated: "bg-slate-500",
+  unrecoverable: "bg-rose-500",
+  false_positive: "bg-fuchsia-500",
+  parser_missed: "bg-violet-500",
+  // Legacy codes — backwards compat with old reports. New reports migrate
+  // these on read, but offline-stored reports may still reference them.
   gibberish: "bg-rose-500",
   refusal: "bg-red-500",
   language_error: "bg-orange-500",
   verbose: "bg-sky-500",
-  false_positive: "bg-fuchsia-500",
-  parser_missed: "bg-violet-500",
-  // Legacy codes — backwards compat with old reports.
   verbose_correct: "bg-sky-500",
   parser_ok: "bg-emerald-500",
   parser_false_positive: "bg-fuchsia-500",
@@ -1262,9 +1265,15 @@ function NegativesTab({
                 {g.text}
               </span>
               <Badge variant="outline" className="text-[10px]">×{g.count}</Badge>
-              <Badge variant="outline" className={`text-[10px] ${g.mark_type === "negative_keyword" ? "border-rose-600/40 text-rose-700" : "border-rose-400/40 text-rose-600"}`}>
-                {g.mark_type === "negative_keyword" ? "keyword" : "span"}
-              </Badge>
+              {/* v2.7: `mark_type` is optional — new reports omit it after
+                  Phase 1 collapsed negative spans and keywords into one type.
+                  Render the distinguishing badge only when a legacy report
+                  actually carries the field. */}
+              {g.mark_type && (
+                <Badge variant="outline" className={`text-[10px] ${g.mark_type === "negative_keyword" ? "border-rose-600/40 text-rose-700" : "border-rose-400/40 text-rose-600"}`}>
+                  {g.mark_type === "negative_keyword" ? "keyword" : "span"}
+                </Badge>
+              )}
               <span className="ml-auto text-[10px] text-muted-foreground">
                 {expanded === i ? "▲" : "▼"}
               </span>

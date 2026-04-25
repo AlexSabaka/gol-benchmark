@@ -1,9 +1,10 @@
 """Human Review & annotation endpoints.
 
-Annotations are stored as gzipped JSON files under ``web_config.annotations_dir``
-(``data/annotations/{result_stem}.json.gz``), keyed by result-file stem. They
-live in their own directory (not next to result files) so the ``results_*.json.gz``
-glob can't pick them up as phantom entries. Writes are atomic (temp file + rename).
+Annotations are stored in the SQLite ``annotations`` table (see
+``db_migrations/002_annotations.sql``). The store module
+(:mod:`src.web.annotation_store`) projects rows back into the sidecar-shaped
+dict the aggregator expects, so the API payloads and the improvement-report
+format haven't changed.
 
 Route order: specific routes come before any `{filename}` catch-all so the
 FastAPI router doesn't accidentally capture `cases` / `annotate` / `report` as
@@ -11,20 +12,16 @@ filenames — same rule as `src/web/api/analysis.py`.
 """
 from __future__ import annotations
 
-import gzip
 import hashlib
-import json
 import logging
-import os
-import tempfile
 from collections import Counter
 from datetime import datetime, timezone
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
+from src.web import annotation_store as _annotation_store_module
 from src.web.api.analysis import _find_result_file, _load_result, _resolve_result_files
 from src.web.human_review_aggregator import build_report
 from src.web.translation import TranslationError, translate as translate_text
@@ -37,14 +34,14 @@ router = APIRouter()
 # ---------- Sidecar helpers --------------------------------------------------
 
 
+# v4 (Phase 1): collapsed to four canonical codes. `unrecoverable` absorbs
+# the old `gibberish` / `refusal` / `language_error` codes. `verbose` /
+# `verbose_correct` are dropped entirely (extractable with spans is the
+# default — no class needed). `parser_ok` stays dropped (auto-inferred).
 _RESPONSE_CLASSES = {
     "hedge",
     "truncated",
-    "gibberish",
-    "refusal",
-    "language_error",
-    # Renamed in v3: `verbose_correct` → `verbose`.
-    "verbose",
+    "unrecoverable",
     # Renamed in v3: `parser_false_positive` → `false_positive`.
     # Annotator verified the parser extracted the wrong token. Crucially,
     # this verdict MAY coexist with `spans` so the annotation carries both
@@ -54,21 +51,28 @@ _RESPONSE_CLASSES = {
 
 # Old codes → new codes. Applied on sidecar load + save for backwards compat.
 _CLASS_RENAME: Dict[str, str] = {
-    "verbose_correct": "verbose",
+    # v3 legacy renames.
     "parser_false_positive": "false_positive",
+    # v4 collapse: model-failure modes all fold into "unrecoverable".
+    "gibberish": "unrecoverable",
+    "refusal": "unrecoverable",
+    "language_error": "unrecoverable",
 }
 
-# Codes that should be silently dropped during migration (auto-inferred at
-# aggregation time instead of stored).
-_CLASS_DROP: set[str] = {"parser_ok"}
+# Codes that should be silently dropped during migration. `parser_ok` is
+# auto-inferred at aggregation time. `verbose` / `verbose_correct` are
+# redundant with "annotation has spans" (Extractable is implicit).
+_CLASS_DROP: set[str] = {"parser_ok", "verbose", "verbose_correct"}
 
 
 def _migrate_annotation(ann: Dict[str, Any]) -> Dict[str, Any]:
     """Migrate a single annotation dict from the old schema to the new one.
 
     - ``response_class`` (string) → ``response_classes`` (array)
-    - Rename old codes (``verbose_correct`` → ``verbose``, etc.)
-    - Drop ``parser_ok`` (auto-inferred at aggregation time)
+    - Rename old codes (``gibberish``/``refusal``/``language_error`` →
+      ``unrecoverable``, ``parser_false_positive`` → ``false_positive``)
+    - Drop ``parser_ok`` / ``verbose`` / ``verbose_correct`` (redundant)
+    - Fold legacy ``negative_keywords`` entries into ``negative_spans``
     - Ensure new mark-type arrays exist (empty defaults)
     """
     # response_class (string) → response_classes (array)
@@ -81,59 +85,44 @@ def _migrate_annotation(ann: Dict[str, Any]) -> Dict[str, Any]:
     # Remove the old scalar field so downstream code never reads it.
     ann.pop("response_class", None)
 
-    # Rename old codes + drop parser_ok
+    # Rename old codes + drop dropped codes
     rcs = [_CLASS_RENAME.get(c, c) for c in rcs if c not in _CLASS_DROP]
-    ann["response_classes"] = rcs
+    # Deduplicate while preserving order (multiple legacy codes may collapse
+    # to the same new code — e.g. `gibberish` + `refusal` → `unrecoverable`).
+    seen: set = set()
+    deduped: list = []
+    for c in rcs:
+        if c not in seen:
+            seen.add(c)
+            deduped.append(c)
+    ann["response_classes"] = deduped
 
     # Ensure new mark-type arrays exist (empty defaults for new mark types)
     for field in ("context_anchors", "answer_keywords", "negative_spans", "negative_keywords"):
         ann.setdefault(field, [])
+
+    # v4 fold: negative_keywords → negative_spans. Kept as an empty list so
+    # the DB column stays populated; the distinction is gone at the semantic
+    # level (spec §5.1). Idempotent on already-migrated annotations.
+    legacy_kw = ann.get("negative_keywords") or []
+    if legacy_kw:
+        ann["negative_spans"] = (ann.get("negative_spans") or []) + list(legacy_kw)
+        ann["negative_keywords"] = []
+
     return ann
 
 
-def _annotation_path(result_file: Path) -> Path:
-    """Return the annotation sidecar path for a given result file.
-
-    Sidecars live in ``web_config.annotations_dir`` (default ``data/annotations/``),
-    not next to result files. This prevents the ``results_*.json.gz`` glob from
-    picking them up as phantom result entries.
-    """
-    from src.web.config import web_config
-    return web_config.annotation_path_for(result_file.name)
-
-
-def _load_annotations(path: Path) -> Optional[Dict[str, Any]]:
-    if not path.exists():
-        return None
-    try:
-        with gzip.open(str(path), "rt", encoding="utf-8") as f:
-            payload = json.load(f)
-    except Exception as exc:
-        logger.warning("Unreadable annotation file %s: %s", path, exc)
-        return None
-    # Migrate each case's annotation dict from old schema on the fly.
+def _load_annotations_from_store(result_file_id: str) -> Optional[Dict[str, Any]]:
+    """Fetch the sidecar-shaped annotation payload from the DB store, applying
+    schema migrations to every case's annotation dict on read."""
+    payload = _annotation_store_module.get_store().load_for_file(result_file_id)
+    if not payload:
+        return payload
     for case in (payload.get("cases") or {}).values():
         ann = case.get("annotation")
-        if ann and isinstance(ann, dict):
-            case["annotation"] = _migrate_annotation(ann)
+        if isinstance(ann, dict):
+            _migrate_annotation(ann)
     return payload
-
-
-def _atomic_write_annotations(path: Path, payload: Dict[str, Any]) -> None:
-    """Write an annotation file atomically using a temp file + rename."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp = tempfile.mkstemp(prefix=".annot-", suffix=".tmp", dir=str(path.parent))
-    try:
-        with os.fdopen(fd, "wb") as raw:
-            with gzip.open(raw, "wt", encoding="utf-8") as gz:
-                json.dump(payload, gz, ensure_ascii=False, indent=2)
-        os.replace(tmp, str(path))
-    except Exception:
-        try:
-            os.unlink(tmp)
-        except OSError:
-            pass
-        raise
 
 
 def _now_iso() -> str:
@@ -141,9 +130,27 @@ def _now_iso() -> str:
 
 
 def _response_hash(raw_response: str) -> str:
-    """Short hash of the first 128 chars of a response. Used to detect
-    contaminated sidecar entries that were saved against a different response
-    (cross-file leakage from pre-v2.6 sessions)."""
+    """16-hex-char SHA256 prefix over the first 128 chars of a response.
+
+    Used to uniquely identify a response variant across same-``case_id`` rows
+    (different languages / user styles / system styles) and to detect
+    contaminated sidecar entries saved against a different response. 64 bits
+    of collision resistance — safe for any realistic testset cardinality.
+
+    TD-096 (resolved): the original implementation used 8 hex chars of MD5
+    over the same prefix (32-bit space). The annotation-store migrator
+    re-hashes legacy sidecars against their source result files; entries
+    whose source has disappeared keep the legacy hash as an opaque
+    identifier.
+    """
+    prefix = (raw_response or "")[:128].encode("utf-8", errors="replace")
+    return hashlib.sha256(prefix).hexdigest()[:16]
+
+
+def _response_hash_legacy(raw_response: str) -> str:
+    """Pre-TD-096 hash. Kept solely so the annotation-store migrator can
+    match legacy sidecar entries against result-file responses during
+    rehash. Do NOT call from runtime paths."""
     prefix = (raw_response or "")[:128].encode("utf-8", errors="replace")
     return hashlib.md5(prefix).hexdigest()[:8]
 
@@ -209,6 +216,14 @@ def _project_case(
         "system_prompt": inp.get("system_prompt") or "",
         "raw_response": raw_response,
         "parsed_answer": out.get("parsed_answer"),
+        # v2.7 (Phase 2): parser-highlight anchors from the result entry.
+        # Absent on legacy files — frontend falls back to substring search.
+        "parsed_char_start": out.get("parsed_char_start"),
+        "parsed_char_end": out.get("parsed_char_end"),
+        # Phase 3: inference-time was_truncated flag. The /review workspace
+        # pre-toggles the Truncated chip when set. Absent on legacy files —
+        # frontend leaves the chip inactive (existing behaviour).
+        "was_truncated": out.get("was_truncated"),
         "expected": tp.get("expected_answer") if "expected_answer" in tp else ev.get("expected"),
         "parser_match_type": ev.get("match_type") or ("correct" if ev.get("correct") else "unknown"),
         "parser_correct": bool(ev.get("correct")),
@@ -380,7 +395,7 @@ async def get_review_cases(
         plugin = _infer_plugin(results)
         plugins_seen.append(plugin)
 
-        annotation_payload = _load_annotations(_annotation_path(fp)) or {}
+        annotation_payload = _load_annotations_from_store(fp.name) or {}
         annotations_by_case = annotation_payload.get("cases") or {}
         total_annotated_in_sidecars += int(
             (annotation_payload.get("meta") or {}).get("annotated_count", 0)
@@ -497,19 +512,9 @@ async def save_annotation(req: AnnotateRequest) -> Dict[str, Any]:
     if target is None:
         raise HTTPException(404, f"Case not found in {req.result_file_id}: {req.case_id}")
 
-    annot_path = _annotation_path(fp)
-    payload = _load_annotations(annot_path) or {
-        "meta": {
-            "result_file": fp.name,
-            "plugin": _infer_plugin(data.get("results") or []),
-            "annotated_by": "human",
-            "created_at": _now_iso(),
-            "updated_at": _now_iso(),
-            "annotated_count": 0,
-            "skipped_count": 0,
-        },
-        "cases": {},
-    }
+    store = _annotation_store_module.get_store()
+    existing_payload = store.load_for_file(fp.name)
+    now = _now_iso()
 
     # Build the case record.
     raw_response = (target.get("output") or {}).get("raw_response") or ""
@@ -523,19 +528,17 @@ async def save_annotation(req: AnnotateRequest) -> Dict[str, Any]:
     # Ensure the legacy `response_class` scalar is never written — only the
     # `response_classes` array is persisted.
     annotation_dict.pop("response_class", None)
-    annotation_dict["timestamp"] = annotation_dict.get("timestamp") or _now_iso()
+    annotation_dict["timestamp"] = annotation_dict.get("timestamp") or now
 
+    response_hash = _response_hash(raw_response)
     case_record = {
         "case_id": req.case_id,
         "response_length": len(raw_response) if isinstance(raw_response, str) else 0,
-        "response_hash": _response_hash(raw_response),
+        "response_hash": response_hash,
         "parser_match_type": evaluation.get("match_type")
         or ("correct" if evaluation.get("correct") else "unknown"),
         "parser_extracted": output.get("parsed_answer"),
         "expected": task_params.get("expected_answer") if "expected_answer" in task_params else evaluation.get("expected"),
-        # Context fields used by the improvement-report aggregator. All are
-        # optional — the aggregator falls back to reading the source result
-        # file for legacy sidecars that were written before v2.20.1.
         "language": prompt_meta.get("language") or "en",
         "user_style": prompt_meta.get("user_style"),
         "system_style": prompt_meta.get("system_style"),
@@ -545,32 +548,28 @@ async def save_annotation(req: AnnotateRequest) -> Dict[str, Any]:
         "context_windows": _extract_context_windows(raw_response, annotation_dict),
         "annotation": annotation_dict,
     }
-    # v2.6+: sidecar key is `case_id::response_hash` — unique across ALL
-    # dimensions (language, user_style, system_style, run index).
-    sidecar_key = f"{req.case_id}::{case_record['response_hash']}"
-    payload.setdefault("cases", {})[sidecar_key] = case_record
 
-    # Refresh meta counters + timestamp.
-    counters = _recount_meta(payload["cases"])
-    payload.setdefault("meta", {}).update(counters)
-    payload["meta"]["updated_at"] = _now_iso()
-    # In case this is the first write and `meta.result_file` is missing:
-    payload["meta"].setdefault("result_file", fp.name)
-    payload["meta"].setdefault("annotated_by", "human")
-    payload["meta"].setdefault("created_at", payload["meta"]["updated_at"])
-    payload["meta"].setdefault("plugin", _infer_plugin(data.get("results") or []))
+    # File-level meta propagates onto every row of the file. Preserve the
+    # original created_at when a sidecar predates this annotation.
+    existing_meta = (existing_payload or {}).get("meta") or {}
+    case_record["_meta"] = {
+        "plugin": existing_meta.get("plugin") or _infer_plugin(data.get("results") or []),
+        "annotated_by": existing_meta.get("annotated_by") or "human",
+        "file_created_at": existing_meta.get("created_at") or now,
+        "file_updated_at": now,
+    }
 
-    _atomic_write_annotations(annot_path, payload)
-    return {"status": "ok", "case_id": req.case_id, "annotation_file": annot_path.name}
+    store.save_case(fp.name, req.case_id, response_hash, case_record)
+    return {"status": "ok", "case_id": req.case_id, "result_file_id": fp.name}
 
 
 @router.get("/annotations/{result_file_id}")
 async def get_annotations(result_file_id: str) -> Dict[str, Any]:
-    """Return the full annotation sidecar for a given result file, or empty."""
+    """Return the full annotation record for a given result file, or empty."""
     fp = _find_result_file(result_file_id)
     if fp is None:
         raise HTTPException(404, f"Result file not found: {result_file_id}")
-    payload = _load_annotations(_annotation_path(fp))
+    payload = _load_annotations_from_store(fp.name)
     if payload is None:
         return {"meta": {}, "cases": {}}
     return payload
@@ -578,23 +577,39 @@ async def get_annotations(result_file_id: str) -> Dict[str, Any]:
 
 @router.delete("/annotations/{result_file_id}")
 async def delete_annotations(result_file_id: str) -> Dict[str, Any]:
-    """Remove the annotation sidecar for a result file.
+    """Remove every annotation for a result file.
 
-    Idempotent: if no sidecar exists, returns `{deleted: false}` with 200.
-    A missing *result file* itself still 404s, since the caller probably
+    Idempotent: if nothing is stored, returns `{deleted: false}` with 200.
+    A missing *result file* itself still 404s since the caller probably
     passed a typo.
     """
     fp = _find_result_file(result_file_id)
     if fp is None:
         raise HTTPException(404, f"Result file not found: {result_file_id}")
-    ap = _annotation_path(fp)
-    if not ap.exists():
-        return {"status": "ok", "deleted": False, "filename": ap.name}
-    try:
-        ap.unlink()
-    except OSError as exc:
-        raise HTTPException(500, f"Failed to remove annotations: {exc}")
-    return {"status": "ok", "deleted": True, "filename": ap.name}
+    removed = _annotation_store_module.get_store().delete_file(fp.name)
+    return {"status": "ok", "deleted": removed > 0, "removed_count": removed}
+
+
+@router.delete("/annotations/{result_file_id}/{case_id}/{response_hash}")
+async def delete_annotation_case(
+    result_file_id: str, case_id: str, response_hash: str
+) -> Dict[str, Any]:
+    """Remove a single annotated case (resolves TD-095).
+
+    Idempotent: returns `{deleted: false}` when the row doesn't exist.
+    """
+    fp = _find_result_file(result_file_id)
+    if fp is None:
+        raise HTTPException(404, f"Result file not found: {result_file_id}")
+    removed = _annotation_store_module.get_store().delete_case(
+        fp.name, case_id, response_hash
+    )
+    return {
+        "status": "ok",
+        "deleted": removed,
+        "case_id": case_id,
+        "response_hash": response_hash,
+    }
 
 
 @router.post("/translate")
@@ -633,9 +648,9 @@ async def improvement_report(req: ReportRequest) -> Dict[str, Any]:
     annotation_payloads: List[Dict[str, Any]] = []
     result_payloads_by_file: Dict[str, Any] = {}
     for fp in resolved:
-        ap = _load_annotations(_annotation_path(fp))
-        if ap is not None:
-            annotation_payloads.append(ap)
+        payload = _load_annotations_from_store(fp.name)
+        if payload is not None:
+            annotation_payloads.append(payload)
             try:
                 result_payloads_by_file[fp.name] = _load_result(fp)
             except Exception as exc:

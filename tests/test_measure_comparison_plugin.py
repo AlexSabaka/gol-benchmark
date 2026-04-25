@@ -479,7 +479,19 @@ class TestParserBold:
 
     def test_bold_value_unit(self, parser):
         tp = _make_task_params()
+        # "The answer is **10 cm**" contains an explicit answer label, so the
+        # label_line strategy (priority 2) catches it before bold.  The value
+        # is still correct — this test asserts the priority order that fixed
+        # the measure_comparison mid-reasoning-bold bug (v2.26.1).
         pa = parser.parse("The answer is **10 cm**.", tp)
+        assert pa.value == "10 cm"
+        assert pa.parse_strategy == "label_line"
+        assert pa.confidence == 0.88
+
+    def test_bold_value_unit_no_label(self, parser):
+        """Without a label, bold still wins as the primary answer format."""
+        tp = _make_task_params()
+        pa = parser.parse("We conclude **10 cm**.", tp)
         assert pa.value == "10 cm"
         assert pa.parse_strategy == "bold"
         assert pa.confidence == 0.90

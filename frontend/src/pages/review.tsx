@@ -9,12 +9,15 @@ import { ResponsePanel } from "@/components/review/response-panel"
 import { ClassificationBar, CLASSES } from "@/components/review/classification-bar"
 import { CaseProgress, MATCH_FILTER_PRESETS } from "@/components/review/case-progress"
 import { VerdictPill } from "@/components/review/verdict-pill"
-import type { PendingSpan } from "@/components/review/annotation-dock"
 import { HelpDialog } from "@/components/review/help-dialog"
 import { useReviewCases, useSaveAnnotation } from "@/hooks/use-review"
+import { useReviewKeybindings } from "@/hooks/use-review-keybindings"
+import { useModifierState } from "@/hooks/use-modifier-state"
+import { useUndoStack } from "@/hooks/use-undo-stack"
 import { useResults } from "@/hooks/use-results"
 import { useLocalStorageState, makeStorageKey } from "@/lib/local-storage"
-import type { Annotation, AnnotationSpan, MarkSpan, ResponseClass, ReviewCase, SpanFormat, SpanPosition } from "@/types"
+import { parserMatchesAnySpan } from "@/lib/span-autodetect"
+import type { Annotation, AnnotationSpan, MarkSpan, ResponseClass, ReviewCase } from "@/types"
 
 interface DraftAnnotation {
   spans: AnnotationSpan[]
@@ -26,9 +29,21 @@ interface DraftAnnotation {
   answer_keywords: MarkSpan[]
   negative_spans: MarkSpan[]
   negative_keywords: MarkSpan[]
+  /**
+   * Phase 2: sticky per-draft flag. Set `true` after the auto-negative-span
+   * synthesis fires once on this case; prevents re-creation on subsequent
+   * span edits (so dismissing an auto-inferred mark by removal stays
+   * dismissed for the rest of the case). Not persisted — cleared on case
+   * advance (new draft, new chance).
+   */
+  auto_negative_inferred: boolean
 }
 
-function emptyDraft(existing?: Annotation, responseLength?: number): DraftAnnotation {
+function emptyDraft(
+  existing?: Annotation,
+  responseLength?: number,
+  wasTruncated?: boolean,
+): DraftAnnotation {
   const rawSpans = existing?.spans ?? []
   // Drop spans whose char offsets fall outside the current response text.
   // This silently neutralises contaminated sidecar entries that were written
@@ -40,15 +55,28 @@ function emptyDraft(existing?: Annotation, responseLength?: number): DraftAnnota
           (s) => s.char_start >= 0 && s.char_end <= responseLength && s.char_start < s.char_end,
         )
       : rawSpans
+  let response_classes = existing?.response_classes ?? []
+  let dirty = false
+  // Phase 3: auto-toggle the Truncated chip when the inference-time flag is
+  // set AND the annotator hasn't already recorded any classification on this
+  // case. Respects prior annotator judgment over auto-detect — if the user
+  // saved ANY response_classes (even empty after un-toggling, though that
+  // case doesn't save), we don't override. `dirty = true` so Space saves
+  // the confirmed flag to the sidecar.
+  if (wasTruncated && response_classes.length === 0) {
+    response_classes = ["truncated"]
+    dirty = true
+  }
   return {
     spans,
-    response_classes: existing?.response_classes ?? [],
+    response_classes,
     note: existing?.annotator_note ?? "",
-    dirty: false,
+    dirty,
     context_anchors: existing?.context_anchors ?? [],
     answer_keywords: existing?.answer_keywords ?? [],
     negative_spans: existing?.negative_spans ?? [],
     negative_keywords: existing?.negative_keywords ?? [],
+    auto_negative_inferred: false,
   }
 }
 
@@ -76,12 +104,8 @@ function buildAnnotation(draft: DraftAnnotation): Annotation | null {
   }
 }
 
-/** Does the parser's extracted answer (as a string) match any of the spans? */
-function parserMatchesAnySpan(parsed: unknown, spans: AnnotationSpan[]): boolean {
-  if (typeof parsed !== "string" || !parsed.trim()) return false
-  const needle = parsed.trim().toLowerCase()
-  return spans.some((s) => s.text.toLowerCase().includes(needle) || needle.includes(s.text.toLowerCase()))
-}
+// `parserMatchesAnySpan` lives in `@/lib/span-autodetect` as of Phase 2 —
+// previously duplicated here and in response-panel.tsx.
 
 /**
  * Composite key for draft / saved / unsaved state.  Must be unique per
@@ -222,28 +246,52 @@ function ReviewWorkspace({
     })
   }, [cases])
 
-  // Active selection living OUTSIDE the response panel so the parent review
-  // page can react to it (keyboard commit, etc.).
-  const [pending, setPending] = useState<PendingSpan | null>(null)
-  const commitHandlerRef = useRef<(() => void) | null>(null)
+  // v4: held A / D / Shift drives mark-type selection at drag-commit time.
+  const { activeModifier } = useModifierState()
 
   const activeCase = cases[activeIndex]
   const activeKey = caseKey(activeCase)
   const activeDraft: DraftAnnotation = useMemo(() => {
-    if (!activeCase) return { spans: [], response_classes: [], note: "", dirty: false, context_anchors: [], answer_keywords: [], negative_spans: [], negative_keywords: [] }
-    return drafts[activeKey] ?? emptyDraft(activeCase.existing_annotation, activeCase.raw_response.length)
+    if (!activeCase) return { spans: [], response_classes: [], note: "", dirty: false, context_anchors: [], answer_keywords: [], negative_spans: [], negative_keywords: [], auto_negative_inferred: false }
+    return drafts[activeKey] ?? emptyDraft(
+      activeCase.existing_annotation,
+      activeCase.raw_response.length,
+      activeCase.was_truncated ?? false,
+    )
   }, [activeCase, activeKey, drafts])
+
+  // ── Undo/redo (Phase 1 §3.5) ──
+  // `activeKey` closes over the snapshot restore so an undo event always
+  // lands on the case the user is looking at. Resetting on case advance
+  // (see `goToIndex`) guarantees undo never crosses case boundaries.
+  const onRestoreDraft = useCallback(
+    (snapshot: DraftAnnotation) => {
+      if (!activeKey) return
+      setDrafts((prev) => ({ ...prev, [activeKey]: { ...snapshot, dirty: true } }))
+    },
+    [activeKey],
+  )
+  const undoStack = useUndoStack<DraftAnnotation>(activeDraft, onRestoreDraft, 10)
 
   const updateDraft = useCallback(
     (patch: Partial<DraftAnnotation> | ((prev: DraftAnnotation) => DraftAnnotation)) => {
       if (!activeCase) return
+      // Snapshot the CURRENT draft value before mutating. Using `activeDraft`
+      // (the memoized render value) rather than reading from inside setDrafts
+      // keeps snapshot ordering deterministic — every user-visible change
+      // produces exactly one undo entry.
+      undoStack.push(activeDraft)
       setDrafts((prev) => {
-        const current = prev[activeKey] ?? emptyDraft(activeCase.existing_annotation, activeCase.raw_response.length)
+        const current = prev[activeKey] ?? emptyDraft(
+          activeCase.existing_annotation,
+          activeCase.raw_response.length,
+          activeCase.was_truncated ?? false,
+        )
         const next = typeof patch === "function" ? patch(current) : { ...current, ...patch }
         return { ...prev, [activeKey]: { ...next, dirty: true } }
       })
     },
-    [activeCase, activeKey],
+    [activeCase, activeKey, activeDraft, undoStack],
   )
 
   // ── Annotator verified: has the human engaged with the parser's claim? ──
@@ -281,15 +329,56 @@ function ReviewWorkspace({
   const handleAddSpan = useCallback(
     (span: AnnotationSpan) => {
       if (!activeCase) return
-      updateDraft((prev) => ({
-        ...prev,
-        spans: mergeOrAppendMark(prev.spans, span),
-        dirty: true,
-      }))
+      // Phase 2: fold the auto-inferred negative into the SAME updateDraft
+      // setter as the answer-span mutation so one undo entry captures both.
+      // Splitting the mutations would let Ctrl+Z leave the answer span and
+      // only undo the auto-negative (R5 in the Phase 2 plan).
+      const parserStart = activeCase.parsed_char_start
+      const parserEnd = activeCase.parsed_char_end
+      const hasParserRegion =
+        typeof parserStart === "number" &&
+        typeof parserEnd === "number" &&
+        parserEnd > parserStart
+      const raw = activeCase.raw_response
 
-      // Auto-suggest `false_positive` — but only on the *first*
-      // contradicting span. The persistent callout in the response panel
-      // covers subsequent cases so we don't pile toasts.
+      updateDraft((prev) => {
+        const newSpans = mergeOrAppendMark(prev.spans, span)
+        // Auto-inference fires iff: parser has offsets, no prior firing on
+        // this draft, and no answer span (existing or just-added) overlaps
+        // the parser region.
+        const overlapsParser =
+          hasParserRegion &&
+          newSpans.some(
+            (s) => s.char_end > parserStart! && s.char_start < parserEnd!,
+          )
+        const shouldAuto =
+          hasParserRegion && !prev.auto_negative_inferred && !overlapsParser
+        if (!shouldAuto) {
+          return { ...prev, spans: newSpans, dirty: true }
+        }
+        const autoNegative: MarkSpan = {
+          text: raw.slice(parserStart!, parserEnd!),
+          char_start: parserStart!,
+          char_end: parserEnd!,
+          source: "auto_inferred",
+        }
+        return {
+          ...prev,
+          spans: newSpans,
+          // Direct append — auto-inferred negatives SKIP mergeOrAppendMark
+          // so a later manual drag that overlaps keeps the source distinction
+          // clean. handleAddNegativeSpan removes any overlapping auto entry
+          // before appending the manual one.
+          negative_spans: [...prev.negative_spans, autoNegative],
+          auto_negative_inferred: true,
+          dirty: true,
+        }
+      })
+
+      // Existing "Parser extracted X" toast — still fires alongside the
+      // auto-inferred mark. The toast's "Flag as false-positive" button
+      // complements the auto-negative: the former classifies the case,
+      // the latter marks the specific misextraction region.
       const parsed = activeCase.parsed_answer
       const combined = [...activeDraft.spans, span]
       const firstContradicting = activeDraft.spans.length === 0
@@ -315,7 +404,7 @@ function ReviewWorkspace({
         })
       }
     },
-    [activeCase, activeDraft, updateDraft],
+    [activeCase, activeDraft, updateDraft, mergeOrAppendMark],
   )
 
   const handleRemoveSpan = useCallback(
@@ -343,11 +432,26 @@ function ReviewWorkspace({
     [updateDraft, mergeOrAppendMark],
   )
   const handleAddNegativeSpan = useCallback(
-    (mark: MarkSpan) => updateDraft((prev) => ({ ...prev, negative_spans: mergeOrAppendMark(prev.negative_spans, mark), dirty: true })),
-    [updateDraft, mergeOrAppendMark],
-  )
-  const handleAddNegativeKeyword = useCallback(
-    (mark: MarkSpan) => updateDraft((prev) => ({ ...prev, negative_keywords: mergeOrAppendMark(prev.negative_keywords, mark), dirty: true })),
+    (mark: MarkSpan) =>
+      updateDraft((prev) => {
+        // Phase 2: if the new (manual) negative overlaps an auto-inferred
+        // one, remove the auto entry first so the manual span supersedes it
+        // cleanly. Prevents "half auto / half manual" merged marks where the
+        // source field becomes ambiguous.
+        const overlapsAuto = (s: MarkSpan) =>
+          s.source === "auto_inferred" &&
+          s.char_end > mark.char_start &&
+          s.char_start < mark.char_end
+        const withoutOverlappingAuto = prev.negative_spans.filter(
+          (s) => !overlapsAuto(s),
+        )
+        const next: MarkSpan = { ...mark, source: "manual" }
+        return {
+          ...prev,
+          negative_spans: mergeOrAppendMark(withoutOverlappingAuto, next),
+          dirty: true,
+        }
+      }),
     [updateDraft, mergeOrAppendMark],
   )
   const handleRemoveContextAnchor = useCallback(
@@ -393,38 +497,17 @@ function ReviewWorkspace({
   const handleToggleClass = useCallback(
     (code: ResponseClass) => {
       if (!activeCase) return
-      setDrafts((prev) => {
-        const current = prev[activeKey] ?? emptyDraft(activeCase.existing_annotation, activeCase.raw_response.length)
+      updateDraft((prev) => ({
+        ...prev,
         // Toggle: remove if present, add if absent.
-        const has = current.response_classes.includes(code)
-        return {
-          ...prev,
-          [activeKey]: {
-            ...current,
-            response_classes: has
-              ? current.response_classes.filter((c) => c !== code)
-              : [...current.response_classes, code],
-            dirty: true,
-          },
-        }
-      })
+        response_classes: prev.response_classes.includes(code)
+          ? prev.response_classes.filter((c) => c !== code)
+          : [...prev.response_classes, code],
+        dirty: true,
+      }))
     },
-    [activeCase, activeKey],
+    [activeCase, updateDraft],
   )
-
-  const commitPending = useCallback(() => {
-    if (!pending) return
-    handleAddSpan({
-      text: pending.text,
-      char_start: pending.char_start,
-      char_end: pending.char_end,
-      position: pending.position,
-      format: pending.format,
-      confidence: "high",
-    })
-    setPending(null)
-    window.getSelection()?.removeAllRanges()
-  }, [pending, handleAddSpan])
 
   const saveDraft = useCallback(
     async (draft: DraftAnnotation, target: ReviewCase): Promise<boolean> => {
@@ -450,6 +533,7 @@ function ReviewWorkspace({
           next.add(key)
           return next
         })
+        toast.success("saved ✓", { duration: 1500 })
         return true
       } catch (err) {
         setUnsaved((prev) => new Set(prev).add(key))
@@ -460,6 +544,10 @@ function ReviewWorkspace({
     [saveMutation],
   )
 
+  // v4 race guard (spec §9 Risk #4): drop a second Space-press while a save
+  // is already in flight. Avoids duplicate POSTs when Space is mashed.
+  const savingRef = useRef(false)
+
   const goToIndex = useCallback(
     async (nextIdx: number) => {
       if (cases.length === 0) return
@@ -467,13 +555,22 @@ function ReviewWorkspace({
       if (activeCase) {
         const draft = drafts[activeKey]
         if (draft?.dirty && buildAnnotation(draft)) {
-          await saveDraft(draft, activeCase)
+          if (savingRef.current) return
+          savingRef.current = true
+          try {
+            await saveDraft(draft, activeCase)
+          } finally {
+            savingRef.current = false
+          }
         }
       }
+      // Case boundary: undo/redo must not cross it (spec §3.5). Reset first,
+      // then advance — if the advance re-renders with a different activeDraft,
+      // the hook picks up the fresh baseline on the next mutation.
+      undoStack.reset()
       setActiveIndex(clamped)
-      setPending(null)
     },
-    [cases.length, activeCase, activeKey, drafts, saveDraft, setActiveIndex],
+    [cases.length, activeCase, activeKey, drafts, saveDraft, setActiveIndex, undoStack],
   )
 
   const handleFinish = useCallback(async () => {
@@ -487,6 +584,39 @@ function ReviewWorkspace({
     navigate("/results")
   }, [activeCase, activeKey, drafts, saveDraft, navigate])
 
+  /** v4: discard the active draft and advance. Bound to Ctrl/Meta+Space —
+   *  the pinky-friction is the deliberate "this is destructive" signal.
+   *  At the last case, navigates to /results. */
+  const rejectAndAdvance = useCallback(() => {
+    if (!activeCase) {
+      navigate("/results")
+      return
+    }
+    const key = activeKey
+    const hadDraft = drafts[key] !== undefined
+    setDrafts((prev) => {
+      if (!(key in prev)) return prev
+      const next = { ...prev }
+      delete next[key]
+      return next
+    })
+    setUnsaved((prev) => {
+      if (!prev.has(key)) return prev
+      const next = new Set(prev)
+      next.delete(key)
+      return next
+    })
+    undoStack.reset()
+    if (hadDraft) {
+      toast("discarded", { duration: 1500, className: "text-rose-600" })
+    }
+    if (activeIndex >= cases.length - 1) {
+      navigate("/results")
+    } else {
+      setActiveIndex(activeIndex + 1)
+    }
+  }, [activeCase, activeKey, activeIndex, cases.length, drafts, navigate, setActiveIndex, undoStack])
+
   const goNext = useCallback(() => {
     if (activeIndex >= cases.length - 1) {
       handleFinish()
@@ -495,63 +625,43 @@ function ReviewWorkspace({
     }
   }, [activeIndex, cases.length, handleFinish, goToIndex])
   const goPrev = useCallback(() => goToIndex(activeIndex - 1), [activeIndex, goToIndex])
-  const skipCurrent = useCallback(() => {
-    // Advance without saving — explicit pass-over.
-    if (cases.length === 0) return
-    setActiveIndex(Math.min(cases.length - 1, activeIndex + 1))
-    setPending(null)
-  }, [cases.length, activeIndex, setActiveIndex])
 
-  const classifyByIndex = useCallback(
-    (i: number) => {
-      if (i < 0 || i >= CLASSES.length) return
-      handleToggleClass(CLASSES[i].code)
+  /** v4: lookup by CLASSES[].key string (e.g. "2", "3"), not positional index.
+   *  The class array is not densely numbered — key "1" is reserved for
+   *  implicit Extractable. */
+  const classifyByKey = useCallback(
+    (key: string) => {
+      const def = CLASSES.find((c) => c.key === key)
+      if (def) handleToggleClass(def.code)
     },
     [handleToggleClass],
   )
 
-  // ── Keyboard shortcuts ────────────────────────────────────────────────
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      const target = e.target as HTMLElement | null
-      if (
-        target &&
-        (target.tagName === "INPUT" || target.tagName === "TEXTAREA" || target.isContentEditable)
-      ) {
-        return
-      }
-      // Space / Enter commits pending selection when active.
-      if ((e.key === " " || e.key === "Enter") && commitHandlerRef.current) {
-        e.preventDefault()
-        commitHandlerRef.current()
-        return
-      }
-      if (e.key === "ArrowRight") {
-        e.preventDefault()
-        goNext()
-      } else if (e.key === "ArrowLeft") {
-        e.preventDefault()
-        goPrev()
-      } else if (e.key.toLowerCase() === "s") {
-        e.preventDefault()
-        skipCurrent()
-      } else if (/^[1-7]$/.test(e.key)) {
-        e.preventDefault()
-        classifyByIndex(parseInt(e.key, 10) - 1)
-      } else if (e.key === "?") {
-        e.preventDefault()
-        setHelpOpen((v) => !v)
-      }
-    }
-    document.addEventListener("keydown", onKey)
-    return () => document.removeEventListener("keydown", onKey)
-  }, [goNext, goPrev, skipCurrent, classifyByIndex, setHelpOpen])
+  /** v4: lookup by CLASSES[].letter ("Q" / "E" / "F"). Case-insensitive. */
+  const classifyByLetter = useCallback(
+    (letter: "Q" | "E" | "F") => {
+      const def = CLASSES.find((c) => c.letter?.toUpperCase() === letter)
+      if (def) handleToggleClass(def.code)
+    },
+    [handleToggleClass],
+  )
 
-  // Register the imperative commit handler so keyboard shortcuts can fire it
-  // without re-rendering the response panel.
-  const registerCommit = useCallback((fn: (() => void) | null) => {
-    commitHandlerRef.current = fn
-  }, [])
+  /** v4: Space semantics. If the draft has content, save and advance; if
+   *  empty, just advance (skip-equivalent). */
+  const handleSpace = goNext
+
+  const toggleHelp = useCallback(() => setHelpOpen((v) => !v), [])
+
+  useReviewKeybindings({
+    onClassifyByKey: classifyByKey,
+    onClassifyByLetter: classifyByLetter,
+    onSpace: handleSpace,
+    onCtrlSpace: rejectAndAdvance,
+    onPrev: goPrev,
+    onUndo: undoStack.undo,
+    onRedo: undoStack.redo,
+    onToggleHelp: toggleHelp,
+  })
 
   // ── Session metadata from the Results summary ────────────────────────
   const resultForCase = useMemo(() => {
@@ -596,8 +706,7 @@ function ReviewWorkspace({
 
   const atLast = activeIndex >= cases.length - 1
   const caseHasAnnotation = hasAnnotation(activeDraft)
-  const nextLabel = caseHasAnnotation ? (atLast ? "Finish" : "Next") : atLast ? "Finish" : "Next"
-  const showSkipInstead = !caseHasAnnotation
+  const nextLabel = atLast ? "Finish" : "Next"
 
   const handleMatchPresetClick = (key: string) => {
     const preset = MATCH_FILTER_PRESETS.find((p) => p.key === key)
@@ -654,20 +763,15 @@ function ReviewWorkspace({
               spans={activeDraft.spans}
               note={activeDraft.note}
               annotatorVerified={annotatorVerified}
-              pending={pending}
+              activeModifier={activeModifier}
               responseClasses={activeDraft.response_classes}
               targetLang={targetLang}
               peekTranslateOn={peekTranslateOn}
               onTogglePeekTranslate={() => setPeekTranslateOn((v) => !v)}
-              onSetPending={setPending}
-              onCommitPending={commitPending}
               onAddSpan={handleAddSpan}
               onRemoveSpan={handleRemoveSpan}
               onChangeNote={handleChangeNote}
-              onChangePosition={(position: SpanPosition) => setPending((p) => p && { ...p, position })}
-              onChangeFormat={(format: SpanFormat) => setPending((p) => p && { ...p, format })}
               onFlagFalsePositive={handleFlagFalsePositive}
-              onRegisterCommit={registerCommit}
               contextAnchors={activeDraft.context_anchors}
               answerKeywords={activeDraft.answer_keywords}
               negativeSpans={activeDraft.negative_spans}
@@ -675,7 +779,6 @@ function ReviewWorkspace({
               onAddContextAnchor={handleAddContextAnchor}
               onAddAnswerKeyword={handleAddAnswerKeyword}
               onAddNegativeSpan={handleAddNegativeSpan}
-              onAddNegativeKeyword={handleAddNegativeKeyword}
               onRemoveContextAnchor={handleRemoveContextAnchor}
               onRemoveAnswerKeyword={handleRemoveAnswerKeyword}
               onRemoveNegativeSpan={handleRemoveNegativeSpan}
@@ -695,37 +798,46 @@ function ReviewWorkspace({
             )}
           </div>
           <div className="flex items-center gap-2">
-            {/* Prev / Next / Skip */}
-            <Button variant="outline" size="sm" onClick={goPrev} disabled={activeIndex === 0}>
+            {/* Prev / Discard / Next.
+              * v4: Skip button is gone — Space with an empty draft is the
+              * skip path; the primary "Next" button always saves-and-advances
+              * (or just advances if the draft is empty). Discard is kept as
+              * an explicit button equivalent of Ctrl+Space for mouse users. */}
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={goPrev}
+              disabled={activeIndex === 0}
+              title="Previous case (←)"
+            >
               <ArrowLeft className="mr-1.5 h-3.5 w-3.5" />
               Prev
             </Button>
-            {showSkipInstead ? (
+            {caseHasAnnotation && (
               <Button
                 variant="ghost"
                 size="sm"
-                onClick={atLast ? () => navigate("/results") : skipCurrent}
+                onClick={rejectAndAdvance}
                 disabled={saveMutation.isPending}
-                title={atLast ? "Skip and finish (S)" : "Advance without saving (S)"}
+                title="Discard draft and advance (Ctrl+Space)"
               >
                 <SkipForward className="mr-1.5 h-3.5 w-3.5" />
-                {atLast ? "Finish" : "Skip"}
-              </Button>
-            ) : (
-              <Button
-                size="sm"
-                onClick={goNext}
-                disabled={saveMutation.isPending}
-                title={caseHasAnnotation ? "Save and advance (→)" : "Advance (→)"}
-              >
-                {saveMutation.isPending ? (
-                  <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
-                ) : (
-                  <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
-                )}
-                {nextLabel}
+                Discard
               </Button>
             )}
+            <Button
+              size="sm"
+              onClick={goNext}
+              disabled={saveMutation.isPending}
+              title={caseHasAnnotation ? "Save and advance (Space)" : "Advance (Space)"}
+            >
+              {saveMutation.isPending ? (
+                <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+              ) : (
+                <ArrowRight className="mr-1.5 h-3.5 w-3.5" />
+              )}
+              {nextLabel}
+            </Button>
           </div>
         </div>
       </div>

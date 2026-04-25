@@ -1,13 +1,29 @@
 // ── Human Review / Annotation types ──
 
+/**
+ * v4 canonical response-class set (Phase 1 collapse). Previously seven codes;
+ * `gibberish` / `refusal` / `language_error` fold into `unrecoverable`, and
+ * `verbose` is dropped entirely (Extractable is implicit when a span exists).
+ * Legacy codes in old reports still parse — the backend migrates on read.
+ */
 export type ResponseClass =
   | "hedge"
   | "truncated"
-  | "gibberish"
-  | "refusal"
-  | "language_error"
-  | "verbose"
+  | "unrecoverable"
   | "false_positive"
+
+/**
+ * Mark types rendered by the response panel. Maps onto the sentinel-constant
+ * owner values in `response-panel.tsx` (OWN_PARSER / OWN_ANCHOR / …). Kept as
+ * a nominal enum so future call sites can import a single symbol instead of
+ * scattering string literals.
+ */
+export const enum MarkType {
+  Answer = "answer",
+  Anchor = "anchor",
+  Keyword = "keyword",
+  Negative = "negative",
+}
 
 export type SpanPosition = "start" | "middle" | "end"
 export type SpanFormat =
@@ -34,6 +50,18 @@ export interface MarkSpan {
   text: string
   char_start: number
   char_end: number
+  /**
+   * Phase 2: optional discriminator between annotator-authored marks and
+   * those synthesised automatically from parser-disagreement.
+   * - `"manual"` (default when absent): authored by the user.
+   * - `"auto_inferred"`: created by the UI when the user marked an answer
+   *   span at region Y while the parser extracted a different region X;
+   *   the auto-negative is placed at X so the report captures "parser
+   *   grabbed the wrong spot" without a second deliberate action.
+   * Legacy pre-Phase-2 annotations load with the field absent — treat as
+   * implicit manual.
+   */
+  source?: "manual" | "auto_inferred"
 }
 
 export interface Annotation {
@@ -61,6 +89,23 @@ export interface ReviewCase {
   system_prompt: string
   raw_response: string
   parsed_answer: unknown
+  /**
+   * Phase 2: parser-highlight anchors into `raw_response`. When present, the
+   * frontend uses these directly to paint the amber region; when absent
+   * (legacy result files or plugins that can't emit offsets — e.g. grid
+   * plugins with list/dict `parsed_answer`), the response panel falls back
+   * to a client-side substring search.
+   */
+  parsed_char_start?: number | null
+  parsed_char_end?: number | null
+  /**
+   * Phase 3: inference-time truncation flag. When `true`, the /review
+   * workspace pre-toggles the `truncated` response-class chip on case
+   * load (see `emptyDraft` in `pages/review.tsx`). Computed at
+   * result-write time from `finish_reason == "length"` OR
+   * `tokens_generated >= max_tokens_used`. Absent on legacy result files.
+   */
+  was_truncated?: boolean | null
   expected: unknown
   parser_match_type: string
   parser_correct: boolean
@@ -320,13 +365,26 @@ export interface NegativeExample {
   language: string
   correct_span?: string
   parse_strategy?: string
+  /**
+   * Phase 2: `"manual"` for annotator-authored negatives, `"auto_inferred"`
+   * for those synthesised by the UI on parser-disagreement. Default merge
+   * treats them identically in `negative_span_groups[]`; the field is here
+   * for downstream agents that want to filter by source.
+   */
+  source?: "manual" | "auto_inferred"
 }
 
 export interface NegativeMarkGroup {
   text: string
   normalized_text: string
   count: number
-  mark_type: "negative_span" | "negative_keyword"
+  /**
+   * v4: optional. Pre-v4 reports carried both `negative_span` and
+   * `negative_keyword` distinctions; Phase 1 collapsed them into a single
+   * negative type, so new reports omit the field. Legacy reports still set
+   * it — render conditionally.
+   */
+  mark_type?: "negative_span" | "negative_keyword"
   example_negatives: NegativeExample[]
 }
 

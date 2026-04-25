@@ -10,7 +10,7 @@ from typing import Any, Dict, List, Optional, Union
 
 from src.plugins.base import ParsedAnswer, ResponseParser
 from src.plugins.parse_utils import (
-    re_search_last,
+    re_search_last, strip_verification_tail, normalize_unicode,
     YES_WORDS, NO_WORDS, merge_keywords, build_answer_label_re, get_language,
 )
 
@@ -56,17 +56,22 @@ class AsciiShapesResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response or "",
-                parse_strategy='failed',
+                parse_strategy='empty',
                 confidence=0.1,
                 error='Empty response from model'
             )
 
         # Normalize Unicode spaces to regular spaces
         response = re.sub(r'[\u00A0\u202F\u2009\u200B]', ' ', response)
+        # Fold curly quotes / primes to ASCII equivalents for regex matching.
+        response = normalize_unicode(response)
         
         question_type = task_params.get('question_type', 'dimensions')
-        response_lower = response.strip().lower()
         response_original = response.strip()
+        # End-first sub-parsers match against a verification-stripped copy so
+        # "Let me verify: width is 4, height is 3" doesn't pre-empt an earlier
+        # final answer.  The raw text is preserved in ParsedAnswer.raw_response.
+        response_lower = strip_verification_tail(response_original).lower()
 
         # Route to appropriate parser
         if question_type == 'dimensions':
@@ -189,7 +194,7 @@ class AsciiShapesResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             confidence=0.1,
             error='Could not parse dimensions'
         )
@@ -234,7 +239,7 @@ class AsciiShapesResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             confidence=0.1,
             error='Could not parse count'
         )
@@ -292,7 +297,7 @@ class AsciiShapesResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             confidence=0.1,
             error='Could not parse position answer'
         )

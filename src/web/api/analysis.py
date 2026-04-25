@@ -86,11 +86,19 @@ def _load_result(filepath: Path) -> dict:
 
 
 def _annotation_sidecar_exists(filepath: Path) -> bool:
-    """Check whether an annotation sidecar exists for a given result file.
+    """True iff the annotation store has at least one row for this result.
 
-    Sidecars live under ``web_config.annotations_dir`` (``data/annotations/``).
+    Kept as ``_annotation_sidecar_exists`` for call-site stability; the
+    backing data now lives in SQLite (see :mod:`src.web.annotation_store`).
     """
-    return web_config.annotation_path_for(filepath.name).exists()
+    from src.web import annotation_store
+
+    try:
+        return annotation_store.get_store().has_annotations(filepath.name)
+    except RuntimeError:
+        # Store not wired yet (e.g. unit tests that construct result summaries
+        # without a live app). Treat as "no annotations" rather than raising.
+        return False
 
 
 def _summarize_result(filepath: Path) -> dict:

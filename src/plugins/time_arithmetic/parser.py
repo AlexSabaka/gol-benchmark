@@ -10,7 +10,16 @@ import re
 from typing import Any, Dict
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last, strip_verification_tail
+from functools import lru_cache
+
+from src.plugins.parse_utils import (
+    build_answer_label_re,
+    get_language,
+    merge_keywords,
+    normalize_unicode,
+    re_search_last,
+    strip_verification_tail,
+)
 
 # ── refusal / validity keywords ──────────────────────────────────────
 
@@ -96,12 +105,33 @@ _DURATION_PATTERN = re.compile(
 _BOXED = re.compile(r"\\boxed\{([^}]+)\}")
 # Bold answer
 _BOLD = re.compile(r"\*\*([^*]+)\*\*")
-# Label line: "Answer:", "Time:", "Result:", "Day:", "Duration:"
-_LABEL = re.compile(
-    r"(?:answer|time|result|day|duration|the\s+time\s+is|the\s+answer\s+is|the\s+day\s+is)"
-    r"\s*[:=]\s*(.+)",
-    re.IGNORECASE,
-)
+
+
+# Time-specific label terms layered on top of shared ANSWER_LABELS
+# (answer / result / final answer / solution / response).
+_EXTRA_LABELS: Dict[str, list] = {
+    "en": ["time", "day", "duration", "the time is", "the answer is", "the day is"],
+    "es": ["tiempo", "día", "duración", "la hora es", "el día es"],
+    "fr": ["heure", "jour", "durée", "l'heure est", "le jour est"],
+    "de": ["zeit", "tag", "dauer", "die zeit ist", "der tag ist"],
+    "zh": ["时间", "日", "持续时间"],
+    "ua": ["час", "день", "тривалість"],
+}
+
+
+@lru_cache(maxsize=8)
+def _label_regex(lang: str) -> re.Pattern:
+    """Compiled `<label>\\s*[:=]\\s*(.+)` with multilingual label alternation.
+
+    Cached per language so the compile cost is paid once per unique lang
+    even though the pattern is consulted on every parse() call.
+    """
+    base = build_answer_label_re(lang)
+    extra = merge_keywords(_EXTRA_LABELS, lang)
+    extra_alt = "|".join(re.escape(e) for e in extra) if extra else ""
+    alt = f"{base}|{extra_alt}" if base and extra_alt else (base or extra_alt)
+    return re.compile(rf"(?:{alt})\s*[:=]\s*(.+)", re.IGNORECASE)
+
 
 # "Final Answer:" label — higher priority than generic labels
 _FINAL_ANSWER_LABEL = re.compile(
@@ -137,6 +167,11 @@ class TimeArithmeticParser(ResponseParser):
     def parse(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         sub_type = task_params.get("sub_type", "interval")
         question_mode = task_params.get("question_mode", "result_time")
+        # Cache language for the sub-parsers so they can use the cached
+        # multilingual label regex (`_label_regex(self._lang)`) without
+        # every sub-method having to re-read task_params.
+        self._lang = get_language(task_params)
+        response = normalize_unicode(response)
 
         if question_mode == "date_validity":
             return self._parse_validity(response)
@@ -219,7 +254,7 @@ class TimeArithmeticParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="none", error="Could not determine validity",
+            parse_strategy="fallback", error="Could not determine validity",
         )
 
     @staticmethod
@@ -297,7 +332,7 @@ class TimeArithmeticParser(ResponseParser):
                 return ParsedAnswer(value=val, raw_response=response, parse_strategy="time_pattern_24h")
 
         # Strategy 5: generic label line (fallback — use cleaned text)
-        m = re_search_last(_LABEL, cleaned)
+        m = re_search_last(_label_regex(self._lang), cleaned)
         if m:
             inner = m.group(1).strip()
             # Check for refusal in label
@@ -309,7 +344,7 @@ class TimeArithmeticParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="none", error="Could not extract time",
+            parse_strategy="fallback", error="Could not extract time",
         )
 
     # ── day parsing ──────────────────────────────────────────────────
@@ -344,7 +379,7 @@ class TimeArithmeticParser(ResponseParser):
                 return ParsedAnswer(value=d, raw_response=response, parse_strategy="final_answer_label")
 
         # Strategy 3b: generic label line (use cleaned text to avoid "day =" in verification)
-        m = re_search_last(_LABEL, cleaned)
+        m = re_search_last(_label_regex(self._lang), cleaned)
         if m:
             d = self._extract_day_last(m.group(1))
             if d:
@@ -359,7 +394,7 @@ class TimeArithmeticParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="none", error="Could not extract day",
+            parse_strategy="fallback", error="Could not extract day",
         )
 
     # ── duration parsing (noon_midnight_trap in "duration" mode) ─────
@@ -382,7 +417,7 @@ class TimeArithmeticParser(ResponseParser):
                 return ParsedAnswer(value=str(d), raw_response=response, parse_strategy="bold")
 
         # Strategy 3: label line
-        m = re_search_last(_LABEL, text)
+        m = re_search_last(_label_regex(self._lang), text)
         if m:
             d = self._extract_minutes(m.group(1))
             if d is not None:
@@ -406,7 +441,7 @@ class TimeArithmeticParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="none", error="Could not extract duration",
+            parse_strategy="fallback", error="Could not extract duration",
         )
 
     # ── helpers ───────────────────────────────────────────────────────

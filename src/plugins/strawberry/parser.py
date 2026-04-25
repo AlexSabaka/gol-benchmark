@@ -19,9 +19,11 @@ from typing import Any, Dict, Optional
 
 from src.plugins.base import ResponseParser, ParsedAnswer
 from src.plugins.parse_utils import (
+    build_answer_label_re,
     build_word_to_int,
     get_language,
     merge_keywords,
+    normalize_unicode,
     re_search_last,
     strip_verification_tail,
     YES_WORDS,
@@ -29,6 +31,47 @@ from src.plugins.parse_utils import (
 )
 
 _INT_PATTERN = re.compile(r"(?<![.\d])-?\d+(?![.\d])")
+
+
+# Sub-type-specific label extras layered on top of the shared ANSWER_LABELS
+# (answer / result / final answer / solution / response).  Each list is
+# merged with English as fallback via `merge_keywords`.
+_COUNT_EXTRA_LABELS: Dict[str, list] = {
+    "en": ["count", "total", "there are", "there is"],
+    "es": ["cuenta", "total", "hay"],
+    "fr": ["nombre", "total", "il y a"],
+    "de": ["anzahl", "insgesamt", "es gibt"],
+    "zh": ["数量", "总共", "共有"],
+    "ua": ["кількість", "загалом", "є"],
+}
+
+_REVERSE_EXTRA_LABELS: Dict[str, list] = {
+    "en": ["reversed", "reverse", "backwards", "backward"],
+    "es": ["invertido", "al revés"],
+    "fr": ["inversé", "à l'envers"],
+    "de": ["umgekehrt", "rückwärts"],
+    "zh": ["反转", "倒过来"],
+    "ua": ["перевернуто", "навпаки"],
+}
+
+_LETTER_EXTRA_LABELS: Dict[str, list] = {
+    "en": ["letter", "character"],
+    "es": ["letra", "carácter"],
+    "fr": ["lettre", "caractère"],
+    "de": ["buchstabe", "zeichen"],
+    "zh": ["字母", "字符"],
+    "ua": ["літера", "символ"],
+}
+
+
+def _build_label_alt(lang: str, extra: Dict[str, list]) -> str:
+    """Combine shared ANSWER_LABELS with *extra* per-language label list."""
+    base = build_answer_label_re(lang)
+    extra_kws = merge_keywords(extra, lang)
+    extra_alt = "|".join(re.escape(e) for e in extra_kws) if extra_kws else ""
+    if base and extra_alt:
+        return f"{base}|{extra_alt}"
+    return base or extra_alt
 
 
 def _build_word_num_pattern(word_map: Dict[str, int]) -> re.Pattern:
@@ -80,6 +123,7 @@ class StrawberryParser(ResponseParser):
             )
 
         sub_type = (task_params or {}).get("sub_type", "count")
+        response = normalize_unicode(response)
 
         if sub_type == "count":
             return self._parse_count(response, task_params or {})
@@ -98,6 +142,10 @@ class StrawberryParser(ResponseParser):
 
     def _parse_count(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         text = response.strip()
+        # Strategies 3-6 scan for integers / spelled-out numbers anywhere in
+        # the text — verification tails like "Let me recount: 1, 2, 3" would
+        # override the real answer.  Keep boxed / bold on the raw text.
+        text_clean = strip_verification_tail(text)
         word_length = task_params.get("word_length")
         lang = get_language(task_params)
         word_map = build_word_to_int(lang)
@@ -117,15 +165,16 @@ class StrawberryParser(ResponseParser):
             if val is not None:
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="bold", confidence=0.9)
 
-        # Strategy 3: Labelled line (last match)
+        # Strategy 3: Labelled line (last match) — multilingual
+        count_label_alt = _build_label_alt(lang, _COUNT_EXTRA_LABELS)
         label = re_search_last(
-            r"(?:answer|count|result|total|there\s+(?:are|is))\s*[:：]?\s*(\S+)",
-            text, re.IGNORECASE,
+            rf"(?:{count_label_alt})\s*[:：]?\s*(\S+)",
+            text_clean, re.IGNORECASE,
         )
         if not label:
             label = re_search_last(
-                r"the\s+(?:answer|count|result|total)\s+is\s+(\S+)",
-                text, re.IGNORECASE,
+                rf"the\s+(?:{count_label_alt})\s+is\s+(\S+)",
+                text_clean, re.IGNORECASE,
             )
         if label:
             val = _try_parse_int(label.group(1), word_map, word_length)
@@ -135,7 +184,7 @@ class StrawberryParser(ResponseParser):
         # Strategy 3b: "is N" / "are N" at EOL
         is_n = re_search_last(
             r"(?:is|are|=)\s+(\S+)\s*[.!]?\s*$",
-            text, re.IGNORECASE | re.MULTILINE,
+            text_clean, re.IGNORECASE | re.MULTILINE,
         )
         if is_n:
             val = _try_parse_int(is_n.group(1), word_map, word_length)
@@ -143,7 +192,7 @@ class StrawberryParser(ResponseParser):
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="is_n_tail", confidence=0.85)
 
         # Strategy 4: Last standalone integer
-        all_ints = _INT_PATTERN.findall(text)
+        all_ints = _INT_PATTERN.findall(text_clean)
         if all_ints:
             val = _try_parse_int(all_ints[-1], word_map, word_length)
             if val is not None:
@@ -156,7 +205,7 @@ class StrawberryParser(ResponseParser):
                 return ParsedAnswer(value=val, raw_response=text, parse_strategy="first_number", confidence=0.6)
 
         # Strategy 6: Spelled-out number (last match)
-        word_match = re_search_last(word_num_pattern, text)
+        word_match = re_search_last(word_num_pattern, text_clean)
         if word_match:
             val = word_map.get(word_match.group(1).lower())
             if val is not None:
@@ -173,6 +222,11 @@ class StrawberryParser(ResponseParser):
 
     def _parse_reversed_word(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         text = response.strip()
+        # Strategies 3-5 scan for alpha tokens anywhere — verification tails
+        # like "Let me check: reversed is 'xyz'" (where xyz may differ from
+        # the actual answer) would override.  Keep boxed / bold on raw text.
+        text_clean = strip_verification_tail(text)
+        lang = get_language(task_params)
         expected_len = task_params.get("word_length")
 
         def _valid(candidate: str) -> Optional[str]:
@@ -198,14 +252,15 @@ class StrawberryParser(ResponseParser):
                 return ParsedAnswer(value=v, raw_response=text, parse_strategy="bold", confidence=0.90)
 
         # Strategy 3: Labelled ("Answer:", "Result:", "Reversed:", "The reverse is")
+        reverse_label_alt = _build_label_alt(lang, _REVERSE_EXTRA_LABELS)
         label = re_search_last(
-            r"(?:answer|result|reversed?|backwards?)\s*[:：]\s*[\"']?(\S+)[\"']?",
-            text, re.IGNORECASE,
+            rf"(?:{reverse_label_alt})\s*[:：]\s*[\"']?(\S+)[\"']?",
+            text_clean, re.IGNORECASE,
         )
         if not label:
             label = re_search_last(
                 r"the\s+revers(?:e|ed)\s+(?:is|word\s+is)\s+[\"']?(\S+)[\"']?",
-                text, re.IGNORECASE,
+                text_clean, re.IGNORECASE,
             )
         if label:
             v = _valid(label.group(1))
@@ -213,14 +268,14 @@ class StrawberryParser(ResponseParser):
                 return ParsedAnswer(value=v, raw_response=text, parse_strategy="label_line", confidence=0.85)
 
         # Strategy 4: Quoted word (last)
-        quoted = re_search_last(r"[\"'`]([a-zA-Z]+)[\"'`]", text)
+        quoted = re_search_last(r"[\"'`]([a-zA-Z]+)[\"'`]", text_clean)
         if quoted:
             v = _valid(quoted.group(1))
             if v:
                 return ParsedAnswer(value=v, raw_response=text, parse_strategy="quoted", confidence=0.80)
 
         # Strategy 5: Last standalone alphabetic token
-        alpha_tokens = re.findall(r"\b([a-zA-Z]+)\b", text)
+        alpha_tokens = re.findall(r"\b([a-zA-Z]+)\b", text_clean)
         if alpha_tokens:
             v = _valid(alpha_tokens[-1])
             if v:
@@ -237,6 +292,12 @@ class StrawberryParser(ResponseParser):
 
     def _parse_nth_letter(self, response: str, task_params: Dict[str, Any]) -> ParsedAnswer:
         text = response.strip()
+        # Weaker strategies (label / quoted / is X / last single) scan for
+        # alpha characters that can easily match a letter in a verification
+        # section ("Let me check: the 2nd letter is 'e'" when the real
+        # answer was something else).  Keep boxed / bold on raw text.
+        text_clean = strip_verification_tail(text)
+        lang = get_language(task_params)
 
         def _valid_char(candidate: str) -> Optional[str]:
             c = candidate.strip().strip(".,;:!?'\"-").lower()
@@ -258,15 +319,16 @@ class StrawberryParser(ResponseParser):
             if v:
                 return ParsedAnswer(value=v, raw_response=text, parse_strategy="bold", confidence=0.90)
 
-        # Strategy 3: Labelled
+        # Strategy 3: Labelled — multilingual
+        letter_label_alt = _build_label_alt(lang, _LETTER_EXTRA_LABELS)
         label = re_search_last(
-            r"(?:answer|result|letter)\s*[:：]\s*[\"']?([a-zA-Z])[\"']?",
-            text, re.IGNORECASE,
+            rf"(?:{letter_label_alt})\s*[:：]\s*[\"']?([a-zA-Z])[\"']?",
+            text_clean, re.IGNORECASE,
         )
         if not label:
             label = re_search_last(
                 r"the\s+(?:\w+\s+)?letter\s+is\s+[\"']?([a-zA-Z])[\"']?",
-                text, re.IGNORECASE,
+                text_clean, re.IGNORECASE,
             )
         if label:
             v = _valid_char(label.group(1))
@@ -274,7 +336,7 @@ class StrawberryParser(ResponseParser):
                 return ParsedAnswer(value=v, raw_response=text, parse_strategy="label_line", confidence=0.85)
 
         # Strategy 4: Quoted single char
-        quoted = re_search_last(r"[\"'`]([a-zA-Z])[\"'`]", text)
+        quoted = re_search_last(r"[\"'`]([a-zA-Z])[\"'`]", text_clean)
         if quoted:
             v = _valid_char(quoted.group(1))
             if v:
@@ -283,7 +345,7 @@ class StrawberryParser(ResponseParser):
         # Strategy 5: "is X" at end of sentence
         is_char = re_search_last(
             r"is\s+[\"']?([a-zA-Z])[\"']?\s*[.!]?\s*$",
-            text, re.IGNORECASE | re.MULTILINE,
+            text_clean, re.IGNORECASE | re.MULTILINE,
         )
         if is_char:
             v = _valid_char(is_char.group(1))
@@ -291,7 +353,7 @@ class StrawberryParser(ResponseParser):
                 return ParsedAnswer(value=v, raw_response=text, parse_strategy="is_tail", confidence=0.75)
 
         # Strategy 6: Last standalone single letter (excluding common articles)
-        singles = re.findall(r"\b([a-zA-Z])\b", text)
+        singles = re.findall(r"\b([a-zA-Z])\b", text_clean)
         # Filter out 'a', 'I' (common articles/pronouns)
         candidates = [s for s in singles if s.lower() not in ("a", "i")]
         if candidates:

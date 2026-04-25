@@ -10,6 +10,42 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import (
+    build_answer_label_re,
+    get_language,
+    merge_keywords,
+    normalize_unicode,
+    strip_verification_tail,
+)
+
+
+# Arithmetic-specific label terms layered on top of the shared ANSWER_LABELS
+# (answer / result / final answer / solution / response).  `therefore` is a
+# common intro in arithmetic explanations; `equals` / `=` capture symbolic
+# arithmetic conclusions.  Keep per-language so the keyword_search strategy
+# activates correctly on non-English responses too.
+_EXTRA_LABELS: Dict[str, List[str]] = {
+    "en": ["therefore", "equals"],
+    "es": ["por lo tanto", "es igual", "igual a"],
+    "fr": ["donc", "est égal", "égale"],
+    "de": ["daher", "also", "ist gleich"],
+    "zh": ["所以", "因此", "等于"],
+    "ua": ["отже", "тому", "дорівнює"],
+}
+
+
+def _build_label_pattern(lang: str) -> str:
+    """Return a regex alternation of answer labels for *lang*.
+
+    Combines shared multilingual `ANSWER_LABELS` with arithmetic-specific
+    `_EXTRA_LABELS` above.  Always includes English as fallback.
+    """
+    base = build_answer_label_re(lang)
+    extra = merge_keywords(_EXTRA_LABELS, lang)
+    extra_alt = "|".join(re.escape(e) for e in extra) if extra else ""
+    if base and extra_alt:
+        return f"{base}|{extra_alt}"
+    return base or extra_alt
 
 
 class ArithmeticResponseParser(ResponseParser):
@@ -40,12 +76,16 @@ class ArithmeticResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response or "",
-                parse_strategy='failed',
+                parse_strategy='empty',
                 error='Empty response from model'
             )
 
-        response = str(response).strip()
+        response = normalize_unicode(str(response).strip())
         original_response = response
+        # Cache the multilingual label alternation for the strategy methods.
+        # Computed once per parse() call so the sub-methods don't have to
+        # re-derive the language or rebuild the regex.
+        self._label_alt = _build_label_pattern(get_language(task_params or {}))
 
         # Strategy 0: Handle JSON escaping
         response, strategy_0_applied = self._strategy_json_unescape(response)
@@ -59,18 +99,26 @@ class ArithmeticResponseParser(ResponseParser):
                     parse_strategy='json_unescape_latex'
                 )
 
-        # Try each parsing strategy in order
+        # Weaker keyword / pattern strategies run on a verification-stripped
+        # copy.  Models often write "42 is the answer.  Let me verify: 42 + 0
+        # = 42.  So the answer is 42." — the end-first strategies would grab
+        # an intermediate value from the verification.  LaTeX boxed is kept
+        # on the RAW text because `\boxed{}` is a high-signal anchor that
+        # usually comes BEFORE the verification section.
+        response_clean = strip_verification_tail(response)
+
+        # (name, func, text) tuples.  `text` is None → use the raw response.
         strategies = [
-            ('latex_boxed', self._strategy_latex_boxed),
-            ('keyword_search', self._strategy_keyword_search),
-            ('equals_pattern', self._strategy_equals_pattern),
-            ('last_number', self._strategy_last_number),
-            ('answer_patterns', self._strategy_answer_patterns),
+            ('latex_boxed', self._strategy_latex_boxed, None),
+            ('keyword_search', self._strategy_keyword_search, response_clean),
+            ('equals_pattern', self._strategy_equals_pattern, response_clean),
+            ('last_number', self._strategy_last_number, response_clean),
+            ('answer_patterns', self._strategy_answer_patterns, response_clean),
         ]
 
-        for name, strategy_func in strategies:
+        for name, strategy_func, strategy_text in strategies:
             try:
-                result = strategy_func(response)
+                result = strategy_func(strategy_text if strategy_text is not None else response)
                 if result is not None:
                     return ParsedAnswer(
                         value=result,
@@ -83,7 +131,7 @@ class ArithmeticResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=original_response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             error='All parsing strategies failed'
         )
 
@@ -138,17 +186,18 @@ class ArithmeticResponseParser(ResponseParser):
         """
         Strategy 2: Search for keywords and extract nearby numbers.
         """
-        match_words = [
-            'final result', 'result', 'final answer', 'answer', 'response',
-            'therefore', '\\boxed', 'equals', '=',
-            'final result:', 'answer:', 'result:', 'solution:'
-        ]
+        # Use the multilingual label alternation built in parse().  A
+        # line-containment check is sufficient here because the alternation
+        # is substring-safe (every label is a literal keyword, and common
+        # false-positive substrings like "answer" are part of the benchmark
+        # domain anyway — they should trigger the number scan).
+        label_re = re.compile(self._label_alt, re.IGNORECASE)
 
         response_lines = response.lower().splitlines()
         response_lines.reverse()
 
         for i, line in enumerate(response_lines):
-            if any(word in line for word in match_words):
+            if label_re.search(line) or '\\boxed' in line or '=' in line:
                 # Look for number in this line and following lines
                 for j in range(i, min(i + 3, len(response_lines))):
                     current_line = response_lines[j]
@@ -214,20 +263,16 @@ class ArithmeticResponseParser(ResponseParser):
         """
         Strategy 5: Look for specific answer patterns.
         """
-        answer_patterns = [
-            r'answer[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)',
-            r'result[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)',
-            r'solution[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)',
-            r'final[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)'
-        ]
-
+        # Build a single multilingual pattern: `<label>[:\s]+<number>`.
+        # The alternation already covers answer / result / solution / final
+        # answer across six languages plus arithmetic-specific extras.
+        pattern = rf'(?:{self._label_alt})[:\s]+([+-]?(?:[0-9]*[.])?[0-9]+)'
         response_lower = response.lower()
-        for pattern in answer_patterns:
-            matches = re.findall(pattern, response_lower)
-            if matches:
-                try:
-                    return float(matches[-1])
-                except ValueError:
-                    continue
+        matches = re.findall(pattern, response_lower)
+        if matches:
+            try:
+                return float(matches[-1])
+            except ValueError:
+                pass
 
         return None

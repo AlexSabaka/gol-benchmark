@@ -19,7 +19,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last, strip_verification_tail
+from src.plugins.parse_utils import normalize_unicode, re_search_last, strip_verification_tail
 from .families import decode_to_ascii
 
 # ---------------------------------------------------------------------------
@@ -346,6 +346,7 @@ class FancyUnicodeParser(ResponseParser):
             )
 
         task_mode = task_params.get("task_mode", "decode_only")
+        response = normalize_unicode(response)
 
         # 1. Refusal detection (before extraction)
         if _is_refusal(response):
@@ -382,7 +383,7 @@ class FancyUnicodeParser(ResponseParser):
                 )
         return ParsedAnswer(
             value=None, raw_response=raw,
-            parse_strategy="none", confidence=0.0,
+            parse_strategy="fallback", confidence=0.0,
             error="Could not extract decoded plaintext",
         )
 
@@ -426,6 +427,6 @@ class FancyUnicodeParser(ResponseParser):
                 )
         return ParsedAnswer(
             value=None, raw_response=raw,
-            parse_strategy="none", confidence=0.0,
+            parse_strategy="fallback", confidence=0.0,
             error="Could not extract response word",
         )

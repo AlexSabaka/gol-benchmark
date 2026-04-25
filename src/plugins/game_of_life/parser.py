@@ -9,6 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import normalize_unicode
 
 
 class GoLResponseParser(ResponseParser):
@@ -40,9 +41,11 @@ class GoLResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response or "",
-                parse_strategy='failed',
+                parse_strategy='empty',
                 error='Empty response from model'
             )
+
+        response = normalize_unicode(response)
 
         # Get expected shape from task params
         expected_state = task_params.get('expected_next_state', [[]])
@@ -53,7 +56,7 @@ class GoLResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response,
-                parse_strategy='failed',
+                parse_strategy='fallback',
                 error='Invalid expected shape in task_params'
             )
 
@@ -87,7 +90,7 @@ class GoLResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             error='All parsing strategies failed'
         )
 

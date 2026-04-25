@@ -19,13 +19,27 @@ import pytest
 from fastapi.testclient import TestClient
 
 from src.web.app import app
+from src.web import annotation_store as annotation_store_module
 from src.web import human_review_aggregator as agg
 from src.web import translation as trans
 from src.web.api import analysis, human_review
-from src.web.api.human_review import _annotation_path
 
 
-client = TestClient(app)
+# TestClient as a context manager so FastAPI's lifespan runs — the lifespan
+# is what initializes the SQLite-backed AnnotationStore singleton. In older
+# starlette versions ``client = TestClient(app)`` skipped lifespan entirely.
+_client_ctx = TestClient(app)
+_client_ctx.__enter__()
+client = _client_ctx
+
+
+def _clear_annotations() -> None:
+    """Wipe all annotation rows — tests share the app-scope singleton."""
+    try:
+        store = annotation_store_module.get_store()
+    except RuntimeError:
+        return
+    store._conn.execute("DELETE FROM annotations")
 
 
 # ---------------------------------------------------------------------------
@@ -222,16 +236,18 @@ def fake_result(tmp_path: Path, monkeypatch):
     # Patch results-dir lookup for both routers.
     monkeypatch.setattr(analysis, "_results_dirs", lambda: [results_dir])
 
-    # Sandbox annotations dir so the test doesn't see real sidecars from data/.
-    annot_dir = tmp_path / "annotations"
-    annot_dir.mkdir()
-    from src.web.config import web_config
-    monkeypatch.setattr(web_config, "annotations_dir", str(annot_dir))
+    # Annotations now live in the shared SQLite singleton (sandboxed under
+    # GOL_DATA_ROOT via conftest.py). Wipe rows before and after so tests
+    # don't leak state into each other.
+    # The TestClient has to trigger at least one request to fire lifespan
+    # and instantiate the store, but the /cases endpoint below handles that.
+    # We defer the clear until after the yield so lifespan has definitely run.
+    _clear_annotations()
 
     yield rf
 
+    _clear_annotations()
     shutil.rmtree(results_dir, ignore_errors=True)
-    shutil.rmtree(annot_dir, ignore_errors=True)
 
 
 def test_cases_endpoint_returns_non_empty_filters_empty(fake_result: Path):
@@ -255,6 +271,132 @@ def test_cases_endpoint_can_disable_skip_empty(fake_result: Path):
     assert res.json()["total"] == 2
 
 
+def test_phase2_parser_offsets_pass_through_api(tmp_path: Path, monkeypatch):
+    """Phase 2: when a result entry carries `parsed_char_start` /
+    `parsed_char_end`, the `/cases` endpoint projects them onto the
+    ReviewCase payload so the frontend can paint parser-highlight without
+    a client-side substring search."""
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    raw = "After thought, you should drive."
+    data = {
+        "metadata": {},
+        "model_info": {"model_name": "test-model", "provider": "ollama"},
+        "testset_metadata": {"name": "phase2_offsets"},
+        "execution_info": {"duration_seconds": 1.0},
+        "summary_statistics": {},
+        "results": [
+            {
+                "test_id": "carwash_offset",
+                "status": "success",
+                "input": {
+                    "user_prompt": "Walk or drive?",
+                    "system_prompt": "You are pragmatic.",
+                    "task_params": {"task_type": "carwash", "expected_answer": "drive"},
+                    "prompt_metadata": {"language": "en"},
+                },
+                "output": {
+                    "raw_response": raw,
+                    "parsed_answer": "drive",
+                    "parsed_char_start": 26,
+                    "parsed_char_end": 31,
+                },
+                "evaluation": {"correct": True, "match_type": "correct"},
+            },
+        ],
+    }
+    rf = results_dir / "results_offsets.json.gz"
+    with gzip.open(rf, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+    monkeypatch.setattr(analysis, "_results_dirs", lambda: [results_dir])
+    _clear_annotations()
+
+    res = client.get(
+        f"/api/human-review/cases?file_ids={rf.name}&skip_correct=false&skip_empty=false"
+    )
+    assert res.status_code == 200
+    cases = res.json()["cases"]
+    assert len(cases) == 1
+    c = cases[0]
+    assert c["parsed_char_start"] == 26
+    assert c["parsed_char_end"] == 31
+    # The offsets slice back to the extracted value.
+    assert raw[c["parsed_char_start"]:c["parsed_char_end"]] == "drive"
+
+
+def test_phase2_parser_offsets_absent_on_legacy_files(fake_result: Path):
+    """Legacy result files (pre-Phase-2) have no offset fields. The API
+    must still project the case cleanly — absent offsets surface as null
+    and the frontend falls back to client-side substring search."""
+    res = client.get(
+        f"/api/human-review/cases?file_ids={fake_result.name}&skip_empty=true"
+    )
+    assert res.status_code == 200
+    c = res.json()["cases"][0]
+    assert c.get("parsed_char_start") is None
+    assert c.get("parsed_char_end") is None
+
+
+def test_phase3_was_truncated_passes_through_api(tmp_path: Path, monkeypatch):
+    """Phase 3: when a result entry carries `output.was_truncated == true`,
+    the /cases endpoint projects it onto the ReviewCase payload so the
+    frontend can pre-toggle the Truncated chip on case load."""
+    results_dir = tmp_path / "results"
+    results_dir.mkdir()
+    data = {
+        "metadata": {},
+        "model_info": {"model_name": "test-model", "provider": "ollama"},
+        "testset_metadata": {"name": "phase3_truncated"},
+        "execution_info": {"duration_seconds": 1.0},
+        "summary_statistics": {},
+        "results": [
+            {
+                "test_id": "carwash_trunc",
+                "status": "success",
+                "input": {
+                    "user_prompt": "Walk or drive?",
+                    "system_prompt": "You are pragmatic.",
+                    "task_params": {"task_type": "carwash", "expected_answer": "drive"},
+                    "prompt_metadata": {"language": "en"},
+                },
+                "output": {
+                    "raw_response": "I'll think step by step. First we need to...",
+                    "parsed_answer": None,
+                    "parse_strategy": "fallback",
+                    "tokens_generated": 2048,
+                    "was_truncated": True,
+                    "finish_reason": "length",
+                },
+                "evaluation": {"correct": False, "match_type": "parse_error"},
+            },
+        ],
+    }
+    rf = results_dir / "results_phase3.json.gz"
+    with gzip.open(rf, "wt", encoding="utf-8") as f:
+        json.dump(data, f)
+    monkeypatch.setattr(analysis, "_results_dirs", lambda: [results_dir])
+    _clear_annotations()
+
+    res = client.get(
+        f"/api/human-review/cases?file_ids={rf.name}&skip_correct=false&skip_empty=false"
+    )
+    assert res.status_code == 200
+    cases = res.json()["cases"]
+    assert len(cases) == 1
+    assert cases[0]["was_truncated"] is True
+
+
+def test_phase3_was_truncated_absent_on_legacy_files(fake_result: Path):
+    """Legacy result files (pre-Phase-3) have no `was_truncated` field. The
+    API surfaces it as `None` and the frontend leaves the chip inactive."""
+    res = client.get(
+        f"/api/human-review/cases?file_ids={fake_result.name}&skip_empty=true"
+    )
+    assert res.status_code == 200
+    c = res.json()["cases"][0]
+    assert c.get("was_truncated") is None
+
+
 def test_annotate_roundtrip(fake_result: Path):
     body = {
         "result_file_id": fake_result.name,
@@ -276,23 +418,17 @@ def test_annotate_roundtrip(fake_result: Path):
     res = client.post("/api/human-review/annotate", json=body)
     assert res.status_code == 200
 
-    # Sidecar file exists + readable
-    ap = _annotation_path(fake_result)
-    assert ap.exists()
-    with gzip.open(ap, "rt", encoding="utf-8") as f:
-        payload = json.load(f)
-    assert payload["meta"]["plugin"] == "carwash"
-    assert payload["meta"]["annotated_count"] == 1
-    # v2.6+: sidecar key is `case_id::response_hash`
-    cases = payload["cases"]
-    matching = [v for k, v in cases.items() if k.startswith("carwash_0001::")]
-    assert matching, "No sidecar entry found for carwash_0001"
-    assert matching[0]["annotation"]["spans"][0]["text"] == "you should drive"
-
-    # /annotations round-trip
+    # Round-trip via the API (storage-agnostic).
     res2 = client.get(f"/api/human-review/annotations/{fake_result.name}")
     assert res2.status_code == 200
-    assert any(k.startswith("carwash_0001::") for k in res2.json()["cases"])
+    payload = res2.json()
+    assert payload["meta"]["plugin"] == "carwash"
+    assert payload["meta"]["annotated_count"] == 1
+    # v2.6+: key is `case_id::response_hash`
+    cases = payload["cases"]
+    matching = [v for k, v in cases.items() if k.startswith("carwash_0001::")]
+    assert matching, "No annotation entry found for carwash_0001"
+    assert matching[0]["annotation"]["spans"][0]["text"] == "you should drive"
 
 
 def test_annotate_parser_false_positive_with_span_allowed(fake_result: Path):
@@ -346,6 +482,46 @@ def test_annotate_unknown_response_class_rejected(fake_result: Path):
     }
     res = client.post("/api/human-review/annotate", json=body)
     assert res.status_code == 400
+
+
+def test_annotate_rejects_dropped_v3_classes(fake_result: Path):
+    """v4: the narrowed allow-set rejects classes that used to be valid —
+    `verbose` is dropped in migration, so POSTing it (after migration)
+    results in an empty response_classes list which fails the invariant."""
+    body = {
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {
+            "spans": [],
+            "response_classes": ["verbose"],  # dropped in v4
+            "annotator_note": "",
+        },
+    }
+    res = client.post("/api/human-review/annotate", json=body)
+    # verbose is silently dropped, leaving [] → invariant violation.
+    assert res.status_code == 400
+
+
+def test_annotate_migrates_legacy_refusal_to_unrecoverable(fake_result: Path):
+    """POSTing a legacy class code goes through the rename map on the write
+    path, so the stored value is the v4 canonical code."""
+    body = {
+        "result_file_id": fake_result.name,
+        "case_id": "carwash_0001",
+        "annotation": {
+            "spans": [],
+            "response_classes": ["refusal"],  # legacy code
+            "annotator_note": "",
+        },
+    }
+    res = client.post("/api/human-review/annotate", json=body)
+    assert res.status_code == 200
+
+    res2 = client.get(f"/api/human-review/annotations/{fake_result.name}")
+    cases = res2.json()["cases"]
+    entry = next((v for k, v in cases.items() if k.startswith("carwash_0001::")), None)
+    assert entry is not None
+    assert entry["annotation"]["response_classes"] == ["unrecoverable"]
 
 
 def test_report_endpoint(fake_result: Path):
@@ -428,13 +604,13 @@ def test_build_report_parser_false_positive_counts_as_missed():
 
 
 def test_delete_annotations_is_idempotent(fake_result: Path):
-    """DELETE /annotations works whether or not a sidecar exists."""
-    # With no sidecar yet.
+    """DELETE /annotations works whether or not any annotations exist."""
+    # With nothing stored yet.
     res = client.delete(f"/api/human-review/annotations/{fake_result.name}")
     assert res.status_code == 200
     assert res.json()["deleted"] is False
 
-    # After writing a sidecar via /annotate.
+    # After writing an annotation via /annotate.
     client.post(
         "/api/human-review/annotate",
         json={
@@ -443,13 +619,19 @@ def test_delete_annotations_is_idempotent(fake_result: Path):
             "annotation": {"spans": [], "response_classes": ["hedge"], "annotator_note": ""},
         },
     )
-    ap = _annotation_path(fake_result)
-    assert ap.exists()
+    # Sanity: GET returns the row we just wrote.
+    assert client.get(
+        f"/api/human-review/annotations/{fake_result.name}"
+    ).json()["cases"], "annotation not persisted"
 
     res2 = client.delete(f"/api/human-review/annotations/{fake_result.name}")
     assert res2.status_code == 200
     assert res2.json()["deleted"] is True
-    assert not ap.exists()
+
+    # After delete: GET returns an empty shape.
+    res3 = client.get(f"/api/human-review/annotations/{fake_result.name}")
+    assert res3.status_code == 200
+    assert res3.json() == {"meta": {}, "cases": {}}
 
 
 def test_delete_annotations_unknown_file_404(fake_result: Path):
@@ -1451,7 +1633,148 @@ def test_v2_5_format_version_is_2_5():
     af = {"meta": {}, "cases": {
         "a": _enriched_case("a", response_class="parser_ok", parser_match_type="correct"),
     }}
-    assert agg.build_report([af])["format_version"] == "2.6"
+    # Format version advances with each schema change; v2.7 = Phase 1 collapse
+    # of negative_keywords → negative_spans + four-class response taxonomy.
+    assert agg.build_report([af])["format_version"] == "2.7"
+
+
+def test_v2_7_negative_group_omits_mark_type():
+    """v2.7: the `mark_type` field is gone from `negative_span_groups[]`."""
+    af = {"meta": {}, "cases": {
+        "a": {
+            "case_id": "a",
+            "parser_match_type": "mismatch",
+            "parser_extracted": "drive",
+            "expected": "walk",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "annotation": {
+                "spans": [{"text": "walk", "char_start": 0, "char_end": 4,
+                           "position": "end", "format": "plain"}],
+                "response_classes": [],
+                "annotator_note": "",
+                "negative_spans": [
+                    {"text": "or drive", "char_start": 10, "char_end": 18},
+                ],
+            },
+        },
+    }}
+    report = agg.build_report([af])
+    groups = report.get("negative_span_groups") or []
+    assert groups, "expected at least one negative_span_group"
+    assert "mark_type" not in groups[0]
+
+
+def test_phase2_auto_inferred_negative_preserves_source_in_report():
+    """Phase 2: auto-inferred negatives carry `source: "auto_inferred"` and
+    the aggregator merges them with manual ones in the SAME group (keyed on
+    normalized text) while preserving the source tag on each example record
+    for downstream filtering."""
+    af = {"meta": {}, "cases": {
+        "manual": {
+            "case_id": "manual",
+            "parser_match_type": "mismatch",
+            "parser_extracted": "drive",
+            "expected": "walk",
+            "language": "en",
+            "parse_strategy": "first_sentence",
+            "annotation": {
+                "spans": [{"text": "walk", "char_start": 0, "char_end": 4,
+                           "position": "end", "format": "plain"}],
+                "response_classes": [],
+                "annotator_note": "",
+                "negative_spans": [
+                    {"text": "drive", "char_start": 10, "char_end": 15,
+                     "source": "manual"},
+                ],
+            },
+        },
+        "auto": {
+            "case_id": "auto",
+            "parser_match_type": "mismatch",
+            "parser_extracted": "drive",
+            "expected": "walk",
+            "language": "en",
+            "parse_strategy": "first_sentence",
+            "annotation": {
+                "spans": [{"text": "walk", "char_start": 0, "char_end": 4,
+                           "position": "end", "format": "plain"}],
+                "response_classes": [],
+                "annotator_note": "",
+                "negative_spans": [
+                    {"text": "drive", "char_start": 10, "char_end": 15,
+                     "source": "auto_inferred"},
+                ],
+            },
+        },
+    }}
+    report = agg.build_report([af])
+    groups = report.get("negative_span_groups") or []
+    assert len(groups) == 1, "manual + auto should merge in one group (same normalized text)"
+    g = groups[0]
+    assert g["count"] == 2
+    sources = sorted(ex["source"] for ex in g["example_negatives"])
+    assert sources == ["auto_inferred", "manual"]
+
+
+def test_phase2_legacy_negatives_default_source_manual():
+    """Pre-Phase-2 sidecars have no `source` field on their marks — the
+    aggregator must default them to `"manual"` for the report."""
+    af = {"meta": {}, "cases": {
+        "a": {
+            "case_id": "a",
+            "parser_match_type": "mismatch",
+            "parser_extracted": "drive",
+            "expected": "walk",
+            "language": "en",
+            "parse_strategy": "first_sentence",
+            "annotation": {
+                "spans": [{"text": "walk", "char_start": 0, "char_end": 4,
+                           "position": "end", "format": "plain"}],
+                "response_classes": [],
+                "annotator_note": "",
+                "negative_spans": [
+                    # No `source` field — legacy shape.
+                    {"text": "drive", "char_start": 10, "char_end": 15},
+                ],
+            },
+        },
+    }}
+    report = agg.build_report([af])
+    g = (report.get("negative_span_groups") or [])[0]
+    assert g["example_negatives"][0]["source"] == "manual"
+
+
+def test_v2_7_legacy_negative_keywords_fold_into_negative_spans_at_report_time():
+    """A legacy annotation still carrying `negative_keywords` entries should
+    produce a unified negative group (the aggregator folds on the fly)."""
+    af = {"meta": {}, "cases": {
+        "a": {
+            "case_id": "a",
+            "parser_match_type": "mismatch",
+            "parser_extracted": "drive",
+            "expected": "walk",
+            "language": "en",
+            "parse_strategy": "unknown",
+            "annotation": {
+                "spans": [{"text": "walk", "char_start": 0, "char_end": 4,
+                           "position": "end", "format": "plain"}],
+                "response_classes": [],
+                "annotator_note": "",
+                "negative_spans": [],
+                # Legacy: pre-v2.7 sidecar still populated both arrays.
+                "negative_keywords": [
+                    {"text": "drive", "char_start": 10, "char_end": 15},
+                ],
+            },
+        },
+    }}
+    report = agg.build_report([af])
+    groups = report.get("negative_span_groups") or []
+    assert groups, "expected the legacy keyword to surface as a negative group"
+    assert groups[0]["text"] == "drive"
+    assert groups[0]["count"] == 1
+    assert "mark_type" not in groups[0]
 
 
 def test_v2_5_suppresses_strategy_breakdown_under_no_parse_strategy():

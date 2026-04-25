@@ -59,7 +59,7 @@ function MarkTypeSection({ rows }: { rows: MarkTypeRow[] }) {
   return (
     <div>
       <p className="mb-1.5 text-[10px] font-semibold uppercase tracking-wider text-muted-foreground">
-        Mark types · click or drag-select
+        Mark types · hold modifier key + click or drag
       </p>
       <div className="rounded-md border border-border/60 bg-muted/20 overflow-hidden">
         {rows.map((row, i) => (
@@ -93,6 +93,10 @@ function MarkTypeSection({ rows }: { rows: MarkTypeRow[] }) {
   )
 }
 
+/** v4 (Phase 1): four mark types. Modifier keys are now held letters —
+ *  A for anchor, D for keyword, Shift for negative. No keyboard gymnastics:
+ *  plain drag commits an answer span immediately (no dock).
+ */
 const MARK_ROWS: MarkTypeRow[] = [
   {
     preview: (
@@ -101,8 +105,8 @@ const MARK_ROWS: MarkTypeRow[] = [
       </span>
     ),
     name: "Answer span",
-    description: "The text the model gave as its final answer.",
-    keys: ["LMB"],
+    description: "The text the model gave as its final answer. Plain click or drag.",
+    keys: ["Click/Drag"],
   },
   {
     preview: (
@@ -111,8 +115,8 @@ const MARK_ROWS: MarkTypeRow[] = [
       </span>
     ),
     name: "Context anchor",
-    description: "Label or phrase that introduces the answer (e.g. 'Recommendation:').",
-    keys: ["⌃/⌘", "LMB"],
+    description: "Label or phrase introducing the answer (e.g. 'Recommendation:').",
+    keys: ["Hold A", "Click/Drag"],
   },
   {
     preview: (
@@ -121,8 +125,8 @@ const MARK_ROWS: MarkTypeRow[] = [
       </span>
     ),
     name: "Answer keyword",
-    description: "Canonical answer word (e.g. 'walk'), separate from the full span.",
-    keys: ["⌥", "LMB"],
+    description: "Canonical answer word (e.g. 'walk') — feeds keyword taxonomies.",
+    keys: ["Hold D", "Click/Drag"],
   },
   {
     preview: (
@@ -130,26 +134,16 @@ const MARK_ROWS: MarkTypeRow[] = [
         drive
       </span>
     ),
-    name: "Negative span",
-    description: "Text the parser falsely matched — feeds negative regex patterns in the report.",
-    keys: ["⇧", "LMB"],
-  },
-  {
-    preview: (
-      <span className="inline-block w-16 rounded-sm border-b border-dotted border-rose-600 bg-rose-500/20 px-1 text-center font-mono text-[11px] text-foreground leading-5">
-        drive
-      </span>
-    ),
-    name: "Negative keyword",
-    description: "Specific distractor word within a false-positive region.",
-    keys: ["⇧⌥/⇧⌘", "LMB"],
+    name: "Negative",
+    description: "Text the parser wrongly matched — feeds anti-patterns in the report.",
+    keys: ["Hold ⇧", "Click/Drag"],
   },
 ]
 
 export function HelpDialog({ open, onOpenChange }: Props) {
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogContent className="w-[min(95vw,64rem)]">
+      <DialogContent className="w-[min(95vw,64rem)] sm:!max-w-[64rem]">
         <DialogHeader>
           <DialogTitle>Keyboard Shortcuts &amp; Annotation Guide</DialogTitle>
         </DialogHeader>
@@ -160,27 +154,21 @@ export function HelpDialog({ open, onOpenChange }: Props) {
             <Section
               title="Navigation"
               rows={[
-                { keys: ["←", "→"], description: "Previous / Next case" },
-                { keys: ["S"], description: "Skip (no annotation saved)" },
+                { keys: ["Space"], description: "Save (if draft) & advance; else skip" },
+                { keys: ["⌃/⌘", "Space"], description: "Discard draft & advance" },
+                { keys: ["←"], description: "Previous case" },
+                { keys: ["⌃/⌘", "Z"], description: "Undo (current case)" },
+                { keys: ["⌃/⌘", "⇧", "Z"], description: "Redo" },
                 { keys: ["?"], description: "Toggle this help dialog" },
               ]}
             />
             <Section
               title="Classification (toggle)"
               rows={[
-                { keys: ["1"], description: "Hedge" },
-                { keys: ["2"], description: "Truncated" },
-                { keys: ["3"], description: "Gibberish" },
-                { keys: ["4"], description: "Refusal" },
-                { keys: ["5"], description: "Lang. error" },
-                { keys: ["6"], description: "Verbose" },
-                { keys: ["7"], description: "False-positive" },
-              ]}
-            />
-            <Section
-              title="Dock (span selected)"
-              rows={[
-                { keys: ["Space", "↵"], description: "Commit selection" },
+                { keys: ["2", "E"], description: "Truncated" },
+                { keys: ["3", "Q"], description: "Unrecoverable" },
+                { keys: ["4", "F"], description: "False-positive" },
+                { keys: ["5"], description: "Hedge" },
               ]}
             />
           </div>

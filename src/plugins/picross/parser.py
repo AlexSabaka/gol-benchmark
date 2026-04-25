@@ -10,6 +10,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
+from src.plugins.parse_utils import normalize_unicode
 
 # Common filled/empty marker pairs the model might use regardless of prompt
 _FILLED_ALIASES = {"1", "X", "x", "#", "■", "█", "●", "★"}
@@ -30,8 +31,10 @@ class PicrossParser(ResponseParser):
         if not response:
             return ParsedAnswer(
                 value=None, raw_response=response or "",
-                parse_strategy="failed", error="Empty response from model",
+                parse_strategy="empty", error="Empty response from model",
             )
+
+        response = normalize_unicode(response)
 
         # Expected dimensions
         grid_size = task_params.get("grid_size", [0, 0])
@@ -42,7 +45,7 @@ class PicrossParser(ResponseParser):
         if expected_rows == 0 or expected_cols == 0:
             return ParsedAnswer(
                 value=None, raw_response=response,
-                parse_strategy="failed", error="Invalid expected shape in task_params",
+                parse_strategy="fallback", error="Invalid expected shape in task_params",
             )
 
         filled = task_params.get("filled_cell", "1")
@@ -67,7 +70,7 @@ class PicrossParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="failed", error="All parsing strategies failed",
+            parse_strategy="fallback", error="All parsing strategies failed",
         )
 
     def get_strategies(self) -> List[str]:

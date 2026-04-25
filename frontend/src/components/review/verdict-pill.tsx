@@ -4,20 +4,14 @@ import type { ResponseClass } from "@/types"
 const VERDICT_LABEL: Record<ResponseClass, string> = {
   hedge: "Hedge",
   truncated: "Truncated",
-  gibberish: "Gibberish",
-  refusal: "Refusal",
-  language_error: "Language error",
-  verbose: "Verbose",
+  unrecoverable: "Unrecoverable",
   false_positive: "False-positive",
 }
 
 const VERDICT_TONE: Record<ResponseClass, string> = {
   hedge: "border-amber-500/50 bg-amber-500/15 text-amber-700 dark:text-amber-400",
   truncated: "border-slate-500/50 bg-slate-500/15 text-slate-700 dark:text-slate-400",
-  gibberish: "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400",
-  refusal: "border-red-500/50 bg-red-500/15 text-red-700 dark:text-red-400",
-  language_error: "border-orange-500/50 bg-orange-500/15 text-orange-700 dark:text-orange-400",
-  verbose: "border-sky-500/50 bg-sky-500/15 text-sky-700 dark:text-sky-400",
+  unrecoverable: "border-rose-500/50 bg-rose-500/15 text-rose-700 dark:text-rose-400",
   false_positive: "border-fuchsia-500/50 bg-fuchsia-500/15 text-fuchsia-700 dark:text-fuchsia-400",
 }
 

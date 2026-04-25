@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import re
 from enum import Enum
-from typing import Any, Dict, List, Optional, Sequence, TypeVar
+from typing import Any, Dict, List, Optional, Sequence, TypeVar, Union
 
 _E = TypeVar("_E", bound=Enum)
+
+Number = Union[int, float]
 
 
 def safe_enum(enum_cls: type[_E], value, default: _E) -> _E:
@@ -71,6 +73,81 @@ def last_sentences(text: str, n: int = 3) -> List[str]:
     # Filter out empty strings
     parts = [p for p in parts if p.strip()]
     return parts[-n:] if parts else []
+
+
+# ---------------------------------------------------------------------------
+# Parser-offset resolver (Phase 2)
+# ---------------------------------------------------------------------------
+
+
+def resolve_parser_offsets(
+    raw_response: str, value: Any
+) -> Optional[tuple[int, int]]:
+    """Locate the substring in ``raw_response`` that produced ``value``.
+
+    Phase 2 universal fallback — called at result-file write time for
+    parsers that don't emit ``char_start`` / ``char_end`` natively. The
+    frontend uses the returned offsets to paint the amber parser-highlight
+    region reliably (substring-search client-side can lock onto the wrong
+    occurrence or fail entirely on non-string values).
+
+    Type contract:
+
+    - ``str`` → searched directly.
+    - ``int`` / ``float`` / ``bool`` → stringified and searched. ``True`` /
+      ``False`` normalise to lower-case ``"true"`` / ``"false"`` to match
+      how models typically write them.
+    - ``list`` / ``dict`` / any non-scalar → returns ``None``. These are
+      constructed / computed values (grids, ranked lists) with no single
+      contiguous substring in the response.
+    - ``None`` / empty → returns ``None``.
+
+    Search order:
+
+    1. **Last** exact occurrence (end-first parser convention, CLAUDE.md §6).
+    2. Last case-insensitive occurrence (models often capitalise differently
+       than the normalised canonical form).
+
+    Returns ``(start, end)`` inclusive-exclusive, or ``None``.
+    """
+    if not raw_response or value is None:
+        return None
+
+    needle: Optional[str]
+    if isinstance(value, str):
+        needle = value.strip()
+    elif isinstance(value, bool):
+        # bool MUST be checked before int because bool is a subclass of int.
+        needle = "true" if value else "false"
+    elif isinstance(value, (int, float)):
+        needle = str(value)
+    else:
+        # Dict, list, tuple, custom types — no meaningful single region.
+        return None
+
+    if not needle:
+        return None
+
+    # Exact last match first.
+    idx = raw_response.rfind(needle)
+    if idx >= 0:
+        return (idx, idx + len(needle))
+
+    # Case-insensitive last match.
+    lower_haystack = raw_response.lower()
+    lower_needle = needle.lower()
+    if lower_needle != needle:
+        idx = lower_haystack.rfind(lower_needle)
+        if idx >= 0:
+            return (idx, idx + len(lower_needle))
+    else:
+        # Needle is already lowercase; search the lowered haystack to catch
+        # capitalised occurrences (e.g. value="drive", response has "Drive").
+        idx = lower_haystack.rfind(lower_needle)
+        if idx >= 0:
+            return (idx, idx + len(lower_needle))
+
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -299,3 +376,203 @@ NO_WORDS: Dict[str, List[str]] = {
     "zh": ["不", "否", "错", "不是", "错误"],
     "ua": ["ні", "неправда", "невірно", "неправильно"],
 }
+
+
+# ---------------------------------------------------------------------------
+# Unicode normalization
+# ---------------------------------------------------------------------------
+
+def normalize_unicode(text: str) -> str:
+    """Normalize curly / smart quotes and apostrophes to ASCII equivalents.
+
+    Models frequently emit U+2018 / U+2019 (curly single quotes) and
+    U+201C / U+201D (curly double quotes), which do not match ASCII ``'``
+    or ``"`` in hand-written regex patterns.  Also folds U+2032 (prime)
+    and U+2033 (double prime), commonly emitted in measurement notation
+    (5' / 5"), so unit parsing doesn't have to special-case them.
+    Normalizing once at parse entry lets every downstream regex use plain
+    ASCII.
+    """
+    return (
+        text
+        .replace("\u2018", "'")
+        .replace("\u2019", "'")
+        .replace("\u201C", '"')
+        .replace("\u201D", '"')
+        .replace("\u2032", "'")
+        .replace("\u2033", '"')
+    )
+
+
+# ---------------------------------------------------------------------------
+# LaTeX / math-wrapper normalization for label-based extraction
+# ---------------------------------------------------------------------------
+
+_LATEX_WRAP_RE = re.compile(
+    r"\\(?:text|mathbf|mathrm|mathit|mathsf|mathtt|textbf|textit)\s*\{([^{}]*)\}"
+)
+# \quad / \qquad / \, / \; / \: / \!  — explicit LaTeX spacing macros.
+_LATEX_SPACING_RE = re.compile(r"\\(?:qquad|quad|[,;:!])")
+
+
+def normalize_for_label_matching(text: str) -> str:
+    """Strip LaTeX math-mode wrappers so token-adjacent patterns can match.
+
+    * ``\\text{X}`` → ``X`` (same for ``\\mathbf`` / ``\\mathrm`` / …)
+    * ``\\quad`` / ``\\,`` / ``\\;`` etc. → single space
+    * ``$$`` / ``$`` delimiters → single space
+
+    Callers that rely on sentinel detection (``cannot determine``,
+    ``no solution``) should run sentinel checks on the *raw* text; only
+    label-extraction strategies should see the normalized form.
+    """
+    # Run the wrapper strip until stable so nested wrappers
+    # (``\mathbf{\text{X}}``) get fully unwrapped.  Bounded to 3 iterations.
+    for _ in range(3):
+        prev = text
+        text = _LATEX_WRAP_RE.sub(r"\1", text)
+        if text == prev:
+            break
+    text = _LATEX_SPACING_RE.sub(" ", text)
+    text = text.replace("$$", " ").replace("$", " ")
+    return text
+
+
+# ---------------------------------------------------------------------------
+# Numeric parsing with float-vs-int discipline
+# ---------------------------------------------------------------------------
+
+def try_parse_number(
+    text: str,
+    word_map: Optional[Dict[str, int]] = None,
+) -> Optional[Number]:
+    """Parse *text* as an ``int`` or ``float``, stripping punctuation/markdown noise.
+
+    Returns an ``int`` for integer literals and a ``float`` for decimals.
+    Keeping the two types distinct lets evaluators flag ``non_integer_prediction``
+    without silently truncating (``int("22.2")`` coerces to ``22``, which
+    would score as correct against an expected value of ``22``).
+
+    Word-number fallback via *word_map* always returns an ``int``.
+    Supports negative word forms prefixed with ``-``, ``negative``, ``minus``,
+    or the Unicode minus sign ``−`` (U+2212).
+    """
+    s = text.strip().strip("*_`").rstrip(".,;:!?)}]")
+    if re.fullmatch(r"-?\d+", s):
+        try:
+            return int(s)
+        except ValueError:
+            return None
+    if re.fullmatch(r"-?\d+\.\d+", s):
+        try:
+            return float(s)
+        except ValueError:
+            return None
+    if word_map is None:
+        return None
+    low = s.lower()
+    if low in word_map:
+        return word_map[low]
+    stripped = re.sub(r"^(?:-|negative|minus|\u2212)\s+", "", low)
+    if stripped != low and stripped in word_map:
+        return -word_map[stripped]
+    return None
+
+
+# ---------------------------------------------------------------------------
+# Sentinel-keyword detection (first-N / last-M sentences)
+# ---------------------------------------------------------------------------
+
+def detect_sentinel_keyword(
+    text: str,
+    keyword_dict: Dict[str, List[str]],
+    lang: str,
+    scan_first: int = 2,
+    scan_last: int = 3,
+    normalize_apostrophes: bool = True,
+) -> bool:
+    """Return True if any sentinel keyword from *keyword_dict* appears in the
+    opening *scan_first* sentences or the closing *scan_last* sentences of *text*.
+
+    Designed for plugin-level "refusal" / "no-solution" / "cannot-determine"
+    style sentinels.  The keyword dict is merged across English and *lang*
+    via :func:`merge_keywords` so the same call works for every language.
+
+    Set *normalize_apostrophes* to False if callers have already normalized
+    U+2019 to U+0027 in both the text and the keyword dict.
+    """
+    keywords = merge_keywords(keyword_dict, lang)
+    if not keywords:
+        return False
+
+    def _norm(s: str) -> str:
+        s = s.lower()
+        if normalize_apostrophes:
+            s = s.replace("\u2019", "'")
+        return s
+
+    keywords = [_norm(k) for k in keywords]
+
+    # Split the FULL text so we can slice the true opening and the true
+    # closing.  ``last_sentences`` would truncate from the end and miss the
+    # real opening for long responses.
+    parts = re.split(r"(?<=[.!?。！？])\s+", text.strip())
+    parts = [p for p in parts if p.strip()]
+    if not parts:
+        return False
+    opening = _norm(" ".join(parts[:scan_first]))
+    closing = _norm(" ".join(parts[-scan_last:]))
+    for kw in keywords:
+        if kw in opening or kw in closing:
+            return True
+    return False
+
+
+# ---------------------------------------------------------------------------
+# Contextual-marker detection around a match position
+# ---------------------------------------------------------------------------
+
+def has_contextual_marker(
+    text: str,
+    position: int,
+    pattern_dicts: Sequence[Dict[str, re.Pattern]],
+    lang: str,
+    pre_window: int = 120,
+    post_window: int = 80,
+    positional: bool = False,
+) -> bool:
+    """Return True if any pattern from *pattern_dicts* matches near *position*.
+
+    Used for conditional / dismissive / option-listing context detection
+    around a keyword hit (e.g. "walk" in carwash, where "only walk if..."
+    should NOT count as a walk recommendation).
+
+    *pattern_dicts* is a sequence of ``{lang_code: compiled_regex}`` dicts;
+    English patterns are always checked, and the target language's patterns
+    are additionally checked when ``lang != "en"``.
+
+    When *positional* is False (default), any match anywhere in the window
+    counts.  When True, the match span must contain *position* itself —
+    this is the stricter check used for option-listing / comparison
+    patterns, so a genuine recommendation that merely sits within 120 chars
+    of an earlier "X or Y" listing is not filtered.
+    """
+    window_start = max(0, position - pre_window)
+    window_end = min(len(text), position + post_window)
+    window = text[window_start:window_end]
+    offset = position - window_start
+    codes = ["en"] if lang == "en" else ["en", lang]
+
+    for code in codes:
+        for pattern_dict in pattern_dicts:
+            pat = pattern_dict.get(code)
+            if pat is None:
+                continue
+            if positional:
+                for m in pat.finditer(window):
+                    if m.start() <= offset < m.end():
+                        return True
+            else:
+                if pat.search(window):
+                    return True
+    return False

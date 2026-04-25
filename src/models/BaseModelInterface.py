@@ -36,6 +36,20 @@ class ModelInterface:
         dict
             On success: ``{"response": str, "tokens_generated": int,
             "tokens_input": int, "duration": float, "model_info": dict}``
+
+            Phase 3 optional fields (subclasses emit when available):
+
+            - ``finish_reason`` (str or None): provider-normalised stop
+              reason. ``"length"`` means the generation hit the token
+              limit; ``"stop"`` means it ended naturally. Consumers use
+              this to compute the inference-time ``was_truncated`` flag
+              that pre-toggles the Truncated chip in ``/review``.
+            - ``max_tokens_used`` (int or None): the token limit actually
+              sent to the provider (``max_tokens`` / ``num_predict`` /
+              ``max_new_tokens`` depending on API). Callers combine this
+              with ``tokens_generated`` as a truncation fallback when the
+              provider didn't expose ``finish_reason``.
+
             On error: ``{"error": str, "duration": float, "model_info": dict}``
         """
         raise NotImplementedError

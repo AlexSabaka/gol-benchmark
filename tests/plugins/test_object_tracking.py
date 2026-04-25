@@ -551,6 +551,138 @@ class TestObjectTrackingParser:
         assert result.value == 'shelf', f"Expected 'shelf', got '{result.value}' via {result.parse_strategy}"
 
 
+    # ── Phase 8 annotation-driven regressions ──
+    # From 129 annotated EN/UA cases (v2.26.1).  Three failure modes
+    # dominated the 36 misalignments: conclusion-anchored plain trailers
+    # (88 cases), bold trailers at end-of-response (21), and last_word
+    # junk tokens (~5 cases).  These tests encode the fixes.
+
+    def test_phase8_anchored_trailer_therefore_in_the(self):
+        """tracking_0002 style: '**Conclusion:** ... located in the cabinet.'"""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "The ring was moved with the glass.\n\n"
+            "**Conclusion:** Since the ring was in the glass when it was flipped "
+            "and placed on the cabinet, the ring is now located in the cabinet."
+        )
+        task_params = {
+            'object': 'ring',
+            'expected_answer': 'cabinet',
+            'initial_location': 'nightstand',
+            'post_inversion_container_location': 'cabinet',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'cabinet', (
+            f"Expected 'cabinet', got '{result.value}' via {result.parse_strategy}"
+        )
+
+    def test_phase8_anchored_trailer_bold_end(self):
+        """tracking_0013 style: 'Therefore, the button is in the **oven**.'"""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "6. **Conclusion:** The button is inside the glass, which is on "
+            "the oven. Therefore, the button is in the **oven**."
+        )
+        task_params = {'object': 'button', 'expected_answer': 'oven'}
+        result = parser.parse(response, task_params)
+        assert result.value == 'oven', (
+            f"Expected 'oven', got '{result.value}' via {result.parse_strategy}"
+        )
+
+    def test_phase8_bold_trailer_anchored(self):
+        """tracking_0014 style: trailing bold with 'in the' anchor."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "5. Action 4: Walking to the living room is irrelevant to the "
+            "marble's location.\n\nTherefore, the marble is in the **drawer**."
+        )
+        task_params = {'object': 'marble', 'expected_answer': 'drawer'}
+        result = parser.parse(response, task_params)
+        assert result.value == 'drawer', (
+            f"Expected 'drawer', got '{result.value}' via {result.parse_strategy}"
+        )
+
+    def test_phase8_last_word_rejects_junk_token(self):
+        """Pre-Phase-8, last_word would return 'within' / 'bottom' / 'relative'
+        when the tail clause wasn't a location.  Tightened to require the
+        token be in known_locations."""
+        parser = ObjectTrackingResponseParser()
+        # Response where no strategy finds a known location in an extractable
+        # position; last_word used to grab 'within' as fallback.
+        response = (
+            "The object's position is complex to describe within the current "
+            "frame of reference and relative to previous states within"
+        )
+        task_params = {
+            'object': 'thing',
+            'expected_answer': 'counter',
+            'initial_location': 'counter',
+        }
+        result = parser.parse(response, task_params)
+        # Accept either None (strict failure) or 'counter' (if location_keyword
+        # still fires upstream); reject junk prepositions.
+        assert result.value != 'within', (
+            f"last_word should reject 'within'; got '{result.value}'"
+        )
+        assert result.value != 'relative', (
+            f"last_word should reject 'relative'; got '{result.value}'"
+        )
+
+    def test_phase8_ua_bold_trailer_na_prefix(self):
+        """tracking_0001 (UA) style: 'знаходиться **на шафі**'."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "**Куди зараз виноградинка?**\nВиноградинка знаходиться "
+            "**на шафі** – саме в чашці, яку ви перенесли з холодильника на шафу."
+        )
+        task_params = {
+            'object': 'виноградинка',
+            'expected_answer': 'shelf',
+            'expected_answer_localized': 'шафі',
+            'language': 'ua',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'шафі', (
+            f"Expected 'шафі', got '{result.value}' via {result.parse_strategy}"
+        )
+
+    def test_phase8_ua_multiword_location(self):
+        """UA: 'Отже, ключі на письмовому столі' — 2-word location captured."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "Ключі були на письмовому столі. Склянку перевернули. "
+            "Отже, ключі на письмовому столі."
+        )
+        task_params = {
+            'object': 'ключі',
+            'expected_answer': 'desk',
+            'expected_answer_localized': 'письмовому столі',
+            'language': 'ua',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'письмовому столі', (
+            f"Expected 'письмовому столі', got '{result.value}' via {result.parse_strategy}"
+        )
+
+    def test_phase8_conclusion_anchor_plain_trailer_ua(self):
+        """UA: 'Висновок: куля на підлозі' — conclusion anchor + plain trailer."""
+        parser = ObjectTrackingResponseParser()
+        response = (
+            "Кулька випала зі склянки, коли її перевернули вгору дном. "
+            "Висновок: кулька зараз на підлозі."
+        )
+        task_params = {
+            'object': 'кулька',
+            'expected_answer': 'floor',
+            'expected_answer_localized': 'підлозі',
+            'language': 'ua',
+        }
+        result = parser.parse(response, task_params)
+        assert result.value == 'підлозі', (
+            f"Expected 'підлозі', got '{result.value}' via {result.parse_strategy}"
+        )
+
+
 class TestObjectTrackingEvaluator:
     """Test the result evaluator."""
 

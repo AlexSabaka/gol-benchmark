@@ -11,6 +11,7 @@ from ..base import ResponseParser, ParsedAnswer
 from ..parse_utils import (
     re_search_last, strip_verification_tail,
     merge_keywords, build_answer_label_re, get_language,
+    normalize_unicode,
 )
 
 
@@ -98,13 +99,13 @@ class SallyAnneResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response or "",
-                parse_strategy="none",
+                parse_strategy="empty",
                 confidence=0.0,
                 error="Empty response"
             )
 
-        response_clean = response.strip()
-        
+        response_clean = normalize_unicode(response.strip())
+
         # Get known containers from task_params
         containers = []
         if task_params:

@@ -13,7 +13,9 @@ from src.plugins.base import ParsedAnswer, ResponseParser
 from src.plugins.parse_utils import (
     build_answer_label_re,
     get_language,
+    normalize_unicode,
     re_search_last,
+    strip_verification_tail,
 )
 
 
@@ -55,7 +57,7 @@ class GridTasksResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response,
-                parse_strategy="empty_response",
+                parse_strategy="empty",
                 confidence=0.0,
                 error="Empty or whitespace-only response"
             )
@@ -64,20 +66,29 @@ class GridTasksResponseParser(ResponseParser):
         # \u00A0 = non-breaking space, \u202F = narrow no-break space
         response = re.sub(r'[\u00A0\u202F\u2009\u200B]', ' ', response)
         
-        # Try strategies in order
+        # Fold curly quotes / primes to ASCII equivalents for regex matching.
+        response = normalize_unicode(response)
+
+        # Weaker keyword / positional strategies use a verification-stripped
+        # copy.  Boxed / bold / JSON / code-block keep the raw text because
+        # they match specific formatting that rarely appears inside a
+        # verification section.
+        response_clean = strip_verification_tail(response)
+
+        # (name, func, text) — `text is None` means use the raw response.
         strategies = [
-            ('boxed_latex', self._try_boxed_latex),
-            ('bold_markdown', self._try_bold_markdown),
-            ('answer_pattern', self._try_answer_pattern),
-            ('json_extraction', self._try_json_extraction),
-            ('code_block', self._try_code_block),
-            ('quoted', self._try_quoted),
-            ('last_line', self._try_last_line),
-            ('last_number', self._try_last_number),
+            ('boxed_latex', self._try_boxed_latex, None),
+            ('bold_markdown', self._try_bold_markdown, None),
+            ('answer_pattern', self._try_answer_pattern, response_clean),
+            ('json_extraction', self._try_json_extraction, None),
+            ('code_block', self._try_code_block, None),
+            ('quoted', self._try_quoted, response_clean),
+            ('last_line', self._try_last_line, response_clean),
+            ('last_number', self._try_last_number, response_clean),
         ]
-        
-        for strategy_name, strategy_func in strategies:
-            result = strategy_func(response)
+
+        for strategy_name, strategy_func, strategy_text in strategies:
+            result = strategy_func(strategy_text if strategy_text is not None else response)
             if result is not None:
                 return ParsedAnswer(
                     value=result['value'],
@@ -86,12 +97,12 @@ class GridTasksResponseParser(ResponseParser):
                     confidence=result['confidence'],
                     error=None
                 )
-        
+
         # All strategies failed
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy="no_match",
+            parse_strategy="fallback",
             confidence=0.0,
             error="No parsing strategy succeeded"
         )

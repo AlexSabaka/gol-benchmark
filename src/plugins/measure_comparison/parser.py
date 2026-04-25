@@ -11,8 +11,8 @@ Four answer categories:
 
 Strategy pipeline (tried in order, highest confidence first):
   1. boxed                \\boxed{...}                         0.95
-  2. bold                 **...** (two-pass: keywords, values) 0.90
-  3. label_line           "Answer: ..."                        0.88
+  2. label_line           "Answer: ..."                        0.88
+  3. bold                 **...** (two-pass: keywords, values) 0.90
   4. value_unit_comparative  "{val} {unit} is {comp}" + reverse  0.87
   5. keyword_incomparable detects "cannot compare" etc.        0.86
   6. value_unit_match     extract value+unit, match to options 0.85
@@ -28,7 +28,13 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from src.plugins.base import ResponseParser, ParsedAnswer
-from src.plugins.parse_utils import re_search_last, build_answer_label_re, get_language
+from src.plugins.parse_utils import (
+    re_search_last,
+    build_answer_label_re,
+    get_language,
+    strip_verification_tail,
+    normalize_unicode,
+)
 
 # ---------------------------------------------------------------------------
 # Unit symbol aliases (normalised form → set of of display variants)
@@ -392,16 +398,18 @@ class MeasureComparisonParser(ResponseParser):
                 error="Empty response",
             )
 
-        text = response.strip()
-        # Normalise curly/smart quotes to ASCII equivalents
-        text = text.replace('\u2018', "'").replace('\u2019', "'")
-        text = text.replace('\u201C', '"').replace('\u201D', '"')
+        text = normalize_unicode(response.strip())
         tp = task_params or {}
         lang = get_language(tp)
 
         # Route decimal comparison type to a specialised parser (bare numbers)
         if tp.get("comparison_type") == "decimal":
             return self._parse_decimal(text, tp, lang)
+
+        # Keyword strategies use a tail-stripped copy to avoid "same unit" /
+        # "equal in magnitude" phrases in verification sections firing as
+        # false-positive equal/incomparable answers.
+        text_for_keywords = strip_verification_tail(text)
 
         # --- Strategy 1: LaTeX boxed (last match) ---
         boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
@@ -414,7 +422,27 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="boxed", confidence=0.95,
                 )
 
-        # --- Strategy 2: Bold (two-pass: keywords first, then values) ---
+        # --- Strategy 2: Label line (last match) ---
+        # Runs before bold so that an explicit "Answer:" label takes priority
+        # over bold values scattered in the reasoning text.  The word-boundary
+        # in build_answer_label_re() matches "answer" inside "**Answer:**"
+        # because "**" is non-word and does not break \b.
+        answer_labels = build_answer_label_re(lang)
+        label = re_search_last(
+            r"(?:" + answer_labels + r"|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
+            text,
+            re.IGNORECASE | re.MULTILINE,
+        )
+        if label:
+            inner = label.group(1).strip()
+            result = self._try_resolve(inner, tp)
+            if result is not None:
+                return ParsedAnswer(
+                    value=result, raw_response=text,
+                    parse_strategy="label_line", confidence=0.88,
+                )
+
+        # --- Strategy 3: Bold (two-pass: keywords first, then values) ---
         # Pass 1: any bold with equal/incomparable keywords takes priority.
         # Pass 2: last-resolvable bold for value+unit extraction.
         bold_matches = list(re.finditer(r"\*\*([^*]{1,40})\*\*", text))
@@ -439,22 +467,6 @@ class MeasureComparisonParser(ResponseParser):
                     parse_strategy="bold", confidence=0.90,
                 )
 
-        # --- Strategy 3: Label line (last match) ---
-        answer_labels = build_answer_label_re(lang)
-        label = re_search_last(
-            r"(?:" + answer_labels + r"|the\s+(?:answer|result)\s+is)\s*[:：]?\s*(.+?)(?:\.|$)",
-            text,
-            re.IGNORECASE | re.MULTILINE,
-        )
-        if label:
-            inner = label.group(1).strip()
-            result = self._try_resolve(inner, tp)
-            if result is not None:
-                return ParsedAnswer(
-                    value=result, raw_response=text,
-                    parse_strategy="label_line", confidence=0.88,
-                )
-
         # --- Strategy 4: "{value} {unit} is {comparative}" pattern ---
         # Handles responses like "18.68 h is shorter." where the answer is
         # stated plainly without labels, bold, or boxed formatting.
@@ -463,21 +475,32 @@ class MeasureComparisonParser(ResponseParser):
         _comp_local = _COMPARATIVE_ADJECTIVES.get(lang, "")
         _COMPARATIVES = _comp_en + ("|" + _comp_local if _comp_local and lang != "en" else "")
 
-        # EN-style: "{value} {unit} is {comparative}"
-        comp_m = re_search_last(
-            r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)\s+(?:is|es|est|ist|є)\s+"
+        # EN-style: "{value} {unit} is [adv ...] {comparative}"
+        # Allow up to 2 intermediate words (e.g. "is indeed heavier",
+        # "is clearly longer") without losing the option-matching guard below.
+        fwd_m = re_search_last(
+            r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)\s+(?:is|es|est|ist|є)"
+            r"\s+(?:\w+\s+){0,2}"
             r"(?:" + _COMPARATIVES + r")",
             text,
             re.IGNORECASE,
         )
-        # Also try reverse pattern: "the {comparative} one is {value} {unit}"
-        if not comp_m:
-            comp_m = re_search_last(
-                r"(?:" + _COMPARATIVES + r")\s+(?:one\s+)?(?:is|es|est|ist|є)\s+"
-                r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)",
-                text,
-                re.IGNORECASE,
-            )
+        # Reverse pattern: "the {comparative} [adv ...] one is {value} {unit}"
+        rev_m = re_search_last(
+            r"(?:" + _COMPARATIVES + r")\s+(?:\w+\s+){0,2}"
+            r"(?:one\s+)?(?:is|es|est|ist|є)\s+"
+            r"(" + _VALUE_RE + r")\s+(°?[A-Za-z/][A-Za-z/.]*)",
+            text,
+            re.IGNORECASE,
+        )
+        # When both fire, take the one whose span ends LATER in the text —
+        # end-first principle.  The forward pattern can grab an early
+        # comparison statement ("609 kg is much heavier") while a later
+        # reverse match ("the lighter one is 758 oz") is the true answer.
+        if fwd_m and rev_m:
+            comp_m = fwd_m if fwd_m.end() >= rev_m.end() else rev_m
+        else:
+            comp_m = fwd_m or rev_m
         if comp_m:
             val_str = comp_m.group(1)
             unit_text = comp_m.group(2).strip()
@@ -495,8 +518,8 @@ class MeasureComparisonParser(ResponseParser):
         # Checked BEFORE value_unit_match: incomparable responses always
         # restate both values in explanation, so value extraction would
         # incorrectly pick one up.
-        if _INCOMPARABLE_KEYWORDS.search(text):
-            negated = re.search(r"\b(?:not|no|n't)\b.{0,30}" + _INCOMPARABLE_KEYWORDS.pattern, text, re.IGNORECASE)
+        if _INCOMPARABLE_KEYWORDS.search(text_for_keywords):
+            negated = re.search(r"\b(?:not|no|n't)\b.{0,30}" + _INCOMPARABLE_KEYWORDS.pattern, text_for_keywords, re.IGNORECASE)
             if not negated:
                 return ParsedAnswer(
                     value="incomparable", raw_response=text,
@@ -520,8 +543,8 @@ class MeasureComparisonParser(ResponseParser):
         # --- Strategy 7: Equal keywords ---
         # Checked AFTER value_unit_match and incomparable: "same" can appear
         # in explanatory context (e.g. "the same unit").
-        if _EQUAL_KEYWORDS.search(text):
-            negated = re.search(r"\b(?:not|no|n't|aren'?t|isn'?t)\b.{0,30}" + _EQUAL_KEYWORDS.pattern, text, re.IGNORECASE)
+        if _EQUAL_KEYWORDS.search(text_for_keywords):
+            negated = re.search(r"\b(?:not|no|n't|aren'?t|isn'?t)\b.{0,30}" + _EQUAL_KEYWORDS.pattern, text_for_keywords, re.IGNORECASE)
             if not negated:
                 return ParsedAnswer(
                     value="equal", raw_response=text,

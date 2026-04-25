@@ -2,6 +2,412 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [Unreleased] — Annotation UI Ergonomics Redesign, Phase 3
+
+Phase 3 closes the last outstanding item from the original [Annotation UI Redesign spec](ANNOTATION_UI_REDESIGN.md) (§5.2): an inference-time `was_truncated` boolean on every new result entry, pre-toggled as the Truncated response-class chip in `/review` so the annotator doesn't manually scan for token-limit hits. Resolves [TD-117](TECHDEBT.md#TD-117).
+
+### Model interface `finish_reason` + `max_tokens_used` plumbing (Checkpoint 3A)
+
+The three model interfaces (Ollama / OpenAI-compatible / HuggingFace) now surface two new optional fields on the successful-query return dict:
+
+- `finish_reason: str | None` — provider-normalised stop reason. `"length"` signals the generation hit the token cap; `"stop"` means it ended naturally; `None` means the provider didn't expose one.
+- `max_tokens_used: int | None` — the token limit actually sent to the provider (`num_predict` / `max_tokens` / `max_new_tokens`). `None` for sentinel values (e.g. Ollama's `-1` for unlimited).
+
+Extraction per provider ([src/models/OllamaInterface.py](src/models/OllamaInterface.py), [src/models/OpenAICompatibleInterface.py](src/models/OpenAICompatibleInterface.py), [src/models/HuggingFaceInterface.py](src/models/HuggingFaceInterface.py)):
+
+- Ollama maps `done_reason` through `_DONE_REASON_TO_FINISH` (`"length"` → `"length"`, everything else collapses to `"stop"`).
+- OpenAI-compatible reads `choice.finish_reason` directly; any non-`"length"` value collapses to `"stop"` for the truncation-signal contract.
+- HuggingFace has no provider primitive so computes `"length"` iff `tokens_generated >= max_new_tokens`, else `"stop"`.
+
+`BaseModelInterface.query()` docstring ([src/models/BaseModelInterface.py](src/models/BaseModelInterface.py)) updated to document both fields as optional Phase-3 additions — future provider authors know to emit them.
+
+### Result-entry `was_truncated` computation (Checkpoint 3B)
+
+At result-write time ([src/stages/run_testset.py](src/stages/run_testset.py) + [src/web/jobs.py](src/web/jobs.py)):
+
+```py
+was_truncated = (
+    finish_reason == "length"
+    or (max_tokens_used is not None
+        and tokens_generated > 0
+        and tokens_generated >= max_tokens_used)
+)
+```
+
+Both the computed boolean AND the raw `finish_reason` land in the result entry's `output` dict. `_project_case` in [src/web/api/human_review.py](src/web/api/human_review.py) threads `was_truncated` to the frontend ReviewCase payload alongside the Phase-2 `parsed_char_start` / `parsed_char_end` fields.
+
+### Frontend auto-toggle (Checkpoint 3C)
+
+`ReviewCase` ([frontend/src/types/review.ts](frontend/src/types/review.ts)) gains optional `was_truncated?: boolean | null`. `emptyDraft` in [frontend/src/pages/review.tsx](frontend/src/pages/review.tsx) gains a third optional `wasTruncated?: boolean` parameter — when `true` AND the existing annotation has no `response_classes`, it seeds the draft with `response_classes: ["truncated"]` and `dirty: true`. The user presses Space to confirm-and-save; Ctrl+Space discards. No visual distinction from a manually-toggled chip — by design (the auto-origin is discoverable in the result file for anyone who needs it).
+
+### Design decisions (user-confirmed)
+
+- **`was_truncated` lives only in the result file's `output` dict.** The annotation sidecar records annotator judgment. If the user un-toggles the chip before advancing, the save is skipped (no content) and the sidecar stays clean — but the raw signal persists in the result file forever.
+- **Auto-toggled chip is visually identical to manual.** Once filled, it's just "on" — same rose tint as user-clicked.
+- **`finish_reason` extracted per-provider with token-count fallback.** More robust than either alone: providers that report finish_reason get authoritative signal; providers that don't still get correct truncation detection via the token comparison.
+
+### No schema migrations, no report-version bump
+
+Phase 3 is pure optional-field addition. Legacy result files without `was_truncated` / `finish_reason` surface as `None` through the API, auto-toggle doesn't fire, chip starts inactive — identical to pre-Phase-3 UX. `REPORT_FORMAT_VERSION` stays at `"2.7"`.
+
+### Tests
+
+14 new unit tests in new file [tests/test_model_interfaces_finish_reason.py](tests/test_model_interfaces_finish_reason.py) covering each interface's `finish_reason` mapping (length/stop/unknown/missing), `max_tokens_used` emission (including Ollama's `-1` sentinel), error-path shape preservation, and the base-contract docstring.
+
+2 new API integration tests in [tests/test_human_review.py](tests/test_human_review.py): `test_phase3_was_truncated_passes_through_api`, `test_phase3_was_truncated_absent_on_legacy_files`.
+
+All 145 tests in `tests/test_human_review.py` + `tests/test_annotation_store.py` + `tests/plugins/test_parser_offsets.py` + `tests/test_model_interfaces_finish_reason.py` pass. Frontend typecheck + production build clean.
+
+### Known quirks
+
+- **Un-toggle + advance → re-auto-toggle on re-visit.** When the annotator un-toggles truncated but leaves the case otherwise empty, `hasAnnotation` is false so the save is skipped. Next visit re-fires the auto-toggle. Acceptable for single-user workflow; auto-detect is authoritative. Users who want to persist their disagreement should add another chip or a note so the save fires.
+- **Re-run with higher max_tokens clears the auto-flag.** Regenerating a result file with a larger token cap drops `was_truncated` to `false`. Pre-existing annotations with `response_classes: ["truncated"]` keep the chip on (annotator judgment); the UI no longer re-seeds on future loads.
+
+### This completes the Annotation UI Redesign spec
+
+Phases 1-3 all shipped. The remaining items in the TECHDEBT register ([TD-115](TECHDEBT.md) DB column cleanup, [TD-118](TECHDEBT.md) per-plugin native offset emission) are drip-migration follow-ups without user-facing scope.
+
+---
+
+## [Unreleased] — Annotation UI Ergonomics Redesign, Phase 2
+
+Phase 2 layers three improvements onto the Phase 1 ergonomic core: parser-click semantics, auto-inferred negative spans on parser disagreement, and backend-emitted parser-highlight anchors. Partially resolves [TD-116](TECHDEBT.md#TD-116); native plugin-level offset emission is deferred as [TD-118](TECHDEBT.md#TD-118).
+
+### Parser-offset plumbing (Checkpoint 2A)
+
+Every new result entry now carries `parsed_char_start` / `parsed_char_end` siblings of `parsed_answer` in the `output` dict, so the frontend's amber parser-highlight region is painted from backend-emitted offsets instead of client-side substring search. Flow:
+
+- `ParsedAnswer` dataclass gains optional `char_start` / `char_end` fields ([src/plugins/base.py](src/plugins/base.py)). `to_dict()` omits them when `None` for minimal JSON diff vs legacy files.
+- New helper `resolve_parser_offsets(raw_response, value)` in [src/plugins/parse_utils.py](src/plugins/parse_utils.py) — the universal write-time fallback. Type-aware (scalar str / int / float / bool only; returns `None` for list / dict / tuple), end-first (last occurrence preferred), case-insensitive fallback for capitalisation variants.
+- [src/stages/run_testset.py](src/stages/run_testset.py) and [src/web/jobs.py](src/web/jobs.py) write paths: prefer `ParsedAnswer.char_start/end` when the parser emitted them natively; otherwise invoke `resolve_parser_offsets`. Both offsets written as `parsed_char_start` / `parsed_char_end` fields in the `output` dict.
+- [src/web/api/human_review.py](src/web/api/human_review.py) `_project_case` passes the offsets through to the ReviewCase payload.
+- Frontend `ReviewCase` type extended ([frontend/src/types/review.ts](frontend/src/types/review.ts)); new `resolveParserMatch(case)` in [response-panel.tsx](frontend/src/components/review/response-panel.tsx) prefers backend offsets, falls back to client-side substring search for legacy result files.
+- `parserMatchesAnySpan` consolidated into [frontend/src/lib/span-autodetect.ts](frontend/src/lib/span-autodetect.ts) — was previously duplicated across `review.tsx` and `response-panel.tsx`.
+
+Native per-plugin emission (the ParsedAnswer.char_start/end path) is scoped to TD-118 — all 21 plugins currently rely on the write-time fallback, which for end-first parsers is indistinguishable from native emission in the majority of cases.
+
+### Parser-click semantics (Checkpoint 2B)
+
+The amber parser-highlight region gains two new click behaviours:
+
+- **Plain click on amber region** — confirm the parser's extraction by creating an answer span at the clicked word (existing behaviour, preserved).
+- **Shift+click on amber region** — toggle `false_positive` classification (new). Previously Shift+click anywhere inside the response created a negative span; now, inside the parser region specifically, the UI treats the click as "parser is wrong about THIS extraction" rather than "let me mark this region as negative evidence."
+- **Shift+drag crossing the amber region** — creates a negative span over the full dragged range, same as before. Drag never enters the click handler, so drag-wins-over-click is automatic.
+
+Tooltip on the amber region updated: `"Parser extracted: X · click to confirm · Shift+click to flag false-positive · Shift+drag for negative span"`.
+
+### Auto-inferred negative spans (Checkpoint 2C)
+
+When the annotator marks an answer span at region Y while the parser extracted a different region X, the UI now auto-synthesises a **dotted-rose negative mark at X** tagged `source: "auto_inferred"`. Captures "parser grabbed the wrong spot" without a second deliberate action from the annotator.
+
+- [MarkSpan.source](frontend/src/types/review.ts) (optional, `"manual" | "auto_inferred"`) — default `"manual"` when absent on legacy records.
+- `DraftAnnotation.auto_negative_inferred` sticky per-draft boolean flag prevents re-creation on subsequent mutations (dismissal via removal stays dismissed for the draft lifetime). Cleared on case advance.
+- Auto-synthesis folded inside the SAME `updateDraft` setter as the answer span commit — one `undoStack.push` snapshots both mutations as a single undo entry (Ctrl+Z undoes both the span AND the auto-negative atomically).
+- Auto-inferred marks skip `mergeOrAppendMark` (direct append); manual drag overlapping an auto-inferred one removes the auto entry first, preserving clean source discrimination.
+- Rendering: dotted-rose border at ~60% opacity of manual negatives (`border-dotted border-rose-400 bg-rose-400/8`). Tooltip: `"Auto-inferred from parser disagreement · remove from chip row below"`.
+- Persistence: auto-inferred negatives save to the sidecar with their source tag. Aggregator `_collect_negative_records` / `_negative_span_analysis` preserve the field on each example record; groups merge auto and manual uniformly (user-confirmed default — downstream filtering is a one-field query without a schema change).
+
+### Tests
+
+- 23 unit tests for `resolve_parser_offsets` in new file [tests/plugins/test_parser_offsets.py](tests/plugins/test_parser_offsets.py) — type dispatch, end-first preference, case-insensitive fallback, graceful `None` on non-scalars.
+- 2 API integration tests in [tests/test_human_review.py](tests/test_human_review.py): `test_phase2_parser_offsets_pass_through_api`, `test_phase2_parser_offsets_absent_on_legacy_files`.
+- 2 aggregator tests: `test_phase2_auto_inferred_negative_preserves_source_in_report` (manual + auto merge in one group, source preserved on examples), `test_phase2_legacy_negatives_default_source_manual` (pre-Phase-2 records default to `"manual"`).
+
+All 129 tests in `tests/test_human_review.py` + `tests/test_annotation_store.py` + `tests/plugins/test_parser_offsets.py` pass. Frontend typecheck + production build clean.
+
+### Format-version bump
+
+None. Phase 2 adds optional fields only — `ReviewCase.parsed_char_start/end`, `MarkSpan.source`, `NegativeExample.source`. Old v2.6 / v2.7 reports still parse; `REPORT_FORMAT_VERSION` stays at `"2.7"`.
+
+### Scope note — plugin migration deferred
+
+The Phase 2 plan proposed migrating 9 "easy" parsers to emit offsets natively. On closer inspection, the per-strategy offset threading was more involved than the 2-4 lines per parser the plan estimated (many parsers return a canonical `value` that isn't a literal substring of the response — `inverted_cup` returns `"flip"` / `"wrong"`, `false_premise` returns enum labels, etc.). The universal write-time fallback `resolve_parser_offsets` handles every case pragmatically and its behaviour is indistinguishable from native emission for end-first parsers in the common case. Native emission is deferred to [TD-118](TECHDEBT.md#TD-118) as a drip-migration as annotation evidence identifies specific plugins where the distinction matters.
+
+---
+
+## [Unreleased] — Annotation UI Ergonomics Redesign, Phase 1
+
+Sustained solo-annotator usage exposed three ergonomic problems in `/review` that accumulated across v3 iterations: modifier-combo fatigue (Ctrl/Alt/Shift+click for four different mark types), dock round-trip overhead on the most frequent operation (answer-span commit), and taxonomy creep in the response-class chip bar (seven codes with blurred boundaries). Phase 1 of the redesign addresses all three. Spec at [ANNOTATION_UI_REDESIGN.md](ANNOTATION_UI_REDESIGN.md); implementation driven by the five-checkpoint plan at [.claude/plans/okay-that-is-a-refactored-frost.md](.claude/plans/okay-that-is-a-refactored-frost.md).
+
+### Keybinding grammar — hold-to-modify
+
+The `/review` workspace now uses held letter keys as the mark-type modifier instead of browser modifier chords:
+
+- Plain drag-select / click → **answer span** (commits immediately, no dock)
+- Hold **A** + drag/click → **context anchor** (indigo dashed)
+- Hold **D** + drag/click → **answer keyword** (violet dotted)
+- Hold **Shift** + drag/click → **negative span** (rose solid)
+
+Modifier-combo chords are gone (Ctrl/Alt/Shift+click no longer map to alternative mark types). A new `useModifierState()` hook ([frontend/src/hooks/use-modifier-state.ts](frontend/src/hooks/use-modifier-state.ts)) tracks held keys globally with precedence A > D > Shift, clears on `window.blur` / `document.visibilitychange` (prevents stuck-modifier after Cmd-Tab), and suppresses tracking while focus is in a text field so `A` / `D` can be typed into notes without firing.
+
+### Navigation — Space as primary
+
+- **Space** — if draft has content, save and advance; if empty, advance (skip equivalent)
+- **Ctrl/Meta+Space** — discard the active draft and advance (pinky-friction = deliberate destructive signal)
+- **←** — previous case
+- **Ctrl/Meta+Z / Ctrl/Meta+Shift+Z** — undo/redo (10-step per-case stack, clears on advance)
+- **?** — help dialog
+
+Removed keys: `S` (skip) and `ArrowRight` — Space subsumes both. Help dialog updated to reflect the new grammar.
+
+### Classification taxonomy collapse — seven classes → four
+
+Response classes narrowed to `{truncated, unrecoverable, false_positive, hedge}`:
+
+- `gibberish` / `refusal` / `language_error` fold into `unrecoverable`
+- `verbose` dropped entirely — Extractable is implicit when a span exists
+- `parser_ok` stays auto-inferred at aggregation time
+- Shortcut keys: `2/E` Truncated · `3/Q` Unrecoverable · `4/F` False-positive · `5` Hedge (number keys retained for muscle-memory compat; letters are the WASD-cluster ergonomic win)
+
+Migration is **read-only** — no DB SQL migration needed. `_migrate_annotation()` ([src/web/api/human_review.py](src/web/api/human_review.py)) applies the rename map + drop set on every load path (`_load_annotations_from_store`, `GET /annotations/{id}`, `POST /report`). Old sidecars round-trip cleanly; next save persists the v4 shape.
+
+### Mark-type taxonomy — negative_keywords folded into negative_spans
+
+The distinction between "negative span" and "negative keyword" was noise in practice. Phase 1 collapses them: the UI produces only one negative type, and the aggregator emits a single negative-group shape.
+
+- `_migrate_annotation()` appends any legacy `negative_keywords` entries to `negative_spans` on load
+- `_collect_negative_records()` in the aggregator ([src/web/human_review_aggregator.py](src/web/human_review_aggregator.py)) defensively folds both arrays
+- `_negative_span_analysis()` no longer emits `mark_type` on group records — the TS type for `NegativeMarkGroup.mark_type` is now optional, so legacy v2.6 reports still render cleanly
+- DB column `negative_keywords` stays on the `annotations` table (lightweight dead weight; cleanup queued as TD-115)
+
+### Immediate-commit drag-select — dock deleted
+
+`frontend/src/components/review/annotation-dock.tsx` is deleted. The old pending/position/format round-trip is gone; drag-select now commits a span immediately on mouse-up with auto-detected `position` / `format` (the dock's override UI was never used in practice). `autoPosition` / `autoFormat` extracted to [frontend/src/lib/span-autodetect.ts](frontend/src/lib/span-autodetect.ts). Note editor (the only dock feature still used) moved to a dedicated [frontend/src/components/review/note-panel.tsx](frontend/src/components/review/note-panel.tsx).
+
+### Undo/redo + visual feedback + toasts
+
+- New `useUndoStack<T>` hook ([frontend/src/hooks/use-undo-stack.ts](frontend/src/hooks/use-undo-stack.ts)) — snapshot-based (structuredClone), 10-step history, `reset()` on case advance so undo never crosses case boundaries (spec §3.5). Wired into `updateDraft`; every mutation pushes the previous value.
+- `savingRef` race guard in `goToIndex` — drops a second Space press while the first save is in flight.
+- Response-panel root carries `data-modifier={activeModifier ?? "none"}` with Tailwind `data-[modifier=*]:bg-{tone}-500/5` tint overlay; plain-word hover preview inherits the target mark colour via `group-data-[modifier=*]:hover:*` variants.
+- `sonner` toasts: `saved ✓` on save success, `discarded` on Ctrl+Space with an active draft.
+
+### Report schema v2.6 → v2.7
+
+`REPORT_FORMAT_VERSION = "2.7"`. Old v2.6 reports on disk continue to parse (the TS types narrowed `NegativeMarkGroup.mark_type` to optional; the dialog null-guards the field at render). The `mark_type` badge in the Negatives tab renders only when the field is present.
+
+### Tests
+
+Seven new migration tests in [tests/test_annotation_store.py](tests/test_annotation_store.py): `test_migrator_drops_verbose_correct_class`, `test_migrator_folds_model_failure_codes_to_unrecoverable` (parametrized × 3), `test_migrator_dedupes_collapsed_unrecoverable`, `test_migrator_folds_negative_keywords_into_negative_spans`.
+
+Four new API/aggregator tests in [tests/test_human_review.py](tests/test_human_review.py): `test_annotate_rejects_dropped_v3_classes`, `test_annotate_migrates_legacy_refusal_to_unrecoverable`, `test_v2_7_negative_group_omits_mark_type`, `test_v2_7_legacy_negative_keywords_fold_into_negative_spans_at_report_time`.
+
+All 102 tests in `tests/test_human_review.py` + `tests/test_annotation_store.py` pass. Pre-existing lint warnings and unrelated plugin-test failures on the branch are untouched.
+
+### Phases 2 and 3 — deferred
+
+Parser-click semantics (confirm parser extraction by clicking the amber region), auto-inferred negative span on parser disagreement, and parser-position audit across 21 plugins are Phase 2 ([TD-116](TECHDEBT.md#TD-116)). Inference-time `was_truncated` flag + auto-prefilled Truncated chip are Phase 3 ([TD-117](TECHDEBT.md#TD-117)).
+
+---
+
+## [Unreleased] — Cross-plugin parser alignment, Phase 1
+
+Work driven by the cross-plugin alignment investigation at [plans/parser-alignment-cross-plugin.md](../.claude/plans/parser-alignment-cross-plugin.md). This entry covers (a) the measure_comparison parser refactor that prompted the investigation, and (b) the Phase 1 utility extraction that consolidates patterns already proven in individual plugins.
+
+### measure_comparison parser — strategy reorder + comparative widening
+
+Re-analysis of 97 annotated qwen3-0.6b cases showed 31 misaligned extractions (0.67 alignment ratio). Two bug classes identified:
+
+- **Bold-before-label ordering** — the `bold` strategy grabbed values from reasoning text (`**419.526 lb**` inside "heavier than **419.526 lb**") before the `label_line` strategy got a chance to respect an explicit `**Answer:** 649.888 lb` trailer.
+- **Rigid comparative pattern** — `is <COMPARATIVE>` required direct adjacency; `"is indeed heavier"`, `"is clearly longer"` fell through to lower-confidence strategies.
+
+Changes in [src/plugins/measure_comparison/parser.py](src/plugins/measure_comparison/parser.py):
+
+- Strategy order: `boxed → label_line → bold → value_unit_comparative → …` (label_line promoted from #3 to #2).
+- `value_unit_comparative`: allow up to 2 intermediate adverbs between `is` and the comparative in both forward and reverse patterns.
+- Forward and reverse comparative patterns now both run unconditionally; when both match, the one whose span ends later in the text wins (end-first tie-break). Prevents the forward pattern grabbing an early "X kg is much heavier" when a later "the lighter one is Y oz" is the real answer.
+- Apply `strip_verification_tail(text)` only to the `keyword_incomparable` and `keyword_equal` strategies (via a separate `text_for_keywords` variable) — boxed / bold / label keep the raw text so answer spans in verification sections aren't lost.
+
+Existing test updated: `test_bold_value_unit` now asserts `parse_strategy == "label_line"` (the strategy that correctly captures the answer); new `test_bold_value_unit_no_label` preserves the old bold-wins scenario for the label-absent case.
+
+### Phase 1 shared-utility extraction
+
+Five helpers promoted into [src/plugins/parse_utils.py](src/plugins/parse_utils.py). Each lifts the canonical implementation from its owner plugin; owners now import from `parse_utils` instead of keeping local copies.
+
+- **`normalize_unicode(text)`** — curly/smart quote and apostrophe normalization (U+2018/2019/201C/201D → ASCII). Lifted from measure_comparison; Phase 5 adopts it across all 21 parsers and extends the helper with U+2032 / U+2033 (prime/double-prime) fold.
+- **`normalize_for_label_matching(text)`** — strip `\text{X}` / `\mathbf{X}` / `\mathrm{X}` etc. wrappers, collapse `\quad` / `\,` / `\;` spacing macros, swap `$$` and `$` for spaces. Lifted from picture_algebra.
+- **`try_parse_number(text, word_map=None)`** — returns `int` for integer literals, `float` for decimals, never silently truncates. Lifted from picture_algebra; supports word-number fallback with negative prefixes (`-`, `negative`, `minus`, `−` U+2212).
+- **`detect_sentinel_keyword(text, keyword_dict, lang, …)`** — multilingual sentinel scan over the true opening and closing sentences of the response (splits the full text instead of sliding a window from the end). Picture_algebra's `_CANNOT_DETERMINE_KEYWORDS` / `_NO_SOLUTION_KEYWORDS` dicts stay plugin-local; the detection logic is shared.
+- **`has_contextual_marker(text, position, pattern_dicts, lang, …, positional=False)`** — window-scoped contextual match around a keyword hit; `positional=True` requires the match span to contain `position` (replaces carwash's distinct proximity/positional implementations).
+
+Plugin migrations:
+
+- **picture_algebra** ([src/plugins/picture_algebra/parser.py](src/plugins/picture_algebra/parser.py)) — deleted 95 lines of local `_LATEX_WRAP_RE` / `_LATEX_SPACING_RE` / `_normalize_for_label_matching` / `_try_parse_number` / `Number` definitions, imports from parse_utils instead.
+- **carwash** ([src/plugins/carwash/parser.py](src/plugins/carwash/parser.py)) — `_is_conditional_walk` and `_is_conditional_drive` now delegate to `has_contextual_marker`. Pattern dicts (`_PRE_WALK_CONDITIONAL`, `_WALK_CONDITIONAL`, `_WALK_NEGATIVE`, `_DRIVE_LISTING`) stay local; only the window/positional scan logic moves.
+- **measure_comparison** ([src/plugins/measure_comparison/parser.py](src/plugins/measure_comparison/parser.py)) — inline `text.replace("\u2018", "'") …` chain replaced by `normalize_unicode(text)`.
+
+#### Helper tests
+
+30 new tests in [tests/plugins/test_parse_utils_new_helpers.py](tests/plugins/test_parse_utils_new_helpers.py) covering each helper's contract: unicode round-trips, nested LaTeX wrapper stripping, int-vs-float discipline (including the `float("22.2") != 22` invariant), opening-vs-closing sentinel scan, positional-vs-proximity marker detection, English-always-fallback for non-English language codes.
+
+All 292 tests pass in the touched plugins (carwash + measure_comparison + new helpers). The 14 failures in `tests/plugins/` (ascii_shapes, cellular_automata_1d, linda_fallacy, registry) are pre-existing and tracked as [TD-101](TECHDEBT.md#TD-101).
+
+#### Plan status
+
+Phase 1 of 8 from the cross-plugin alignment plan. Phase 2 (architecture hygiene) is next.
+
+### Phase 2 — architecture hygiene (A3 naming normalization)
+
+Consolidated `parse_strategy` names across 14 parsers to two canonical terminal values:
+
+- **`"empty"`** — empty-response early-return branch (before any strategy runs)
+- **`"fallback"`** — end-of-pipeline give-up (after all strategies have been tried)
+
+Previously the same semantic states were labelled with four inconsistent strings (`"failed"` ×22, `"none"` ×9, `"parse_error"` ×1, plus `"fallback"` ×1). The improvement-report `strategy_breakdown` now cleanly groups cross-plugin failure modes.
+
+Migrated plugins: arithmetic, ascii_shapes (4 sites), cellular_automata_1d, game_of_life (3 sites), linda_fallacy (2 sites), object_tracking (2 sites), picross (3 sites), picture_algebra (2 sites), symbol_arithmetic (2 sites), sally_anne, time_arithmetic (4 sites), family_relations, fancy_unicode (2 sites), encoding_cipher (2 sites). Total: 27 call-site edits.
+
+#### A1 re-classified as non-issue
+
+The plan's A1 task (migrate bare `re.search` / `re.findall` to `re_search_last` in game_of_life, arithmetic, cellular_automata_1d) turned out to be a false positive from Agent 2's audit. Manual review showed:
+
+- **game_of_life** / **cellular_automata_1d** `re.findall` hits extract ALL grid cells (correct multi-value extraction; not end-first answer extraction).
+- **arithmetic** `re.search` hits sit inside an already-reversed (end-first) line iterator — the outer loop provides the end-first semantics.
+
+No code changes in A1. The audit wasn't wrong that these are `re.search`/`re.findall` calls, it was wrong that they violated end-first principle. Documented for future auditors.
+
+#### Test updates
+
+One test in [tests/test_symbol_arithmetic_plugin.py](tests/test_symbol_arithmetic_plugin.py) (`test_empty_response`) updated to assert the new `"empty"` name instead of `"failed"`. All other 968 tests continue to pass; the 14 pre-existing failures in ascii_shapes / cellular_automata_1d / linda_fallacy / registry / grid_tasks / object_tracking ([TD-101](TECHDEBT.md)) are unchanged.
+
+### Phase 3 — `strip_verification_tail` propagation
+
+Extended the tail-stripping protection to 7 more parsers that were previously vulnerable to the verification-tail contamination bug class (see the [end-first parsing convention](.claude/CLAUDE.md#6-end-first-parsing-convention) in CLAUDE.md). Previous adoption: 7/21 parsers. New adoption: 14/21.
+
+Migrated plugins and the strategies each one now protects:
+
+- **arithmetic** — weaker strategies (`keyword_search`, `equals_pattern`, `last_number`, `answer_patterns`) now run on a verification-stripped copy. `latex_boxed` stays on raw text because `\boxed{}` is a strong signal anchor that usually precedes any verification section.
+- **grid_tasks** — `answer_pattern`, `quoted`, `last_line`, `last_number` run on stripped text; `boxed_latex`, `bold_markdown`, `json_extraction`, `code_block` stay on raw because those formats rarely appear inside verification sections. Also normalized `"empty_response"` → `"empty"` and `"no_match"` → `"fallback"` while here.
+- **symbol_arithmetic** — `equals_pattern`, `last_symbol`, and the `undefined_detection` pre-check run on stripped text; `boxed_symbol`, `labelled_answer`, `bold_symbol` stay on raw. The `undefined_detection` case is important: a model stating "ans is ⊕. Verification: no result in the table for this pair." would otherwise re-trigger the `no result` keyword.
+- **ascii_shapes** — `response_lower` is now computed from a stripped copy, which flows to `_parse_dimensions`, `_parse_count`, and `_parse_position` uniformly. Preserves `response_original` for `raw_response` bookkeeping.
+- **misquote** — Strategies 4 (`keyword_inference`) and 5 (`partial_q1`) run on stripped text. Strategies 1-3 (numbered / labelled / bare pair) stay on raw because they require format-specific structure that doesn't survive casual re-statement.
+- **family_relations** — Strategies 3-6 (`label_line`, `is_n_tail`, `last_number`, `spelled_out`) run on stripped text. Boxed / bold stay on raw.
+- **strawberry** — extended `_parse_count`, `_parse_reversed_word`, and `_parse_nth_letter` (`_parse_boolean` already had it). All three sub-parsers apply strip to strategies past boxed/bold.
+
+#### Design choice: two plugins intentionally excluded
+
+- **linda_fallacy** — extracts a 6+ item ranked list. Verification sections rarely contain a full list of that length, so stripping has near-zero benefit but non-zero regression risk (if a tail contained a corrected ranking).
+- **inverted_cup** — the plugin's design is "if `flip` is mentioned anywhere, the model understood the key insight" (documented exception in CLAUDE.md). Stripping the verification tail where the flip mention lives would flip (pun intended) correct answers to wrong.
+
+Grid-extraction plugins (`game_of_life`, `cellular_automata_1d`, `picross`) were not in Phase 3 scope — their parsers extract multi-cell grids, not keyword answers, and the risk/reward calculation is different. A separate Phase 3b could evaluate them once annotation evidence is available.
+
+#### Phase 3 tests
+
+969 of 970 tests in the broad plugin suite pass. The single failure (`test_parser_end_first.py::TestObjectTrackingParser::test_answer_prefix_last`) is pre-existing and documented as part of [TD-101](TECHDEBT.md); verified by running `git stash && pytest` on a clean tree. Zero regressions introduced by the Phase 3 migrations.
+
+### Phase 4 — `build_answer_label_re` adoption + plugin-local `_EXTRA_LABELS`
+
+Five plugins previously carried hardcoded English-only answer-label patterns. Migrated to the shared multilingual `build_answer_label_re(lang)` with plugin-local `_EXTRA_LABELS` dicts (following the carwash pattern from v2.21.0). Each plugin's extras capture domain-specific terms that aren't in the shared `ANSWER_LABELS` (answer / result / final answer / solution / response).
+
+Migrated plugins:
+
+- **arithmetic** — replaced the `match_words` substring-list in `_strategy_keyword_search` and the four hardcoded regex patterns in `_strategy_answer_patterns`. Extras: `therefore` / `equals` (EN) + Spanish / French / German / Chinese / Ukrainian equivalents. Added `self._label_alt` cache populated once per `parse()` call so strategy methods don't re-derive the alternation.
+- **strawberry** — three sub-parsers migrated (`_parse_count`, `_parse_reversed_word`, `_parse_nth_letter`). Each has its own `_EXTRA_LABELS`: count → `count` / `total` / `there are`, reverse → `reversed` / `backwards`, letter → `letter` / `character`, all with ES / FR / DE / ZH / UA translations. Uses per-call `_build_label_alt(lang, extra)` helper.
+- **time_arithmetic** — replaced module-level `_LABEL` regex (English-only: `answer|time|result|day|duration|…`) with an `lru_cache`-backed `_label_regex(lang)` that builds once per unique language. Extras: `time` / `day` / `duration` + six-language translations. Three call sites updated to `_label_regex(self._lang)`. `_FINAL_ANSWER_LABEL` (the higher-priority variant) left English-only — it's a specific high-signal trailer that non-English responses have rarely produced in testing.
+- **symbol_arithmetic** — `_strategy_labelled`'s pattern (`final\s+answer|answer|result|therefore`) replaced with `_build_label_alt(lang)`. Extras: `therefore` (EN) + conclusions in five other languages. The `@staticmethod` got a `lang` parameter threaded through the strategy-dispatch loop via a lambda wrapper.
+- **picture_algebra** — `_strategy_final_answer_block`'s hardcoded 22-term multilingual alternation (built by pasting all six languages inline) replaced with the shared helper. Extras: `conclusion` (EN) + `висновок` / `розв'язок` (UA). Coverage equivalent or better for every language vs. the legacy inline regex.
+
+Net adoption: `build_answer_label_re` went from 4/21 to 9/21 parsers. Combined with the 3 parsers that already used it without needing extras (carwash, encoding_cipher, inverted_cup, sally_anne, measure_comparison), total coverage of the shared label regex is now 10/21.
+
+#### Plugins intentionally excluded from Phase 4
+
+- **false_premise** — parses refusal signals, not answer labels; shared `ANSWER_LABELS` doesn't apply.
+- **linda_fallacy** — extracts 6+ item ranked lists, not single labelled answers.
+- **misquote** — uses domain-specific Q1/Q2 labels (`attribution` / `sentiment` / `correct` / `agree`), orthogonal to the shared regex.
+- **family_relations**, **grid_tasks**, **ascii_shapes** — already use `build_answer_label_re` in their current form.
+- **game_of_life** / **cellular_automata_1d** / **picross** — grid-extraction plugins, no label step.
+
+#### Phase 4 tests
+
+969 of 970 plugin tests pass. Arithmetic (8), strawberry (148), time_arithmetic (63), symbol_arithmetic (42) test suites all green. Same single pre-existing failure as before ([TD-101](TECHDEBT.md)); zero Phase 4 regressions. picture_algebra has a sympy dependency gap in this environment so tests couldn't collect, but the parser module loads cleanly and the migration is a pure regex swap with equivalent coverage per-language.
+
+### Phase 8 kickoff — object_tracking parser (EN/UA annotation-driven refactor)
+
+First annotation-evidence-driven parser refactor under Phase 8 of the cross-plugin alignment plan.  129 EN/UA cases annotated across 4 models (gemma-2-27b, gpt-oss-120b-cloud, gemma3-12b-cloud, gpt-oss-20b-cloud) revealed 36 misalignments (alignment_ratio 0.712).  Three dominant failure modes accounted for >95% of the misses; each has a targeted fix in [src/plugins/object_tracking/parser.py](src/plugins/object_tracking/parser.py).
+
+#### Failure mode 1 — conclusion-anchored plain trailer (88 of 129 cases)
+
+Verbose models close reasoning with `Therefore, the X is in the Y.` / `**Conclusion:** … on the Y.` / `Висновок: куля на Y.`.  The existing `location_keyword` strategy walked the full response and frequently captured intermediate container references (`glass`, `cup`, `microwave`) before reaching the final location.  The existing `first_sentence_location` only caught upfront answers, not tail answers.
+
+Fix: **new `_strategy_anchored_trailer` strategy** inserted between `first_sentence_location` and `sentence_pattern`.  It:
+
+1. Finds the LAST reasoning-anchor in the response (end-first) — `Conclusion`, `Therefore`, `Final Location`, `Deduction`, `Inference`, plus UA `Висновок` / `Відповідь` / `Отже` / `Тому`, plus extrapolated ES/FR/DE/ZH anchors.
+2. Scans the 400 chars following the anchor for `<preposition> <1-3 words>` captures (preposition per-language: EN `in/on/at/inside/within the`, UA `на/в/у/всередині`, DE `in/auf/im/innerhalb dem/der`, etc.).
+3. Accepts the LAST capture that matches `known_locations` or a known synonym.
+
+Key design choices:
+
+- **End-first within the post-anchor tail** — latest match wins, catches responses that restate intermediate and final locations both.
+- **Multi-word capture** (up to 3 words) — needed for UA `"письмовому столі"` / `"на підлозі"` and for DE compounds.  EN single-word locations still match because the capture strips trailing punctuation and the known-location intersection is token-based.
+- **English anchors always merged as fallback** for non-English languages — models frequently reason partially in English even when prompted in UA/DE.
+
+#### Failure mode 2 — bold trailer at end of verbose response (21 cases)
+
+Existing `_strategy_bold_keyword` used FIRST-match to handle concise answers like `The keys are on the **counter**. [distractors follow]`.  But verbose models flip the shape: `[reasoning] Therefore, the grape is in the **cabinet**.` with the answer bolded at the END.
+
+Fix: **two-pass `_strategy_bold_keyword`**.
+
+- Pass 1 (existing, unchanged) — scan bolds forward, return first one matching `known_locations`.
+- Pass 2 (new, end-first) — if Pass 1 misses, match `(?i)<anchor>\s*\*\*([^*\n]+?)\*\*` where `<anchor>` is a language-specific preposition prefix (`the` / `on the` / `in the` for EN, `на` / `в` / `всередині` for UA).  Last anchored bold wins.  The anchor requirement avoids the format-only trap where `**Conclusion:**` / `**Reasoning:**` headings get grabbed (86% capture_exact_rate with anchor vs 38% without, per 21-case sample).
+
+#### Failure mode 3 — `last_word` catches junk tokens (5 cases)
+
+`parser_extracted` values from misalignments: `"as"`, `"bottom"`, `"top"`, `"relative"`, `"within"`.  These are prepositions/modifiers that occur as the last non-stopword in tails like "...relative to the original position" or "...within the system".  Current stop_words list catches `on`/`in`/`at` but not these secondary positional words.
+
+Fix: **`_strategy_last_word` now requires the candidate to match `known_locations` (or resolve to one via synonym normalization)**.  When no match, returns `None` and falls through to `fallback`.  Trade-off: rare cases where the model only mentions the location via a paraphrase become unparseable instead of silently mis-parseable — preferable per annotation data (a failed parse is a clear signal; a wrong parse is invisible until someone annotates).
+
+#### Multilingual extrapolation
+
+The EN/UA annotation sample drove the anchor and preposition dictionaries; ES/FR/DE/ZH entries were extrapolated using the same reasoning-closure vocabulary (`conclusión` / `por lo tanto`; `conclusion` / `donc` / `par conséquent`; `schlussfolgerung` / `daher` / `folglich`; `结论` / `因此` / `所以`).  These extrapolated entries are annotation-pending — the Phase 8 follow-up will validate them against a ≥50-case annotation sample per language.
+
+#### Coverage numbers
+
+- 46 object_tracking tests pass (was 39 pre-Phase-8).  7 new tests target the three failure modes with real annotation-sample responses: `test_phase8_anchored_trailer_therefore_in_the`, `test_phase8_anchored_trailer_bold_end`, `test_phase8_bold_trailer_anchored`, `test_phase8_last_word_rejects_junk_token`, `test_phase8_ua_bold_trailer_na_prefix`, `test_phase8_ua_multiword_location`, `test_phase8_conclusion_anchor_plain_trailer_ua`.
+- Full test suite: 1097 passed / 28 failed.  The 28 failures are pre-existing TD-101 / TD-111 entries (ascii_shapes, cellular_automata_1d, linda_fallacy, grid_tasks, picture_algebra collection errors) — zero new regressions.
+- Simulated parsing across 7 representative annotation-sample responses: 6 / 7 correct (86% sample alignment; the 1 miss was a first_sentence_location firing on a distractor mention, which is a known design trade-off — see TD-101).
+
+#### Aggregator bug noticed (TD-113 candidate)
+
+`strategy_breakdown.parser_ok` is 0 for every strategy in the annotation output, but `alignment_ratio` is 0.712 (89 aligned cases).  The human-review aggregator isn't back-filling per-strategy `parser_ok` from span-parser alignment data as promised by the v3 annotation schema.  Noted for fix but out of scope for this parser refactor — tracked in TECHDEBT as [TD-113](TECHDEBT.md).
+
+### Phase 5 — `normalize_unicode` adoption at parse entry
+
+Every parser now folds curly/smart quotes, apostrophes, and measurement primes to ASCII before any strategy runs. Pre-Phase-5 coverage was 1/21 (measure_comparison only); post-Phase-5 coverage is 21/21. The shared helper was also extended to cover U+2032 (prime) and U+2033 (double prime) — commonly emitted in measurement notation (`5′`, `5″`) — so unit parsing no longer has to special-case them.
+
+Why this matters: hand-written regex patterns across the codebase use ASCII `'` and `"`, but models frequently emit `’` / `”` / `′` / `″` — especially in non-English responses and measurement-heavy tasks. Before Phase 5, those quotes silently caused pattern-match failures that looked like parser bugs. One normalization at parse entry means every downstream strategy (label regex, boxed extraction, bold matching, unit patterns) gets clean ASCII.
+
+Plugin migrations (20 of 21 — measure_comparison already had it):
+
+- Single-entry parsers wrap `response.strip()` in `normalize_unicode(…)`: arithmetic, cellular_automata_1d, carwash, family_relations, inverted_cup, misquote, object_tracking, sally_anne, symbol_arithmetic.
+- Dispatch parsers normalize once at `parse()` entry and pass the cleaned response to sub-parsers: strawberry (4 sub-types), time_arithmetic (4 sub-types).
+- Grid / structured parsers normalize after Unicode-space collapse or before shape extraction: ascii_shapes, grid_tasks, game_of_life, picross, cellular_automata_1d.
+- Mode-dispatching parsers normalize before mode routing: encoding_cipher (decode_only vs decode_and_act), fancy_unicode (decode_only vs decode_and_act).
+- Linda_fallacy normalizes before strategy dispatch.
+- Picture_algebra normalizes `raw` before LaTeX wrapper stripping so `normalize_for_label_matching` sees ASCII.
+- **false_premise** — deleted local `_normalize_quotes` helper (8-line function) and redirected the single call site to shared `normalize_unicode`. The primes extension in the shared helper preserves false_premise's 6-char coverage exactly.
+
+#### Shared helper extension
+
+[src/plugins/parse_utils.py](src/plugins/parse_utils.py) `normalize_unicode` now handles:
+
+| Codepoint | Char | ASCII fold |
+|-----------|------|-----------|
+| U+2018 | ‘ | `'` |
+| U+2019 | ’ | `'` |
+| U+201C | “ | `"` |
+| U+201D | ” | `"` |
+| U+2032 | ′ | `'` *(new)* |
+| U+2033 | ″ | `"` *(new)* |
+
+#### Phase 5 tests
+
+1090 of 1118 plugin tests pass; the 28 failures are pre-existing and tracked under [TD-101](TECHDEBT.md) (plugin-test drift) and [TD-111](TECHDEBT.md) (sympy dependency gap). Verified identical before/after pass count via `git stash` comparison — zero regressions introduced by the Phase 5 migration. The only parse-time behavior change is that `′` and `″` now fold to ASCII, which was previously the behavior only in false_premise.
+
+#### Plan status
+
+Phase 5 of 8 complete. Phases 1–5 (the "consolidation and propagation" half of the plan) are now all landed; the remaining phases (6 — strategy-ordering audit, 7 — numeric-type discipline, 8 — annotation-driven refinement) are higher-judgment and require annotation evidence or per-plugin evaluation rather than bulk refactors.
+
+---
+
 ## [2.26.0] - April 20, 2026
 
 ### Encryption-at-rest for persisted API credentials — TD-085 resolved

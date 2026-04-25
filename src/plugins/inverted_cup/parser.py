@@ -25,6 +25,7 @@ from src.plugins.base import ResponseParser, ParsedAnswer
 from src.plugins.parse_utils import (
     re_search_last, last_sentences,
     merge_keywords, build_answer_label_re, get_language,
+    normalize_unicode,
 )
 
 # ---------------------------------------------------------------------------
@@ -174,7 +175,7 @@ class InvertedCupParser(ResponseParser):
                 error="Empty response",
             )
 
-        text = response.strip()
+        text = normalize_unicode(response.strip())
         lang = get_language(task_params or {})
 
         # --- Strategy 1: LaTeX boxed (last match) ---

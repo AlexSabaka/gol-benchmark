@@ -23,6 +23,8 @@ from src.plugins.parse_utils import (
     build_word_to_int,
     build_answer_label_re,
     get_language,
+    normalize_unicode,
+    strip_verification_tail,
 )
 
 _INT_PATTERN = re.compile(r"(?<![.\d])\d+(?![.\d])")
@@ -62,9 +64,13 @@ class FamilyRelationsParser(ResponseParser):
                 error="Empty response",
             )
 
-        text = response.strip()
+        text = normalize_unicode(response.strip())
         lang = get_language(task_params or {})
         word_map = build_word_to_int(lang)
+        # Strategies 3-6 scan freely for integers — verification sections
+        # like "Let me recount: 3 + 1 = 4" would override the real answer.
+        # Keep boxed / bold on the raw text (formats rarely appear in tails).
+        text_clean = strip_verification_tail(text)
 
         # Strategy 1: LaTeX \boxed{N} (last match)
         boxed = re_search_last(r"\\boxed\{([^}]+)\}", text)
@@ -87,7 +93,7 @@ class FamilyRelationsParser(ResponseParser):
         label = re_search_last(
             r"(?:" + label_alt + r"|total|count|number\s+of\s+\w+)"
             r"(?:\s+is|\s*=|\s*[:：])\s*(\S+)",
-            text, re.IGNORECASE,
+            text_clean, re.IGNORECASE,
         )
         if label:
             val = _try_parse_int(label.group(1), word_map)
@@ -98,7 +104,7 @@ class FamilyRelationsParser(ResponseParser):
         # Strategy 4: "is N" / "are N" at end of line (last match)
         is_n = re_search_last(
             r"(?:is|are|=)\s+(\S+)\s*[.!]?\s*$",
-            text, re.IGNORECASE | re.MULTILINE,
+            text_clean, re.IGNORECASE | re.MULTILINE,
         )
         if is_n:
             val = _try_parse_int(is_n.group(1), word_map)
@@ -107,7 +113,7 @@ class FamilyRelationsParser(ResponseParser):
                                     parse_strategy="is_n_tail", confidence=0.82)
 
         # Strategy 5: Last standalone integer
-        all_ints = _INT_PATTERN.findall(text)
+        all_ints = _INT_PATTERN.findall(text_clean)
         if all_ints:
             val = _try_parse_int(all_ints[-1], word_map)
             if val is not None:
@@ -119,7 +125,7 @@ class FamilyRelationsParser(ResponseParser):
             r"\b(" + "|".join(re.escape(w) for w in word_map) + r")\b",
             re.IGNORECASE,
         )
-        word_match = re_search_last(word_num_pattern, text)
+        word_match = re_search_last(word_num_pattern, text_clean)
         if word_match:
             val = word_map.get(word_match.group(1).lower())
             if val is not None:
@@ -129,7 +135,7 @@ class FamilyRelationsParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=text,
-            parse_strategy="parse_error",
+            parse_strategy="fallback",
             confidence=0.1,
             error="Could not extract an integer from response",
         )

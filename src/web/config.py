@@ -30,9 +30,11 @@ class WebConfig:
     reports_dir: str = ""
     charts_dir: str = ""
     jobs_dir: str = ""
+    jobs_backup_dir: str = ""
     partial_dir: str = ""
     logs_dir: str = ""
     log_file: str = ""
+    db_path: str = ""
     # configs stays at repo root — it's user-authored, VCS-tracked.
     configs_dir: str = field(default_factory=lambda: str(PROJECT_ROOT / "configs"))
     debug: bool = False
@@ -51,6 +53,8 @@ class WebConfig:
             self.charts_dir = str(Path(self.reports_dir) / "charts")
         if not self.jobs_dir:
             self.jobs_dir = str(root / "jobs")
+        if not self.jobs_backup_dir:
+            self.jobs_backup_dir = str(root / "jobs.bak")
         if not self.partial_dir:
             self.partial_dir = str(Path(self.jobs_dir) / "partial")
         if not self.logs_dir:
@@ -58,6 +62,10 @@ class WebConfig:
         if not self.log_file:
             self.log_file = os.environ.get(
                 "GOL_LOG_FILE", str(Path(self.logs_dir) / "gol_eval.log")
+            )
+        if not self.db_path:
+            self.db_path = os.environ.get(
+                "GOL_DB_PATH", str(root / "gol.db")
             )
 
         for p in (

@@ -260,7 +260,7 @@ class TestParser:
     def test_empty_response(self):
         pa = self._parse("")
         assert not pa.success
-        assert pa.parse_strategy == "failed"
+        assert pa.parse_strategy == "empty"
 
     def test_no_valid_symbol(self):
         pa = self._parse("I think the answer is 42")

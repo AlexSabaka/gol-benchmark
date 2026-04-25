@@ -9,9 +9,14 @@ from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
 from src import __version__
+from src.web import annotation_store as annotation_store_module
+from src.web.annotation_store import AnnotationStore
+from src.web.annotation_store_migrator import migrate_sidecar_files_to_db
 from src.web.api import api_router
 from src.web.config import web_config
+from src.web.db import connect
 from src.web.job_store import JobStore
+from src.web.job_store_migrator import migrate_json_jobs_to_db
 from src.web.jobs import job_manager
 
 _WEB_DIR = Path(__file__).resolve().parent
@@ -20,31 +25,92 @@ _SPA_DIR = _PROJECT_ROOT / "frontend" / "dist"
 
 _logger = logging.getLogger(__name__)
 
-# Job persistence — per-job files under web_config.jobs_dir.
-# `GOL_JOBS_FILE` is retained as a deprecated alias: if set, its parent directory
-# is used as the jobs dir (per-job files live alongside the old monolithic file).
-_legacy_jobs_file = os.environ.get("GOL_JOBS_FILE")
-if _legacy_jobs_file:
-    _logger.warning(
-        "GOL_JOBS_FILE is deprecated; use GOL_DATA_ROOT or move the parent "
-        "directory. Falling back to %s's parent as jobs_dir.",
-        _legacy_jobs_file,
-    )
-    _jobs_dir = Path(_legacy_jobs_file).parent
-else:
-    _jobs_dir = Path(web_config.jobs_dir)
-_job_store = JobStore(_jobs_dir)
+# DB lifecycle lives entirely inside ``lifespan``. Nothing at module-import
+# time touches the filesystem so test harnesses that ``from src.web.app
+# import app`` don't accidentally migrate real ``data/`` contents.
+_db_conn = None
+_job_store: JobStore | None = None
+_annotation_store: AnnotationStore | None = None
 
-# Wire store into the singleton manager so it can persist/load jobs.
-job_manager._store = _job_store
+
+def _startup() -> None:
+    """Open the DB connection, run migrations, and ingest any legacy files."""
+    global _db_conn, _job_store, _annotation_store
+
+    _db_conn = connect(web_config.db_path)
+    _job_store = JobStore(_db_conn)
+    _annotation_store = AnnotationStore(_db_conn)
+
+    # Wire singletons.
+    job_manager._store = _job_store
+    annotation_store_module.set_store(_annotation_store)
+
+    # ── Legacy-file migrators (one-shot, idempotent) ─────────────────────────
+
+    # GOL_JOBS_FILE is retained as a deprecated alias — if set, its parent
+    # directory is scanned for legacy per-job JSONs.
+    legacy_jobs_file = os.environ.get("GOL_JOBS_FILE")
+    if legacy_jobs_file:
+        _logger.warning(
+            "GOL_JOBS_FILE is deprecated; jobs now live in %s. Legacy JSONs "
+            "under %s's parent will be migrated once then moved aside.",
+            web_config.db_path,
+            legacy_jobs_file,
+        )
+        legacy_jobs_dir = Path(legacy_jobs_file).parent
+    else:
+        legacy_jobs_dir = Path(web_config.jobs_dir)
+
+    try:
+        migrated_jobs = migrate_json_jobs_to_db(
+            _job_store, legacy_jobs_dir, web_config.jobs_backup_dir
+        )
+        if migrated_jobs:
+            _logger.info("Migrated %d legacy job records into SQLite", migrated_jobs)
+    except Exception as exc:
+        _logger.warning("Legacy job migration failed: %s", exc)
+
+    try:
+        from src.web.api.analysis import _find_result_file as _resolve_result
+
+        migrated_annots = migrate_sidecar_files_to_db(
+            _annotation_store,
+            web_config.annotations_dir,
+            str(Path(web_config.annotations_dir).parent / "annotations.bak"),
+            results_lookup=_resolve_result,
+        )
+        if migrated_annots:
+            _logger.info(
+                "Migrated %d legacy annotation sidecar(s) into SQLite",
+                migrated_annots,
+            )
+    except Exception as exc:
+        _logger.warning("Legacy annotation migration failed: %s", exc)
+
+
+def _shutdown() -> None:
+    """Persist job state, drop singletons, close the connection."""
+    job_manager.save_to_store()
+    annotation_store_module.set_store(None)
+    job_manager._store = None
+    global _db_conn, _job_store, _annotation_store
+    if _db_conn is not None:
+        try:
+            _db_conn.close()
+        except Exception:
+            pass
+    _db_conn = None
+    _job_store = None
+    _annotation_store = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    """Load historical jobs on startup; save all jobs on shutdown."""
+    """Open DB + migrate on startup; persist + close on shutdown."""
+    _startup()
     job_manager.load_from_store()
     yield
-    job_manager.save_to_store()
+    _shutdown()
 
 
 app = FastAPI(title="GoL Benchmark", version=__version__, lifespan=lifespan)

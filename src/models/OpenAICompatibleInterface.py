@@ -41,11 +41,12 @@ class OpenAICompatibleInterface(ModelInterface):
             messages.append({"role": "system", "content": params["system_prompt"]})
         messages.append({"role": "user", "content": prompt})
 
+        max_tokens = params.get("max_tokens", 2048)
         data = {
             "model": self.model_name,
             "messages": messages,
             "temperature": params.get("temperature", 0.1),
-            "max_tokens": params.get("max_tokens", 2048),
+            "max_tokens": max_tokens,
             "stream": False,
         }
 
@@ -87,11 +88,27 @@ class OpenAICompatibleInterface(ModelInterface):
                     reasoning = m.group(1).strip()
                     text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
 
+            # Phase 3: OpenAI-compatible APIs include `finish_reason` on each
+            # choice. Standard values: "stop" (natural end), "length" (hit
+            # max_tokens), "content_filter", "tool_calls", null. Callers
+            # treat "length" as the truncation signal; other values collapse
+            # to "stop" semantics for was_truncated computation.
+            raw_finish_reason = choice.get("finish_reason")
+            finish_reason: str | None
+            if raw_finish_reason is None:
+                finish_reason = None
+            elif raw_finish_reason == "length":
+                finish_reason = "length"
+            else:
+                finish_reason = "stop"
+
             return {
                 "response": text,
                 "reasoning": reasoning or None,
                 "tokens_generated": usage.get("completion_tokens", 0),
                 "tokens_input": usage.get("prompt_tokens", 0),
+                "finish_reason": finish_reason,
+                "max_tokens_used": max_tokens if isinstance(max_tokens, int) and max_tokens > 0 else None,
                 "duration": end_time - start_time,
                 "model_info": {"name": self.model_name, "provider": "openai_compatible"},
             }

@@ -18,7 +18,20 @@ class OllamaInterface(ModelInterface):
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
 
+    # Phase 3: map Ollama's `done_reason` values to the provider-normalised
+    # `finish_reason` contract documented in BaseModelInterface. Ollama may
+    # emit `"stop"`, `"length"`, `"load"`, `"unload"`; only `"length"` means
+    # the generation was truncated by the token limit. Everything else
+    # collapses to `"stop"` for consumers.
+    _DONE_REASON_TO_FINISH = {
+        "length": "length",
+        "stop": "stop",
+        "load": "stop",
+        "unload": "stop",
+    }
+
     def query(self, prompt: str, params: Dict) -> Dict[str, Any]:
+        num_predict = params.get("max_tokens", 2048)
         data = {
             "model": self.model_name,
             "prompt": prompt,
@@ -32,7 +45,7 @@ class OllamaInterface(ModelInterface):
                 "top_k": params.get("top_k", 40),
                 "top_p": params.get("top_p", 0.9),
                 "min_p": params.get("min_p", 0.05),
-                "num_predict": params.get("max_tokens", 2048),
+                "num_predict": num_predict,
             },
         }
 
@@ -53,6 +66,9 @@ class OllamaInterface(ModelInterface):
 
             end_time = time.time()
 
+            done_reason = result.get("done_reason")
+            finish_reason = self._DONE_REASON_TO_FINISH.get(done_reason, "stop") if done_reason else None
+
             return {
                 "response": result.get("response", ""),
                 # "thinking" is populated by Ollama for thinking-capable models
@@ -61,6 +77,12 @@ class OllamaInterface(ModelInterface):
                 "reasoning": result.get("thinking") or None,
                 "tokens_input": result.get("prompt_eval_count", 0),
                 "tokens_generated": result.get("eval_count", 0),
+                # Phase 3: provider stop-reason for was_truncated computation.
+                # `num_predict = -1` is Ollama's "unlimited" sentinel — we
+                # surface it as None so write-time fallback doesn't compare
+                # against a negative cap.
+                "finish_reason": finish_reason,
+                "max_tokens_used": num_predict if isinstance(num_predict, int) and num_predict > 0 else None,
                 "duration": end_time - start_time,
                 "model_info": {"name": self.model_name, "provider": "ollama"},
             }

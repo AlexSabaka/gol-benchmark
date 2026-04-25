@@ -87,10 +87,11 @@ class HuggingFaceInterface(ModelInterface):
             inputs = tokenizer(full_prompt, return_tensors="pt")
             inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
+            max_new_tokens = params.get("max_tokens", 2048)
             with torch.no_grad():
                 outputs = model.generate(
                     **inputs,
-                    max_new_tokens=params.get("max_tokens", 2048),
+                    max_new_tokens=max_new_tokens,
                     temperature=max(params.get("temperature", 0.1), 1e-7),
                     top_k=params.get("top_k", 40),
                     top_p=params.get("top_p", 0.9),
@@ -111,12 +112,27 @@ class HuggingFaceInterface(ModelInterface):
                 reasoning = m.group(1).strip()
                 response = _THINK_RE.sub("", response).strip()
 
+            # Phase 3: Transformers' `generate()` doesn't expose a finish-
+            # reason primitive, but the token-count ratio is authoritative
+            # when the EOS token isn't the last emitted token. Hitting
+            # `max_new_tokens` exactly means the length cap truncated the
+            # generation — callers treat this identically to a provider
+            # that returned finish_reason="length".
+            tokens_generated = len(response_tokens)
+            finish_reason = (
+                "length"
+                if isinstance(max_new_tokens, int) and tokens_generated >= max_new_tokens
+                else "stop"
+            )
+
             end_time = time.time()
             return {
                 "response": response,
                 "reasoning": reasoning,
                 "tokens_input": input_len,
-                "tokens_generated": len(response_tokens),
+                "tokens_generated": tokens_generated,
+                "finish_reason": finish_reason,
+                "max_tokens_used": max_new_tokens if isinstance(max_new_tokens, int) and max_new_tokens > 0 else None,
                 "duration": end_time - start_time,
                 "model_info": {"name": self.model_name, "provider": "huggingface"},
             }

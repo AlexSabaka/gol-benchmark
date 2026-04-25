@@ -12,6 +12,7 @@ from src.plugins.base import ResponseParser, ParsedAnswer
 from src.plugins.parse_utils import (
     re_search_last, strip_verification_tail,
     merge_keywords, build_answer_label_re, get_language,
+    normalize_unicode,
 )
 
 
@@ -53,6 +54,83 @@ _LOCATION_VERBS: Dict[str, str] = {
     "de": r"ist|bleibt|blieb|fiel|befindet sich|liegt|gefunden",
     "zh": r"在|留在|掉在|位于|放在|落在",
     "ua": r"є|залишається|залишився|впав|знаходиться|розташований",
+}
+
+# ---------------------------------------------------------------------------
+# Multilingual conclusion / reasoning anchors
+#
+# Object-tracking responses routinely lead the final answer with a
+# reasoning anchor: "Conclusion:" / "Therefore, …" / "Висновок: …" /
+# "Отже, …".  These are *reasoning* anchors (different from the shared
+# ANSWER_LABELS — "answer/result/solution" — which are also accepted but
+# much rarer in object-tracking outputs).  Identified from 129 annotated
+# cases across EN/UA: Conclusion (43), Therefore (34), Відповідь (13),
+# Отже (7), Тому (4), Висновок (3), Final Location (2), Final Answer (1),
+# Deduction (1), Inference (2).  Extrapolated to ES/FR/DE/ZH using the
+# same reasoning-closure vocabulary; annotation evidence for those
+# languages still pending (Phase 8 follow-up).
+# ---------------------------------------------------------------------------
+
+_CONCLUSION_ANCHORS: Dict[str, List[str]] = {
+    "en": [
+        "conclusion", "therefore", "so", "thus", "hence",
+        "final location", "final answer", "final position",
+        "deduction", "inference", "in summary", "to summarize",
+    ],
+    "es": [
+        "conclusión", "por lo tanto", "por tanto", "así que",
+        "por consiguiente", "en conclusión", "finalmente",
+        "en resumen", "ubicación final", "respuesta final",
+    ],
+    "fr": [
+        "conclusion", "donc", "par conséquent", "ainsi",
+        "finalement", "en conclusion", "en résumé",
+        "emplacement final", "réponse finale",
+    ],
+    "de": [
+        "schlussfolgerung", "daher", "also", "folglich",
+        "somit", "schließlich", "zusammenfassend",
+        "endgültiger ort", "endgültige antwort",
+    ],
+    "zh": [
+        "结论", "因此", "所以", "最终", "总之", "综上",
+        "最终位置", "最终答案",
+    ],
+    "ua": [
+        "висновок", "відповідь", "отже", "тому",
+        "таким чином", "остаточно", "насамкінець", "підсумовуючи",
+        "остаточне місце", "остаточна відповідь",
+    ],
+}
+
+# ---------------------------------------------------------------------------
+# Multilingual preposition prefixes that immediately precede a location noun.
+#
+# Used by `_strategy_anchored_trailer` to capture the location span AFTER
+# a reasoning anchor.  The capture group is (1-3 words) to handle multi-
+# word locations common in UA ("на письмовому столі") and DE/FR compounds.
+# ---------------------------------------------------------------------------
+
+_LOCATION_PREPS: Dict[str, str] = {
+    "en": r"(?:in|on|at|inside|within|atop|under|beneath|near|beside)\s+(?:the\s+)?",
+    "es": r"(?:en|sobre|dentro\s+de|debajo\s+de|cerca\s+de|junto\s+a)\s+(?:el|la|los|las)?\s*",
+    "fr": r"(?:dans|sur|sous|à\s+l['’]intérieur\s+de|près\s+de|au\s+fond\s+de)\s+(?:le|la|les|l['’])?\s*",
+    "de": r"(?:in|auf|im|innerhalb|unter|neben)\s+(?:dem|der|den|das|einem|einer)?\s*",
+    "zh": r"在\s*",
+    "ua": r"(?:на|в|у|всередині|у\s+середині|в\s+середині|під|біля|поряд\s+з)\s+",
+}
+
+# Bold-trailer anchor dict: what precedes `**LOCATION**` when models
+# write "…on the **counter**." / "…на **шафі**".  Used by the end-first
+# pass in `_strategy_bold_keyword`.  Shorter than _LOCATION_PREPS because
+# bold anchoring needs a tighter immediate-left context.
+_BOLD_TRAILER_ANCHORS: Dict[str, str] = {
+    "en": r"(?:the|on\s+the|in\s+the|at\s+the|inside\s+the|within\s+the)",
+    "es": r"(?:el|la|los|las|en\s+el|en\s+la|sobre\s+el|sobre\s+la|dentro\s+del|dentro\s+de\s+la)",
+    "fr": r"(?:le|la|les|l['’]|dans\s+le|dans\s+la|sur\s+le|sur\s+la)",
+    "de": r"(?:dem|der|den|das|im|auf\s+dem|auf\s+der|in\s+dem|in\s+der)",
+    "zh": r"在",
+    "ua": r"(?:на|в|у|всередині|у\s+середині|в\s+середині)",
 }
 
 
@@ -115,14 +193,14 @@ class ObjectTrackingResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response or "",
-                parse_strategy='failed',
+                parse_strategy='empty',
                 error='Empty response'
             )
 
         lang = get_language(task_params)
         stop_words = _STOP_WORDS["en"] | _STOP_WORDS.get(lang, set())
 
-        response = response.strip()
+        response = normalize_unicode(response.strip())
         known_locations = self._get_known_locations(task_params)
         obj = task_params.get('object', 'object')
 
@@ -134,11 +212,17 @@ class ObjectTrackingResponseParser(ResponseParser):
         strategies = [
             ('single_word', lambda: self._strategy_single_word(response, stop_words)),
             ('answer_prefix', lambda: self._strategy_answer_prefix(response, lang, stop_words)),
-            ('bold_keyword', lambda: self._strategy_bold_keyword(response, known_locations)),
+            ('bold_keyword', lambda: self._strategy_bold_keyword(response, known_locations, lang)),
             ('first_sentence_location', lambda: self._strategy_first_sentence_location(cleaned, known_locations)),
+            # `anchored_trailer` targets the "Therefore, … in the X" / "Висновок: … на X"
+            # pattern that dominated Phase 8 annotation misses (88 of 129 cases).  Runs
+            # after first_sentence (which catches concise upfront answers) but before
+            # sentence_pattern/location_keyword (which scan the full response and can
+            # hit distractor containers).
+            ('anchored_trailer', lambda: self._strategy_anchored_trailer(cleaned, known_locations, lang)),
             ('sentence_pattern', lambda: self._strategy_sentence_pattern(cleaned, obj, lang, stop_words)),
             ('location_keyword', lambda: self._strategy_location_keyword(cleaned, known_locations)),
-            ('last_word', lambda: self._strategy_last_word(cleaned, stop_words)),
+            ('last_word', lambda: self._strategy_last_word(cleaned, stop_words, known_locations)),
         ]
 
         for name, strategy_func in strategies:
@@ -160,7 +244,7 @@ class ObjectTrackingResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             error='All parsing strategies failed'
         )
 
@@ -224,14 +308,26 @@ class ObjectTrackingResponseParser(ResponseParser):
         self,
         response: str,
         known_locations: List[str],
+        lang: str = "en",
     ) -> Optional[str]:
         """
-        Extract the FIRST bold text that matches a known location.
+        Extract a bold-wrapped location.
 
-        Models consistently bold the answer: "The keys are on the **counter**."
-        Later bolds in the explanation are distractors, so we use the FIRST
-        match (not last) — an intentional exception to the end-first convention.
+        Two-pass strategy:
+        1. **First-bold pass (existing behavior)** — concise models answer
+           upfront: "The keys are on the **counter**. [distractors follow]."
+           Later bolds in the explanation are distractors.
+        2. **End-first anchored pass (added from Phase 8 annotation data)** —
+           verbose models pattern as "…Therefore, the grape is in the
+           **cabinet**." with the answer bolded at the END of a long
+           explanation.  Only accepted when the bold is preceded by a
+           location-preposition anchor (`the ** `, `on the ** `, `в **`,
+           `на **`) AND the capture is a known location.  The anchor
+           requirement avoids the format-only trap where `**Conclusion:**`
+           headings get grabbed (86% capture_exact_rate on anchored vs.
+           38% on bare bolds — 21-case EN/UA annotation sample).
         """
+        # Pass 1: first-bold match (any known location anywhere in bold)
         for m in re.finditer(r"\*\*([^*]{1,40})\*\*", response):
             bold_text = m.group(1).lower().strip()
             # Check if the bold text is or contains a known location
@@ -241,6 +337,25 @@ class ObjectTrackingResponseParser(ResponseParser):
             # Also check synonyms
             normalized = self._normalize_location(bold_text)
             if normalized != bold_text:
+                for loc in known_locations:
+                    if loc.lower() == normalized:
+                        return loc
+
+        # Pass 2: anchored end-first — require preposition anchor before
+        # the bold capture so we don't grab `**Conclusion:**` / `**Reasoning:**`
+        # headings.  Last match wins (end-first).
+        anchor = _BOLD_TRAILER_ANCHORS.get(lang, _BOLD_TRAILER_ANCHORS["en"])
+        anchored = re_search_last(
+            rf"(?i){anchor}\s*\*\*([^*\n]{{1,40}})\*\*",
+            response,
+        )
+        if anchored:
+            candidate = anchored.group(1).lower().strip()
+            for loc in known_locations:
+                if loc.lower() in candidate or candidate in loc.lower():
+                    return loc
+            normalized = self._normalize_location(candidate)
+            if normalized != candidate:
                 for loc in known_locations:
                     if loc.lower() == normalized:
                         return loc
@@ -273,6 +388,86 @@ class ObjectTrackingResponseParser(ResponseParser):
                 return loc
 
         return None
+
+    def _strategy_anchored_trailer(
+        self,
+        response: str,
+        known_locations: List[str],
+        lang: str = "en",
+    ) -> Optional[str]:
+        """
+        Extract location after a reasoning anchor in the tail of the response.
+
+        Identifies the LAST occurrence of an anchor like `Conclusion:`,
+        `Therefore,`, `Висновок:`, `Отже,` in the response, then searches
+        forward from that anchor for a preposition-prefixed location
+        capture (`in the X`, `на X`, `в X`).  The capture is accepted only
+        when it matches (or is a synonym of) a known location, which
+        filters out intermediate container references (`glass`, `cup`)
+        that occur in reasoning text.
+
+        Models routinely close verbose reasoning with the final answer
+        trailer pattern: "Therefore, the coin is in the **counter**." or
+        "Висновок: виноградинка знаходиться на письмовому столі."
+
+        Phase 8 annotation data (129 cases, EN/UA): 88 of 129 cases have
+        a trailer of this shape that current strategies miss because
+        `location_keyword` walks the full response (picking up distractor
+        containers) instead of being anchored to the final reasoning block.
+        """
+        anchors = list(_CONCLUSION_ANCHORS.get(lang, []))
+        # Always merge in English anchors as fallback (models sometimes
+        # reason in English even in non-English prompts).
+        if lang != "en":
+            anchors = anchors + _CONCLUSION_ANCHORS["en"]
+        if not anchors:
+            return None
+        anchor_alt = "|".join(re.escape(a) for a in anchors)
+
+        # Find LAST anchor position in response (end-first).  Word-bounded
+        # on both sides so "con" doesn't match inside "connect".
+        anchor_re = re.compile(rf"(?i)\b(?:{anchor_alt})\b")
+        last_anchor_end = -1
+        for m in anchor_re.finditer(response):
+            last_anchor_end = m.end()
+        if last_anchor_end < 0:
+            return None
+
+        # Scan the tail (after the anchor) up to ~400 chars for a
+        # preposition-prefixed known-location capture.  End-first within
+        # that window — the LAST known-location occurrence wins.
+        tail = response[last_anchor_end:last_anchor_end + 400]
+        prep = _LOCATION_PREPS.get(lang, _LOCATION_PREPS["en"])
+
+        # Capture up to 3 words so multi-word UA locations like
+        # "письмовому столі" / "на підлозі" are caught.  Also work on
+        # English since "on the counter" still works with a trailing
+        # greedy capture (extra words get stripped during normalization).
+        capture_pat = rf"(?i){prep}((?:\w+[\s’'-]*){{1,3}}?\w+)"
+        best_loc = None
+        best_pos = -1
+        for m in re.finditer(capture_pat, tail):
+            candidate = m.group(1).strip().lower().rstrip(".,;:!?)—")
+            # Strip markdown formatting
+            candidate = candidate.replace("**", "").strip()
+            # Try exact match against known_locations (longest-first)
+            for loc in sorted(known_locations, key=len, reverse=True):
+                loc_lower = loc.lower()
+                if loc_lower == candidate or loc_lower in candidate.split():
+                    if m.start() > best_pos:
+                        best_pos = m.start()
+                        best_loc = loc
+                    break
+            else:
+                # Synonym fallback
+                normalized = self._normalize_location(candidate)
+                for loc in known_locations:
+                    if loc.lower() == normalized:
+                        if m.start() > best_pos:
+                            best_pos = m.start()
+                            best_loc = loc
+                        break
+        return best_loc
 
     def _strategy_sentence_pattern(self, response: str, obj: str, lang: str, stop_words: set) -> Optional[str]:
         """
@@ -348,13 +543,28 @@ class ObjectTrackingResponseParser(ResponseParser):
 
         return best_location
 
-    def _strategy_last_word(self, response: str, stop_words: set) -> Optional[str]:
+    def _strategy_last_word(
+        self,
+        response: str,
+        stop_words: set,
+        known_locations: Optional[List[str]] = None,
+    ) -> Optional[str]:
         """
-        Extract last meaningful word as fallback.
+        Extract last meaningful word as fallback, filtered against known locations.
+
+        Pre-Phase-8 this strategy returned ANY last non-stopword token, which
+        produced false positives like "within", "relative", "bottom", "top",
+        "as" when the response's last clause wasn't a location.  Now the
+        returned word must be in ``known_locations`` (or be a known synonym);
+        if not, the strategy yields None and the caller falls through to
+        ``fallback``.  This shifts the risk: rare cases where the model only
+        mentions a location via paraphrase will now be unparseable instead
+        of silently mis-parseable, which is the preferable trade per
+        Phase 8 annotation data (5 junk-token extractions eliminated).
 
         Handles responses like:
-        - "Based on my analysis, the answer would be counter"
-        - "Therefore, counter"
+        - "Based on my analysis, the answer would be counter" → "counter"
+        - "Therefore, counter" → "counter"
         """
         # Clean and split
         clean = re.sub(r'[^\w\s]', ' ', response).strip()
@@ -363,14 +573,27 @@ class ObjectTrackingResponseParser(ResponseParser):
         # Filter and get last meaningful word
         meaningful_words = [w for w in words if w not in stop_words and len(w) > 2]
 
-        if meaningful_words:
-            return meaningful_words[-1]
+        if not meaningful_words and not words:
+            return None
 
-        # Fallback to any last word
-        if words:
-            return words[-1]
+        candidate = meaningful_words[-1] if meaningful_words else words[-1]
 
-        return None
+        # Phase 8 tightening: require match against known locations (or a
+        # known synonym canonicalizes to one).  Without this, last_word
+        # catches prepositions/adjectives like "within", "relative",
+        # "bottom" that end verbose trailing clauses.
+        if known_locations:
+            kl_lower = {loc.lower() for loc in known_locations}
+            if candidate in kl_lower:
+                return candidate
+            normalized = self._normalize_location(candidate)
+            if normalized in kl_lower:
+                return normalized
+            return None
+
+        # Back-compat: when caller didn't pass known_locations (shouldn't
+        # happen via parse(), but keep safe default for direct callers).
+        return candidate
 
     def _normalize_location(self, location: str) -> str:
         """
@@ -424,6 +647,7 @@ class ObjectTrackingResponseParser(ResponseParser):
             'answer_prefix',
             'bold_keyword',
             'first_sentence_location',
+            'anchored_trailer',
             'sentence_pattern',
             'location_keyword',
             'last_word'

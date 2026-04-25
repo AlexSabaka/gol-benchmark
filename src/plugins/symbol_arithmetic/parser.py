@@ -11,7 +11,35 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import (
+    build_answer_label_re,
+    get_language,
+    merge_keywords,
+    normalize_unicode,
+    re_search_last,
+    strip_verification_tail,
+)
+
+
+# Symbol-arithmetic-specific label terms — `therefore` is the characteristic
+# intro for a concluding symbol in a derivation ("…therefore the answer is ⊕").
+_EXTRA_LABELS: Dict[str, List[str]] = {
+    "en": ["therefore"],
+    "es": ["por lo tanto"],
+    "fr": ["donc"],
+    "de": ["daher", "also"],
+    "zh": ["因此", "所以"],
+    "ua": ["отже", "тому"],
+}
+
+
+def _build_label_alt(lang: str) -> str:
+    base = build_answer_label_re(lang)
+    extra = merge_keywords(_EXTRA_LABELS, lang)
+    extra_alt = "|".join(re.escape(e) for e in extra) if extra else ""
+    if base and extra_alt:
+        return f"{base}|{extra_alt}"
+    return base or extra_alt
 
 
 _UNDEFINED_KEYWORDS = [
@@ -28,28 +56,39 @@ class SymbolArithmeticParser(ResponseParser):
         if not response:
             return ParsedAnswer(
                 value=None, raw_response=response or "",
-                parse_strategy="failed", error="Empty response",
+                parse_strategy="empty", error="Empty response",
             )
 
         symbols: List[str] = task_params.get("symbols", [])
-        response = str(response).strip()
+        response = normalize_unicode(str(response).strip())
+        lang = get_language(task_params)
 
-        # Strategy 1: undefined detection (checked first — special answer)
-        result = self._strategy_undefined(response)
+        # Strategy 1: undefined detection (checked first — special answer).
+        # Run against a verification-stripped copy so "Let me verify: the
+        # table shows no result for this pair" doesn't re-trigger "no result"
+        # after a genuine answer.
+        response_clean = strip_verification_tail(response)
+        result = self._strategy_undefined(response_clean)
         if result is not None:
             return result
 
-        # Strategies 2–6: extract a symbol from the set
+        # Strategies 2–6: extract a symbol from the set.
+        # Boxed / bold / labelled keep the raw response because those
+        # formats carry high signal regardless of the verification section;
+        # equals_pattern and last_symbol scan freely for a symbol token, so
+        # they benefit from stripping the verification re-computation tail.
+        # The `_strategy_labelled` takes a lang arg so it can build the
+        # multilingual answer-label alternation once per call.
         strategies = [
-            ("boxed_symbol", self._strategy_boxed),
-            ("labelled_answer", self._strategy_labelled),
-            ("equals_pattern", self._strategy_equals),
-            ("bold_symbol", self._strategy_bold),
-            ("last_symbol", self._strategy_last_symbol),
+            ("boxed_symbol", lambda t, s: self._strategy_boxed(t, s), response),
+            ("labelled_answer", lambda t, s: self._strategy_labelled(t, s, lang), response),
+            ("equals_pattern", lambda t, s: self._strategy_equals(t, s), response_clean),
+            ("bold_symbol", lambda t, s: self._strategy_bold(t, s), response),
+            ("last_symbol", lambda t, s: self._strategy_last_symbol(t, s), response_clean),
         ]
 
-        for name, fn in strategies:
-            val = fn(response, symbols)
+        for name, fn, strategy_text in strategies:
+            val = fn(strategy_text, symbols)
             if val is not None:
                 return ParsedAnswer(
                     value=val, raw_response=response,
@@ -58,7 +97,7 @@ class SymbolArithmeticParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="failed",
+            parse_strategy="fallback",
             error="All parsing strategies failed",
         )
 
@@ -98,10 +137,11 @@ class SymbolArithmeticParser(ResponseParser):
         return None
 
     @staticmethod
-    def _strategy_labelled(response: str, symbols: List[str]) -> Optional[str]:
-        """Look for 'answer:', 'result:', 'final answer:', 'therefore' + symbol (end-first)."""
+    def _strategy_labelled(response: str, symbols: List[str], lang: str = "en") -> Optional[str]:
+        """Look for '<label>: <symbol>' (end-first) — multilingual labels."""
         sym_alt = "|".join(re.escape(s) for s in symbols)
-        pattern = rf"(?:final\s+answer|answer|result|therefore)\s*[:=]?\s*({sym_alt})"
+        label_alt = _build_label_alt(lang)
+        pattern = rf"(?:{label_alt})\s*[:=]?\s*({sym_alt})"
         m = re_search_last(pattern, response, flags=re.IGNORECASE)
         if m:
             return m.group(1)

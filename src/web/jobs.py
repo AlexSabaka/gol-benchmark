@@ -353,6 +353,8 @@ def _run_testset_worker(
             # Human Review aggregator can attribute parser_false_positive cases
             # to the strategy that fired).
             parsed_result = parse_answer_via_plugin(raw_response, task_type, enriched_params)
+            parsed_char_start = None
+            parsed_char_end = None
             if parsed_result is None:
                 parsed = None
                 parse_strategy = None
@@ -361,6 +363,19 @@ def _run_testset_worker(
                 parsed = parsed_result.value
                 parse_strategy = parsed_result.parse_strategy
                 parse_confidence = parsed_result.confidence
+                parsed_char_start = parsed_result.char_start
+                parsed_char_end = parsed_result.char_end
+
+            # Phase 2: universal offset fallback — same shape as
+            # `run_testset.py`. Plugins that don't emit offsets natively
+            # get them resolved here so the /review parser-highlight has
+            # reliable anchors regardless of plugin migration status.
+            if parsed_char_start is None:
+                from src.plugins.parse_utils import resolve_parser_offsets
+                offsets = resolve_parser_offsets(raw_response, parsed)
+                if offsets is not None:
+                    parsed_char_start, parsed_char_end = offsets
+
             expected = task_params.get("expected_answer", task_params.get("correct_answer"))
             evaluation = evaluate_via_plugin(parsed, expected, task_type, enriched_params)
 
@@ -372,6 +387,20 @@ def _run_testset_worker(
             output_tok = resp.get("tokens_generated", 0)
             total_input_tokens += input_tok
             total_output_tokens += output_tok
+
+            # Phase 3: same was_truncated computation as run_testset.py.
+            # `finish_reason == "length"` is authoritative; token-count
+            # fallback catches providers that omit the reason at boundary.
+            finish_reason = resp.get("finish_reason")
+            max_tokens_used = resp.get("max_tokens_used")
+            was_truncated = bool(
+                finish_reason == "length"
+                or (
+                    max_tokens_used is not None
+                    and output_tok > 0
+                    and output_tok >= max_tokens_used
+                )
+            )
 
             results_list.append({
                 "test_id": tc.get("test_id", f"test_{i}"),
@@ -387,8 +416,12 @@ def _run_testset_worker(
                     "raw_response": raw_response,
                     "reasoning": reasoning,
                     "parsed_answer": str(parsed) if parsed is not None else None,
+                    "parsed_char_start": parsed_char_start,
+                    "parsed_char_end": parsed_char_end,
                     "parse_strategy": parse_strategy,
                     "parse_confidence": parse_confidence,
+                    "was_truncated": was_truncated,
+                    "finish_reason": finish_reason,
                 },
                 "evaluation": evaluation or {"correct": False, "match_type": "parse_error"},
                 "tokens": {"input_tokens": input_tok, "output_tokens": output_tok},

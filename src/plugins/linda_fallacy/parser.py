@@ -9,7 +9,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import get_language
+from src.plugins.parse_utils import get_language, normalize_unicode
 
 
 class LindaResponseParser(ResponseParser):
@@ -40,10 +40,12 @@ class LindaResponseParser(ResponseParser):
             return ParsedAnswer(
                 value={'rankings': [], 'parse_error': 'Empty response'},
                 raw_response=response or "",
-                parse_strategy='failed',
+                parse_strategy='empty',
                 confidence=0.1,
                 error='Empty response from model'
             )
+
+        response = normalize_unicode(response)
 
         # Try each parsing strategy in order (with confidence scores)
         strategies = [
@@ -77,7 +79,7 @@ class LindaResponseParser(ResponseParser):
         return ParsedAnswer(
             value={'rankings': [], 'parse_error': 'No rankings found'},
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             confidence=0.1,
             error='All parsing strategies failed'
         )

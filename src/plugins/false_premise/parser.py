@@ -26,6 +26,7 @@ from src.plugins.base import ResponseParser, ParsedAnswer
 from src.plugins.parse_utils import (
     re_search_last, last_sentences,
     merge_keywords, merge_patterns, get_language,
+    normalize_unicode,
 )
 
 # ---------------------------------------------------------------------------
@@ -547,16 +548,6 @@ COMPLIANCE_KEYWORDS = _COMPLIANCE_KEYWORDS["en"]
 # Helpers
 # ---------------------------------------------------------------------------
 
-def _normalize_quotes(text: str) -> str:
-    """Normalize smart/curly quotes to ASCII equivalents (Fix 1)."""
-    return (
-        text
-        .replace("\u2018", "'").replace("\u2019", "'")   # ' '
-        .replace("\u201c", '"').replace("\u201d", '"')   # " "
-        .replace("\u2032", "'").replace("\u2033", '"')   # ′ ″
-    )
-
-
 _MARKDOWN_BOLD_RE = re.compile(r"\*{1,2}|\_{1,2}")
 
 
@@ -787,7 +778,7 @@ class FalsePremiseParser(ResponseParser):
         compliance_kws = merge_keywords(_COMPLIANCE_KEYWORDS, lang)
 
         # --- Fix 1: Normalize smart/curly quotes before any matching ---
-        text = _normalize_quotes(response.strip())
+        text = normalize_unicode(response.strip())
         text_clean = _strip_markdown(text)
         tail = "\n".join(last_sentences(text, n=8))
 

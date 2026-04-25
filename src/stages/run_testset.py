@@ -1476,6 +1476,8 @@ def run_testset(
             # / `parse_confidence` for the result entry so the Human Review
             # aggregator can attribute false positives to specific strategies.
             parsed_result = parse_answer_via_plugin(raw_response, individual_task_type, enriched_params)
+            parsed_char_start: Optional[int] = None
+            parsed_char_end: Optional[int] = None
             if parsed_result is None:
                 parsed_answer = parse_answer(raw_response, individual_task_type)
                 parse_strategy = "external"
@@ -1484,6 +1486,17 @@ def run_testset(
                 parsed_answer = parsed_result.value
                 parse_strategy = parsed_result.parse_strategy
                 parse_confidence = parsed_result.confidence
+                parsed_char_start = parsed_result.char_start
+                parsed_char_end = parsed_result.char_end
+
+            # Phase 2: universal offset fallback. Plugins that don't emit
+            # offsets natively get them resolved here so every new result
+            # entry carries parser-highlight anchors.
+            if parsed_char_start is None:
+                from src.plugins.parse_utils import resolve_parser_offsets
+                offsets = resolve_parser_offsets(raw_response, parsed_answer)
+                if offsets is not None:
+                    parsed_char_start, parsed_char_end = offsets
 
             # Get expected answer based on task type
             if individual_task_type == "linda_fallacy":
@@ -1507,7 +1520,24 @@ def run_testset(
             
             # Calculate output tokens
             output_tokens = len(raw_response) // 4
-            
+
+            # Phase 3: compute was_truncated from provider finish_reason +
+            # token-count fallback. `finish_reason == "length"` is the
+            # authoritative signal from providers that expose it; the
+            # `tokens_generated >= max_tokens_used` OR covers HuggingFace
+            # and any provider that omits the reason at the boundary.
+            finish_reason = response_data.get("finish_reason")
+            max_tokens_used = response_data.get("max_tokens_used")
+            tokens_generated_val = response_data.get("tokens_generated", 0)
+            was_truncated = bool(
+                finish_reason == "length"
+                or (
+                    max_tokens_used is not None
+                    and tokens_generated_val > 0
+                    and tokens_generated_val >= max_tokens_used
+                )
+            )
+
             result = {
                 "test_id": test_id,
                 "status": "success",
@@ -1519,9 +1549,16 @@ def run_testset(
                 "output": {
                     "raw_response": raw_response,
                     "parsed_answer": parsed_answer,
+                    "parsed_char_start": parsed_char_start,
+                    "parsed_char_end": parsed_char_end,
                     "parse_strategy": parse_strategy,
                     "parse_confidence": parse_confidence,
-                    "tokens_generated": response_data.get("tokens_generated", 0)
+                    "tokens_generated": tokens_generated_val,
+                    # Phase 3: pre-toggle hint for the /review workspace.
+                    "was_truncated": was_truncated,
+                    # Raw provider signal preserved for future analysis —
+                    # `"length"` / `"stop"` / None depending on provider.
+                    "finish_reason": finish_reason,
                 },
                 "tokens": {
                     "input_tokens": input_tokens,

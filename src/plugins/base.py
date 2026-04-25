@@ -86,12 +86,20 @@ class ParsedAnswer:
         parse_strategy: Name of the strategy that successfully parsed
         confidence: Confidence score (0.0-1.0), default 1.0
         error: Error message if parsing failed
+        char_start / char_end: Phase 2 — optional byte offsets into
+            ``raw_response`` locating the substring the parser extracted
+            from. Only meaningful when ``value`` is (or stringifies to) a
+            contiguous substring. Plugins with non-string / constructed
+            values (grids, ranked lists) leave these ``None`` and the
+            result-write path falls back to a generic offset resolver.
     """
     value: Any
     raw_response: str
     parse_strategy: str
     confidence: float = 1.0
     error: Optional[str] = None
+    char_start: Optional[int] = None
+    char_end: Optional[int] = None
 
     @property
     def success(self) -> bool:
@@ -99,14 +107,22 @@ class ParsedAnswer:
         return self.error is None and self.value is not None
 
     def to_dict(self) -> Dict[str, Any]:
-        """Convert to dictionary for JSON serialization."""
-        return {
+        """Convert to dictionary for JSON serialization.
+
+        Offsets are omitted from the payload when ``None`` to keep JSON
+        diffs against legacy result files minimal.
+        """
+        out: Dict[str, Any] = {
             'value': self.value,
             'raw_response': self.raw_response,
             'parse_strategy': self.parse_strategy,
             'confidence': self.confidence,
             'error': self.error,
         }
+        if self.char_start is not None and self.char_end is not None:
+            out['char_start'] = self.char_start
+            out['char_end'] = self.char_end
+        return out
 
 
 @dataclass

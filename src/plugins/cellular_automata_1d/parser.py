@@ -8,7 +8,7 @@ import re
 from typing import Any, Dict, List, Optional
 
 from src.plugins.base import ParsedAnswer, ResponseParser
-from src.plugins.parse_utils import re_search_last
+from src.plugins.parse_utils import normalize_unicode, re_search_last
 
 
 class C14ResponseParser(ResponseParser):
@@ -37,11 +37,11 @@ class C14ResponseParser(ResponseParser):
             return ParsedAnswer(
                 value=None,
                 raw_response=response or "",
-                parse_strategy='failed',
+                parse_strategy='empty',
                 error='Empty response from model'
             )
 
-        response = response.strip()
+        response = normalize_unicode(response.strip())
 
         # Get expected size from task params
         expected_state = task_params.get('expected_state', [])
@@ -70,7 +70,7 @@ class C14ResponseParser(ResponseParser):
         return ParsedAnswer(
             value=None,
             raw_response=response,
-            parse_strategy='failed',
+            parse_strategy='fallback',
             error='All parsing strategies failed'
         )
 

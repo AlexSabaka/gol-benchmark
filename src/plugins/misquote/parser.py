@@ -24,8 +24,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from src.plugins.base import ResponseParser, ParsedAnswer
 from src.plugins.parse_utils import (
-    re_search_last, merge_keywords,
-    YES_WORDS, NO_WORDS, get_language,
+    re_search_last, merge_keywords, strip_verification_tail,
+    YES_WORDS, NO_WORDS, get_language, normalize_unicode,
 )
 
 # ---------------------------------------------------------------------------
@@ -182,7 +182,7 @@ class MisquoteParser(ResponseParser):
                 error="Empty response",
             )
 
-        text = response.strip()
+        text = normalize_unicode(response.strip())
         lang = get_language(task_params or {})
         q1: Optional[str] = None
         q2: Optional[str] = None
@@ -203,17 +203,21 @@ class MisquoteParser(ResponseParser):
             return self._result(q1, q2, text, "bare_yesno", 0.80)
 
         # ── Strategy 4: Keyword inference ───────────────────────────────
+        # Run on a verification-stripped copy — models often re-assert
+        # "the attribution is correct" in the verification section after
+        # already flagging it as misattributed earlier.
+        text_clean = strip_verification_tail(text)
         q1_yes = _merge_kw_list(_Q1_YES_KEYWORDS, lang)
         q1_no = _merge_kw_list(_Q1_NO_KEYWORDS, lang)
         q2_yes = _merge_kw_list(_Q2_YES_KEYWORDS, lang)
         q2_no = _merge_kw_list(_Q2_NO_KEYWORDS, lang)
-        q1_kw = _keyword_scan(text, q1_yes, q1_no)
-        q2_kw = _keyword_scan(text, q2_yes, q2_no)
+        q1_kw = _keyword_scan(text_clean, q1_yes, q1_no)
+        q2_kw = _keyword_scan(text_clean, q2_yes, q2_no)
         if q1_kw is not None:
             return self._result(q1_kw, q2_kw, text, "keyword_inference", 0.70)
 
         # ── Strategy 5: Partial — single Yes/No in last sentences ───────
-        q1_partial = self._try_partial_q1(text, lang)
+        q1_partial = self._try_partial_q1(text_clean, lang)
         if q1_partial is not None:
             return self._result(q1_partial, None, text, "partial_q1", 0.50)
 

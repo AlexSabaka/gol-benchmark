@@ -89,40 +89,51 @@ _PREFIX_STOP_WORDS: set[str] = {
     "**", "__", "*", "_", ">", "-",
 }
 
+# v4 canonical codes (Phase 1 collapse). Legacy codes still appear in old
+# sidecars — the rename/drop maps below fold them into this set on read.
 _RESPONSE_CLASSES = (
     "hedge",
     "truncated",
-    "gibberish",
-    "refusal",
-    "language_error",
-    "verbose",
+    "unrecoverable",
     "false_positive",
-    # Legacy — kept for backwards compat with old sidecars/reports.
-    "verbose_correct",
-    "parser_ok",
-    "parser_false_positive",
 )
 
-# v3 rename map — applied when reading annotations.
+# v3 + v4 rename map — applied when reading annotations. Covers both the
+# original v3 renames (verbose_correct / parser_false_positive) and the v4
+# collapse that folded three model-failure modes into "unrecoverable".
 _CLASS_RENAME: dict[str, str] = {
-    "verbose_correct": "verbose",
     "parser_false_positive": "false_positive",
+    "gibberish": "unrecoverable",
+    "refusal": "unrecoverable",
+    "language_error": "unrecoverable",
 }
 
-_NON_RESOLVABLE_CLASSES = {"hedge", "truncated", "gibberish", "refusal", "language_error"}
+# Codes that were dropped entirely — auto-inferred or made implicit.
+_CLASS_DROP: frozenset[str] = frozenset({"parser_ok", "verbose", "verbose_correct"})
+
+_NON_RESOLVABLE_CLASSES = {"hedge", "truncated", "unrecoverable"}
 
 
 def _get_response_classes(ann: dict) -> list[str]:
     """Read response classes from annotation dict, supporting both old
     (``response_class: str``) and new (``response_classes: list``) schema.
-    Applies renames and drops ``parser_ok``."""
+    Applies v3+v4 renames and drops ``parser_ok`` / ``verbose`` codes."""
     rcs = ann.get("response_classes")
     if rcs is None:
         rc = ann.get("response_class")
         rcs = [rc] if rc else []
     elif isinstance(rcs, str):
         rcs = [rcs] if rcs else []
-    return [_CLASS_RENAME.get(c, c) for c in rcs if c != "parser_ok"]
+    renamed = [_CLASS_RENAME.get(c, c) for c in rcs if c not in _CLASS_DROP]
+    # Deduplicate while preserving order (multiple legacy codes can collapse
+    # to the same new code).
+    seen: set = set()
+    out: list[str] = []
+    for c in renamed:
+        if c not in seen:
+            seen.add(c)
+            out.append(c)
+    return out
 
 _PARSER_MATCH_TYPES = ("correct", "parse_error", "mismatch", "localized_match", "unknown")
 
@@ -157,7 +168,7 @@ def _answer_label_re(language: str) -> re.Pattern:
     return compiled
 
 
-REPORT_FORMAT_VERSION = "2.6"
+REPORT_FORMAT_VERSION = "2.7"
 
 
 # ---------------------------------------------------------------------------
@@ -1802,7 +1813,13 @@ def _collect_negative_records(
     annotation_files: List[Dict[str, Any]],
     result_idx: Dict[Tuple[str, str], Dict[str, Any]],
 ) -> List[Dict[str, Any]]:
-    """Flatten all negative_spans + negative_keywords into a list of records.
+    """Flatten all negative marks into a list of records.
+
+    v2.7 (Phase 1): the `negative_span` vs `negative_keyword` distinction is
+    gone at the semantic level. Legacy sidecars that still carry
+    ``negative_keywords`` entries (e.g. loaded from the DB between a schema
+    migration and the next save) are folded on-the-fly so the report shape
+    stays single-typed regardless of in-flight migration state.
 
     Each record carries the mark text, surrounding context, and a pointer back
     to the annotated correct span (if any) so the agent can see what the parser
@@ -1814,39 +1831,47 @@ def _collect_negative_records(
         case_id = case.get("case_id", "")
         language = case.get("language") or "en"
         parse_strategy = case.get("parse_strategy") or "unknown"
-        # First answer span text (what the annotator said was the right answer)
         spans = ann.get("spans") or []
         correct_span = (spans[0].get("text") or "").strip() if spans else ""
-        # Context windows for back-filling before/after text
         windows = case.get("context_windows") or []
         win_by_start = {w.get("char_start"): w for w in windows}
-        for mark_type in ("negative_spans", "negative_keywords"):
-            for mark in (ann.get(mark_type) or []):
-                text = (mark.get("text") or "").strip()
-                if not text:
-                    continue
-                char_start = int(mark.get("char_start") or 0)
-                char_end = int(mark.get("char_end") or 0)
-                # Try to get context from context_windows (same char_start),
-                # fall back to empty strings (context not stored for negative marks yet)
-                cw = win_by_start.get(char_start) or {}
-                out.append({
-                    "mark_type": "negative_keyword" if mark_type == "negative_keywords" else "negative_span",
-                    "text": text,
-                    "char_start": char_start,
-                    "char_end": char_end,
-                    "before": cw.get("before", ""),
-                    "after": cw.get("after", ""),
-                    "case_id": case_id,
-                    "language": language,
-                    "parse_strategy": parse_strategy,
-                    "correct_span": correct_span,
-                })
+        # v2.7: defensive fold of both arrays into a single negative list. Old
+        # annotations that haven't been re-saved yet may still have entries in
+        # `negative_keywords`; new annotations only populate `negative_spans`.
+        negatives = list(ann.get("negative_spans") or []) + list(ann.get("negative_keywords") or [])
+        for mark in negatives:
+            text = (mark.get("text") or "").strip()
+            if not text:
+                continue
+            char_start = int(mark.get("char_start") or 0)
+            char_end = int(mark.get("char_end") or 0)
+            cw = win_by_start.get(char_start) or {}
+            # Phase 2: preserve the optional `source` discriminator so
+            # downstream tooling can filter auto-inferred vs manual marks.
+            # Absent on pre-Phase-2 sidecars → implicit "manual".
+            source = mark.get("source") or "manual"
+            out.append({
+                "text": text,
+                "char_start": char_start,
+                "char_end": char_end,
+                "before": cw.get("before", ""),
+                "after": cw.get("after", ""),
+                "case_id": case_id,
+                "language": language,
+                "parse_strategy": parse_strategy,
+                "correct_span": correct_span,
+                "source": source,
+            })
     return out
 
 
 def _negative_span_analysis(negative_records: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Group negative records by normalized text, return a list of group dicts."""
+    """Group negative records by normalized text, return a list of group dicts.
+
+    v2.7: no longer emits a `mark_type` field — the single-type collapse in
+    Phase 1 made it redundant. Legacy v2.6 reports on disk keep their
+    `mark_type` field; the TS type has narrowed it to optional.
+    """
     from collections import defaultdict
 
     groups: Dict[str, List[Dict[str, Any]]] = defaultdict(list)
@@ -1857,14 +1882,10 @@ def _negative_span_analysis(negative_records: List[Dict[str, Any]]) -> List[Dict
     out: List[Dict[str, Any]] = []
     for norm_text, records in sorted(groups.items(), key=lambda x: -len(x[1])):
         rep_text = records[0]["text"]  # representative raw text
-        # Determine dominant mark_type for this group
-        kw_count = sum(1 for r in records if r["mark_type"] == "negative_keyword")
-        mark_type = "negative_keyword" if kw_count > len(records) / 2 else "negative_span"
         out.append({
             "text": rep_text,
             "normalized_text": norm_text,
             "count": len(records),
-            "mark_type": mark_type,
             "example_negatives": [
                 {
                     "text": r["text"],
@@ -1874,6 +1895,10 @@ def _negative_span_analysis(negative_records: List[Dict[str, Any]]) -> List[Dict
                     "language": r["language"],
                     "correct_span": r["correct_span"],
                     "parse_strategy": r["parse_strategy"],
+                    # Phase 2: tag each example with its source so downstream
+                    # agents can filter auto-inferred marks if they want
+                    # manual-only signal (default behaviour is to merge).
+                    "source": r.get("source", "manual"),
                 }
                 for r in records[:5]
             ],

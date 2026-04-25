@@ -5,7 +5,9 @@ import { toast } from "sonner"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import type { AnnotationSpan, MarkSpan, ResponseClass, ReviewCase } from "@/types"
-import { AnnotationDock, autoFormat, autoPosition, type PendingSpan } from "./annotation-dock"
+import { autoFormat, autoPosition, parserMatchesAnySpan } from "@/lib/span-autodetect"
+import type { ActiveModifier } from "@/hooks/use-modifier-state"
+import { NotePanel } from "./note-panel"
 import { chunkResponse, type TranslateChunk } from "./translate-chunks"
 import { ChunkGutter } from "./chunk-gutter"
 
@@ -17,7 +19,8 @@ interface Props {
    * parser via a classification — until then the green "correct" badge renders
    * muted so it doesn't falsely reassure the annotator. */
   annotatorVerified: boolean
-  pending: PendingSpan | null
+  /** v4 (Phase 1): null → answer span; anchor/keyword/negative for held A/D/Shift. */
+  activeModifier: ActiveModifier
   /** Current classification verdicts — used to compute the
    * disagreement alert + strike-through parser badge. */
   responseClasses: ResponseClass[]
@@ -26,40 +29,61 @@ interface Props {
   /** Session-wide peek-translate toggle (chunked gutter + hover popover). */
   peekTranslateOn: boolean
   onTogglePeekTranslate: () => void
-  onSetPending: (next: PendingSpan | null) => void
-  onCommitPending: () => void
-  /** Immediate add (no pending / dock). Used by word-level click-to-mark. */
+  /** Immediate add with auto-detected position/format. Used by both click-to-mark
+   *  and drag-select-to-mark paths since Phase 1 removed the pending dock. */
   onAddSpan: (span: AnnotationSpan) => void
   onRemoveSpan: (index: number) => void
   onChangeNote: (next: string) => void
-  onChangePosition: (position: PendingSpan["position"]) => void
-  onChangeFormat: (format: PendingSpan["format"]) => void
   onFlagFalsePositive?: () => void
-  onRegisterCommit?: (commit: (() => void) | null) => void
   // v3 mark types
   contextAnchors: MarkSpan[]
   answerKeywords: MarkSpan[]
   negativeSpans: MarkSpan[]
+  /** v4: retained in the type surface so legacy annotations with stored
+   *  negative_keywords still render during the Phase 1 migration window, but
+   *  no longer authored via the UI. */
   negativeKeywords: MarkSpan[]
   onAddContextAnchor: (mark: MarkSpan) => void
   onAddAnswerKeyword: (mark: MarkSpan) => void
   onAddNegativeSpan: (mark: MarkSpan) => void
-  onAddNegativeKeyword: (mark: MarkSpan) => void
   onRemoveContextAnchor: (index: number) => void
   onRemoveAnswerKeyword: (index: number) => void
   onRemoveNegativeSpan: (index: number) => void
   onRemoveNegativeKeyword: (index: number) => void
 }
 
-/** Find the first occurrence of parser-extracted text inside the response. */
-function findParserMatch(
-  response: string,
-  parsed: unknown,
+/**
+ * Resolve the parser-highlight region in `caseData.raw_response`.
+ *
+ * Phase 2: prefer backend-emitted `parsed_char_start` / `parsed_char_end`
+ * over client-side substring search. Backend offsets are populated either
+ * natively by a migrated plugin parser OR by the universal
+ * `resolve_parser_offsets` fallback at result-write time — so every
+ * freshly-run case carries reliable anchors.
+ *
+ * Falls back to client-side substring search for legacy result files that
+ * predate Phase 2 (fields absent). Substring search returns `null` for
+ * non-string `parsed_answer` (grids, dicts); that's the intended behaviour
+ * — no amber highlight, no parser-click affordance.
+ */
+function resolveParserMatch(
+  caseData: ReviewCase,
 ): { start: number; end: number } | null {
-  if (typeof parsed !== "string" || !parsed) return null
-  const needle = parsed.trim()
+  const { parsed_char_start, parsed_char_end, raw_response, parsed_answer } = caseData
+  if (
+    typeof parsed_char_start === "number" &&
+    typeof parsed_char_end === "number" &&
+    parsed_char_start >= 0 &&
+    parsed_char_end > parsed_char_start &&
+    parsed_char_end <= raw_response.length
+  ) {
+    return { start: parsed_char_start, end: parsed_char_end }
+  }
+  // Legacy fallback: client-side substring search over stringified value.
+  if (typeof parsed_answer !== "string" || !parsed_answer) return null
+  const needle = parsed_answer.trim()
   if (!needle) return null
-  const idx = response.toLowerCase().indexOf(needle.toLowerCase())
+  const idx = raw_response.toLowerCase().indexOf(needle.toLowerCase())
   if (idx < 0) return null
   return { start: idx, end: idx + needle.length }
 }
@@ -69,10 +93,19 @@ function findParserMatch(
 const OWN_PLAIN = -2
 const OWN_PARSER = -1
 // >=0 → annotation span (value is the span index)
-const OWN_ANCHOR = -3    // context anchor (Ctrl+click)
-const OWN_KEYWORD = -4   // answer keyword (Alt+click)
-const OWN_NEG_SPAN = -5  // negative span (Shift+click)
-const OWN_NEG_KW = -6    // negative keyword (Shift+Alt+click)
+const OWN_ANCHOR = -3    // context anchor (A+click/drag)
+const OWN_KEYWORD = -4   // answer keyword (D+click/drag)
+const OWN_NEG_SPAN = -5  // negative span (Shift+click/drag), source="manual"
+// v4: OWN_NEG_KW retained for legacy-annotation rendering only — new author
+// paths can't produce one. Old sidecars migrated on read fold their keyword
+// entries into negative_spans, but some rows may still carry non-empty
+// `negative_keywords` until they're re-saved.
+const OWN_NEG_KW = -6
+// Phase 2: auto-inferred negative span (dotted-rose, ~60% opacity). Painted
+// BEFORE OWN_NEG_SPAN in classifyChars so manual marks win visual priority
+// when they overlap (which they shouldn't after Phase 2C's overlap-removal
+// logic, but legacy data may still have both).
+const OWN_NEG_SPAN_AUTO = -7
 
 /** Build a per-character owner map so the word-level renderer can decorate
  *  each token without re-scanning the whole span list. */
@@ -92,7 +125,14 @@ function classifyChars(
       owner[i] = OWN_PARSER
     }
   }
+  // Phase 2: paint auto-inferred negatives first so manual negatives
+  // (painted next) visually override on the rare overlap case.
   for (const s of negativeSpans) {
+    if (s.source !== "auto_inferred") continue
+    for (let i = s.char_start; i < s.char_end && i < len; i++) owner[i] = OWN_NEG_SPAN_AUTO
+  }
+  for (const s of negativeSpans) {
+    if (s.source === "auto_inferred") continue
     for (let i = s.char_start; i < s.char_end && i < len; i++) owner[i] = OWN_NEG_SPAN
   }
   for (const s of negativeKeywords) {
@@ -124,7 +164,7 @@ interface RenderWordsArgs {
   parserHighlightRef: React.RefObject<HTMLSpanElement | null>
   flashing: boolean
   parserHint: string
-  onWordClick: (start: number, end: number, text: string, event: React.MouseEvent) => void
+  onWordClick: (start: number, end: number, text: string) => void
   onRemoveSpan: (index: number) => void
   /**
    * When provided, output is wrapped in `<span data-chunk-idx="…">` elements
@@ -202,7 +242,7 @@ function renderRange(
   parserAttached: { value: boolean },
   flashing: boolean,
   parserHint: string,
-  onWordClick: (start: number, end: number, text: string, event: React.MouseEvent) => void,
+  onWordClick: (start: number, end: number, text: string) => void,
   onRemoveSpan: (index: number) => void,
 ): React.ReactNode[] {
   const out: React.ReactNode[] = []
@@ -230,6 +270,11 @@ function renderRange(
         out.push(<span key={runStart} className="border-b border-dotted border-violet-500 bg-violet-400/15">{chunk}</span>)
       } else if (consistent && firstOwner === OWN_NEG_SPAN) {
         out.push(<span key={runStart} className="border-b-2 border-rose-500 bg-rose-400/15">{chunk}</span>)
+      } else if (consistent && firstOwner === OWN_NEG_SPAN_AUTO) {
+        // Phase 2: auto-inferred negative — muted, dotted, ~60% opacity of
+        // a manual negative. Visually distinct so annotators can tell the
+        // difference at a glance.
+        out.push(<span key={runStart} className="border-b border-dotted border-rose-400 bg-rose-400/8">{chunk}</span>)
       } else if (consistent && firstOwner === OWN_NEG_KW) {
         out.push(<span key={runStart} className="border-b border-dotted border-rose-600 bg-rose-500/20">{chunk}</span>)
       } else if (consistent && firstOwner === OWN_PARSER) {
@@ -256,7 +301,7 @@ function renderRange(
       out.push(
         <mark
           key={runStart}
-          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
           className="cursor-pointer rounded-sm border-b border-dashed border-indigo-500 bg-indigo-400/15 px-0.5 text-foreground hover:bg-indigo-400/25"
           title="Context anchor · click to remove"
         >{chunk}</mark>,
@@ -265,7 +310,7 @@ function renderRange(
       out.push(
         <mark
           key={runStart}
-          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
           className="cursor-pointer rounded-sm border-b border-dotted border-violet-500 bg-violet-400/15 px-0.5 text-foreground hover:bg-violet-400/25"
           title="Answer keyword · click to remove"
         >{chunk}</mark>,
@@ -274,16 +319,28 @@ function renderRange(
       out.push(
         <mark
           key={runStart}
-          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
           className="cursor-pointer rounded-sm border-b-2 border-rose-500 bg-rose-400/15 px-0.5 text-foreground hover:bg-rose-400/25"
           title="Negative span · click to remove"
+        >{chunk}</mark>,
+      )
+    } else if (consistent && firstOwner === OWN_NEG_SPAN_AUTO) {
+      // Phase 2: auto-inferred negative rendering. Same click-routing as
+      // other mark types (removal via the chip row below); the dotted style
+      // tells annotators this was synthesised, not hand-placed.
+      out.push(
+        <mark
+          key={runStart}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
+          className="cursor-pointer rounded-sm border-b border-dotted border-rose-400 bg-rose-400/8 px-0.5 text-foreground hover:bg-rose-400/20"
+          title="Auto-inferred from parser disagreement · remove from chip row below"
         >{chunk}</mark>,
       )
     } else if (consistent && firstOwner === OWN_NEG_KW) {
       out.push(
         <mark
           key={runStart}
-          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
           className="cursor-pointer rounded-sm border-b border-dotted border-rose-600 bg-rose-500/20 px-0.5 text-foreground hover:bg-rose-500/30"
           title="Negative keyword · click to remove"
         >{chunk}</mark>,
@@ -295,18 +352,27 @@ function renderRange(
         <span
           key={runStart}
           ref={isFirstParserWord ? parserHighlightRef : undefined}
-          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
           className={`cursor-pointer rounded-sm border-b border-dashed border-amber-500 bg-amber-400/10 px-0.5 text-foreground transition-colors hover:bg-amber-400/25 ${flashing ? "ring-2 ring-amber-400" : ""}`}
-          title={`Parser extracted: ${parserHint} · click to mark this word as the answer`}
+          title={`Parser extracted: ${parserHint} · click to confirm · Shift+click to flag false-positive · Shift+drag for negative span`}
         >{chunk}</span>,
       )
     } else if (consistent && firstOwner === OWN_PLAIN) {
+      // v4 modifier-hold hover preview: inherits the target mark color from
+      // the enclosing `group` container via `group-data-[modifier=...]`, so
+      // the annotator sees what the commit will produce before releasing.
       out.push(
         <span
           key={runStart}
-          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk, e) }}
-          className="cursor-pointer rounded-sm px-0.5 transition-colors hover:bg-primary/10 hover:underline hover:decoration-primary hover:decoration-2 hover:underline-offset-4"
-          title="Click to mark · Ctrl: anchor · Alt: keyword · Shift: negative"
+          onClick={(e) => { e.stopPropagation(); onWordClick(runStart, j, chunk) }}
+          className="
+            cursor-pointer rounded-sm px-0.5 transition-colors
+            hover:bg-primary/10 hover:underline hover:decoration-primary hover:decoration-2 hover:underline-offset-4
+            group-data-[modifier=anchor]:hover:bg-indigo-400/35 group-data-[modifier=anchor]:hover:decoration-indigo-600
+            group-data-[modifier=keyword]:hover:bg-violet-400/35 group-data-[modifier=keyword]:hover:decoration-violet-600
+            group-data-[modifier=negative]:hover:bg-rose-400/35 group-data-[modifier=negative]:hover:decoration-rose-600
+          "
+          title="Click/drag to mark · A: anchor · D: keyword · Shift: negative"
         >{chunk}</span>,
       )
     } else {
@@ -336,16 +402,8 @@ function matchBadgeClass(matchType: string, verified: boolean): string {
   }
 }
 
-/** Does the parser's extracted text (as a string) overlap *any* span? */
-function parserMatchesAnySpan(parsed: unknown, spans: AnnotationSpan[]): boolean {
-  if (typeof parsed !== "string" || !parsed.trim()) return false
-  if (spans.length === 0) return false
-  const needle = parsed.trim().toLowerCase()
-  return spans.some((s) => {
-    const hay = s.text.trim().toLowerCase()
-    return hay.includes(needle) || needle.includes(hay)
-  })
-}
+// `parserMatchesAnySpan` lives in `@/lib/span-autodetect` as of Phase 2 —
+// previously duplicated here and in review.tsx.
 
 function stringifyAnswer(value: unknown): string {
   if (value === null || value === undefined) return "—"
@@ -394,20 +452,15 @@ export function ResponsePanel({
   spans,
   note,
   annotatorVerified,
-  pending,
+  activeModifier,
   responseClasses,
   targetLang,
   peekTranslateOn,
   onTogglePeekTranslate,
-  onSetPending,
-  onCommitPending,
   onAddSpan,
   onRemoveSpan,
   onChangeNote,
-  onChangePosition,
-  onChangeFormat,
   onFlagFalsePositive,
-  onRegisterCommit,
   contextAnchors,
   answerKeywords,
   negativeSpans,
@@ -415,7 +468,6 @@ export function ResponsePanel({
   onAddContextAnchor,
   onAddAnswerKeyword,
   onAddNegativeSpan,
-  onAddNegativeKeyword,
   onRemoveContextAnchor,
   onRemoveAnswerKeyword,
   onRemoveNegativeSpan,
@@ -433,8 +485,8 @@ export function ResponsePanel({
   }, [caseData.language, targetLang])
 
   const parserMatch = useMemo(
-    () => findParserMatch(caseData.raw_response, caseData.parsed_answer),
-    [caseData.raw_response, caseData.parsed_answer],
+    () => resolveParserMatch(caseData),
+    [caseData],
   )
 
   const charOwner = useMemo(
@@ -480,50 +532,69 @@ export function ResponsePanel({
     setTimeout(() => setFlashing(false), 1400)
   }, [])
 
-  /** One-click word-marking with modifier key detection.
-   *  - Plain click: answer span (blue)
-   *  - Ctrl/Cmd+click: context anchor (indigo)
-   *  - Alt/Option+click: answer keyword (violet)
-   *  - Shift+click: negative span (rose)
-   *  - Shift+Alt/Ctrl/Cmd+click: negative keyword (dark rose)
+  /** v4 (Phase 1 + Phase 2): one-click word-marking with modifier-mode detection.
+   *  - No modifier held → answer span (blue, auto-detected position/format).
+   *    Plain-click on the parser-highlighted amber region also lands here,
+   *    effectively "confirming the parser's extraction at word granularity."
+   *  - A held          → context anchor (indigo).
+   *  - D held          → answer keyword (violet).
+   *  - Shift held      → negative span (rose) — UNLESS the click falls inside
+   *    the parser-highlight region, in which case it toggles the
+   *    `false_positive` response class instead (Phase 2 §3.2). Shift+drag
+   *    across the parser region still commits a negative span because drag
+   *    never enters this click handler — so the drag-wins-over-click rule
+   *    falls out automatically.
    */
   const handleWordClick = useCallback(
-    (start: number, end: number, text: string, event: React.MouseEvent) => {
-      const isCtrl = event.ctrlKey || event.metaKey
-      const isAlt = event.altKey
-      const isShift = event.shiftKey
-
+    (start: number, end: number, text: string) => {
       const mark: MarkSpan = { text, char_start: start, char_end: end }
-
-      if (isShift && (isAlt || isCtrl)) {
-        onAddNegativeKeyword(mark)
-      } else if (isShift) {
+      const inParserRegion =
+        parserMatch !== null && start >= parserMatch.start && end <= parserMatch.end
+      if (activeModifier === "negative") {
+        if (inParserRegion && onFlagFalsePositive) {
+          onFlagFalsePositive()
+          return
+        }
         onAddNegativeSpan(mark)
-      } else if (isCtrl) {
-        onAddContextAnchor(mark)
-      } else if (isAlt) {
-        onAddAnswerKeyword(mark)
-      } else {
-        // Default: answer span (existing behavior)
-        const full = caseData.raw_response
-        onAddSpan({
-          text,
-          char_start: start,
-          char_end: end,
-          position: autoPosition(start, full.length),
-          format: autoFormat(full, start, end),
-          confidence: "high",
-        })
+        return
       }
+      if (activeModifier === "anchor") {
+        onAddContextAnchor(mark)
+        return
+      }
+      if (activeModifier === "keyword") {
+        onAddAnswerKeyword(mark)
+        return
+      }
+      const full = caseData.raw_response
+      onAddSpan({
+        text,
+        char_start: start,
+        char_end: end,
+        position: autoPosition(start, full.length),
+        format: autoFormat(full, start, end),
+        confidence: "high",
+      })
     },
-    [caseData.raw_response, onAddSpan, onAddContextAnchor, onAddAnswerKeyword, onAddNegativeSpan, onAddNegativeKeyword],
+    [
+      activeModifier,
+      caseData.raw_response,
+      parserMatch,
+      onAddSpan,
+      onAddContextAnchor,
+      onAddAnswerKeyword,
+      onAddNegativeSpan,
+      onFlagFalsePositive,
+    ],
   )
 
-  // ── Selection handling (drag-select) ──────────────────────────────────
-  // With modifier keys: Ctrl/Alt/Shift+drag directly add the mark (bypass dock).
-  // Without modifiers: route through PendingSpan → dock as before.
+  // ── Drag-select handling ───────────────────────────────────────────────
+  // v4 (Phase 1): commit IMMEDIATELY on mouse-up. No pending/dock step.
+  // Mark type driven by `activeModifier` at commit time (release-wins: if the
+  // user releases the modifier before mouse-up, the span commits as plain
+  // answer — intended behaviour).
   const handleMouseUp = useCallback(
-    (event: React.MouseEvent) => {
+    () => {
       const sel = window.getSelection()
       if (!sel || sel.isCollapsed) return
       const container = responseRef.current
@@ -550,40 +621,39 @@ export function ResponsePanel({
       if (char_start < 0) return
       const char_end = char_start + selected.length
 
-      const isCtrl = event.ctrlKey || event.metaKey
-      const isAlt = event.altKey
-      const isShift = event.shiftKey
-
-      // Modifier held → directly add mark, clear selection.
-      if (isShift || isCtrl || isAlt) {
-        const mark: MarkSpan = { text: selected, char_start, char_end }
-        if (isShift && (isAlt || isCtrl)) {
-          onAddNegativeKeyword(mark)
-        } else if (isShift) {
-          onAddNegativeSpan(mark)
-        } else if (isCtrl) {
-          onAddContextAnchor(mark)
-        } else if (isAlt) {
-          onAddAnswerKeyword(mark)
-        }
-        sel.removeAllRanges()
-        return
+      if (activeModifier === "negative") {
+        onAddNegativeSpan({ text: selected, char_start, char_end })
+      } else if (activeModifier === "anchor") {
+        onAddContextAnchor({ text: selected, char_start, char_end })
+      } else if (activeModifier === "keyword") {
+        onAddAnswerKeyword({ text: selected, char_start, char_end })
+      } else {
+        onAddSpan({
+          text: selected,
+          char_start,
+          char_end,
+          position: autoPosition(char_start, full.length),
+          format: autoFormat(full, char_start, char_end),
+          confidence: "high",
+        })
       }
-
-      // No modifier → pending span (dock flow).
-      onSetPending({
-        text: selected,
-        char_start,
-        char_end,
-        position: autoPosition(char_start, full.length),
-        format: autoFormat(full, char_start, char_end),
-      })
+      sel.removeAllRanges()
     },
-    [caseData.raw_response, onSetPending, onAddContextAnchor, onAddAnswerKeyword, onAddNegativeSpan, onAddNegativeKeyword],
+    [
+      activeModifier,
+      caseData.raw_response,
+      onAddSpan,
+      onAddContextAnchor,
+      onAddAnswerKeyword,
+      onAddNegativeSpan,
+    ],
   )
 
   return (
-    <div className="flex h-full flex-col gap-3 overflow-hidden">
+    <div
+      className="group flex h-full flex-col gap-3 overflow-hidden transition-colors data-[modifier=anchor]:bg-indigo-500/15 data-[modifier=keyword]:bg-violet-500/15 data-[modifier=negative]:bg-rose-500/15 data-[modifier=anchor]:ring-2 data-[modifier=keyword]:ring-2 data-[modifier=negative]:ring-2 data-[modifier=anchor]:ring-indigo-500/40 data-[modifier=keyword]:ring-violet-500/40 data-[modifier=negative]:ring-rose-500/40 data-[modifier=anchor]:ring-inset data-[modifier=keyword]:ring-inset data-[modifier=negative]:ring-inset"
+      data-modifier={activeModifier ?? "none"}
+    >
       <div className="flex flex-wrap items-center gap-1.5">
         <Badge variant="outline" className="text-[10px]">
           Parser: <span className="ml-1 font-mono">{stringifyAnswer(caseData.parsed_answer)}</span>
@@ -704,18 +774,13 @@ export function ResponsePanel({
           ref={responseRef}
           onMouseUp={handleMouseUp}
           onMouseDown={(e) => {
-            // Suppress native text-selection extension when modifier keys are
-            // held — Shift+click natively extends the selection, which prevents
-            // our click handler from firing.  Alt+click on macOS inserts
-            // special chars in some contexts.  Preventing default here keeps
-            // plain drag-select working (no modifiers) while letting modified
-            // clicks through to the onClick handlers on individual word spans.
+            // v4: Shift is still a native browser "extend-selection" modifier
+            // even though we no longer use event.shiftKey for mark-type
+            // routing. Preventing default on Shift-down keeps single-click
+            // Shift-as-negative functional instead of extending the previous
+            // selection. Also suppress Alt/Option on macOS — some inputs
+            // interpret it as a special-char modifier that eats the click.
             if (e.shiftKey || e.altKey) e.preventDefault()
-          }}
-          onContextMenu={(e) => {
-            // Suppress the native context menu so Ctrl+click (macOS right-click
-            // equivalent) reaches the click handler as an anchor-mark action.
-            if (e.ctrlKey || e.metaKey || e.altKey || e.shiftKey) e.preventDefault()
           }}
           className={`relative h-full select-text overflow-y-auto whitespace-pre-wrap rounded-md border border-border/60 bg-background font-mono text-sm leading-relaxed ${
             chunks.length > 0 ? "py-4 pl-8 pr-4" : "p-4"
@@ -790,19 +855,7 @@ export function ResponsePanel({
         />
       )}
 
-      <AnnotationDock
-        pending={pending}
-        note={note}
-        onCommit={onCommitPending}
-        onDismiss={() => {
-          onSetPending(null)
-          window.getSelection()?.removeAllRanges()
-        }}
-        onChangePosition={onChangePosition}
-        onChangeFormat={onChangeFormat}
-        onChangeNote={onChangeNote}
-        onRegisterCommit={onRegisterCommit}
-      />
+      <NotePanel note={note} onChangeNote={onChangeNote} />
     </div>
   )
 }

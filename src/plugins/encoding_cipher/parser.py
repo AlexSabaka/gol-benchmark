@@ -14,6 +14,7 @@ from src.plugins.parse_utils import (
     build_answer_label_re,
     get_language,
     merge_patterns,
+    normalize_unicode,
     re_search_last,
     strip_verification_tail,
 )
@@ -348,6 +349,7 @@ class EncodingCipherParser(ResponseParser):
         task_params = task_params or {}
         lang = get_language(task_params)
         task_mode = task_params.get("task_mode", "decode_only")
+        response = normalize_unicode(response)
 
         # Check for refusal before attempting extraction
         if _is_refusal(response, lang):
@@ -402,7 +404,7 @@ class EncodingCipherParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="none", confidence=0.0,
+            parse_strategy="fallback", confidence=0.0,
             error="Could not extract decoded plaintext",
         )
 
@@ -429,6 +431,6 @@ class EncodingCipherParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=response,
-            parse_strategy="none", confidence=0.0,
+            parse_strategy="fallback", confidence=0.0,
             error="Could not extract response word",
         )

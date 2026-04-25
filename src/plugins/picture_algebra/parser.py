@@ -49,14 +49,38 @@ from typing import Any, Dict, List, Optional, Tuple, Union
 
 from src.plugins.base import ParsedAnswer, ResponseParser
 from src.plugins.parse_utils import (
+    Number,
+    build_answer_label_re,
     build_word_to_int,
     get_language,
     last_sentences,
     merge_keywords,
+    normalize_for_label_matching,
+    normalize_unicode,
     re_search_last,
+    try_parse_number,
 )
 
-Number = Union[int, float]
+# Picture-algebra-specific labels layered on top of ANSWER_LABELS.
+# `conclusion` / `розв'язок` are common in algebra-style answers; the base
+# ANSWER_LABELS dict covers answer / result / final answer / solution.
+_EXTRA_LABELS: Dict[str, List[str]] = {
+    "en": ["conclusion"],
+    "es": ["conclusión"],
+    "fr": ["conclusion"],
+    "de": ["schlussfolgerung"],
+    "zh": ["结论"],
+    "ua": ["висновок", "розв'язок"],
+}
+
+
+def _build_label_alt(lang: str) -> str:
+    base = build_answer_label_re(lang)
+    extra = merge_keywords(_EXTRA_LABELS, lang)
+    extra_alt = "|".join(re.escape(e) for e in extra) if extra else ""
+    if base and extra_alt:
+        return f"{base}|{extra_alt}"
+    return base or extra_alt
 
 # ── sentinel keywords (multilingual) ────────────────────────────────────
 
@@ -167,38 +191,6 @@ _NO_SOLUTION_KEYWORDS: Dict[str, List[str]] = {
     ],
 }
 
-# ── LaTeX normalization ─────────────────────────────────────────────────
-
-_LATEX_WRAP_RE = re.compile(
-    r"\\(?:text|mathbf|mathrm|mathit|mathsf|mathtt|textbf|textit)\s*\{([^{}]*)\}"
-)
-# \quad / \qquad / \, / \; / \: / \!  — explicit LaTeX spacing macros.
-_LATEX_SPACING_RE = re.compile(r"\\(?:qquad|quad|[,;:!])")
-
-
-def _normalize_for_label_matching(text: str) -> str:
-    """Strip LaTeX math-mode wrappers so token-adjacent patterns can match.
-
-    * ``\\text{🚲}`` → ``🚲`` (same for ``\\mathbf`` / ``\\mathrm`` / …)
-    * ``\\quad`` / ``\\;`` / ``\\,`` → single space
-    * ``$$`` / ``$`` delimiters → single space
-
-    Sentinel detection runs on the *raw* text — only label-extraction
-    strategies see the normalized form.
-    """
-    # Replace \text{X} / \mathbf{X} / … with contents.  Run until stable so
-    # nested wrappers (rare but possible: \mathbf{\text{X}}) get unwrapped.
-    prev = None
-    for _ in range(3):  # bounded iteration — never loops infinitely
-        prev = text
-        text = _LATEX_WRAP_RE.sub(r"\1", text)
-        if text == prev:
-            break
-    text = _LATEX_SPACING_RE.sub(" ", text)
-    text = text.replace("$$", " ").replace("$", " ")
-    return text
-
-
 # ── markdown wrap tolerance ──────────────────────────────────────────────
 
 # Optional ``*+`` / ``_+`` between two tokens — handles ``**🦆** = 4``,
@@ -206,47 +198,9 @@ def _normalize_for_label_matching(text: str) -> str:
 _MD_WRAP = r"(?:\s*[*_]+)?"
 
 
-# ── numeric parsing helpers ─────────────────────────────────────────────
+# ── local numeric regex (used only for bare-digit scans, not full parsing) ──
 
 _SIGNED_INT_RE = re.compile(r"(-?\d+)")
-
-
-def _try_parse_number(
-    text: str,
-    word_map: Optional[Dict[str, int]] = None,
-) -> Optional[Number]:
-    """Parse *text* as an int or float, stripping punctuation/markdown noise.
-
-    Returns ``int`` for integer literals and ``float`` for decimals.  Float
-    returns let the evaluator flag ``non_integer_prediction`` without
-    silently truncating (``int("22.2")`` would coerce to ``22``, which
-    would score as correct against an expected value of ``22``).
-
-    Word-number fallback via ``word_map`` always returns an ``int``.
-    """
-    s = text.strip().strip("*_`").rstrip(".,;:!?)}]")
-    # Integer first — most common path.
-    if re.fullmatch(r"-?\d+", s):
-        try:
-            return int(s)
-        except ValueError:
-            return None
-    # Decimal.
-    if re.fullmatch(r"-?\d+\.\d+", s):
-        try:
-            return float(s)
-        except ValueError:
-            return None
-    # Word number.
-    if word_map is None:
-        return None
-    low = s.lower()
-    if low in word_map:
-        return word_map[low]
-    stripped = re.sub(r"^(?:-|negative|minus|\u2212)\s+", "", low)
-    if stripped != low and stripped in word_map:
-        return -word_map[stripped]
-    return None
 
 
 def _token_alt(tokens: List[str]) -> str:
@@ -347,7 +301,7 @@ class PictureAlgebraParser(ResponseParser):
                 error="Empty response",
             )
 
-        raw = str(response).strip()
+        raw = normalize_unicode(str(response).strip())
         tp = task_params or {}
         tokens: List[str] = list(tp.get("variables") or [])
         num_vars = int(tp.get("num_variables", len(tokens) or 2))
@@ -359,7 +313,7 @@ class PictureAlgebraParser(ResponseParser):
         if not tokens:
             return ParsedAnswer(
                 value=None, raw_response=raw,
-                parse_strategy="failed", confidence=0.0,
+                parse_strategy="fallback", confidence=0.0,
                 error="No variable tokens provided in task_params",
             )
 
@@ -374,7 +328,7 @@ class PictureAlgebraParser(ResponseParser):
 
         # All extraction strategies run on normalized text so LaTeX
         # wrappers don't block token-adjacent pattern matching.
-        normalized = _normalize_for_label_matching(raw)
+        normalized = normalize_for_label_matching(raw)
 
         # Boxed strategy gets question_scope/queried_variable for the
         # boxed_single_value path (``\\boxed{11}``).
@@ -395,7 +349,9 @@ class PictureAlgebraParser(ResponseParser):
         for fn in (
             self._strategy_label_line,
             self._strategy_bold_assignments,
-            self._strategy_final_answer_block,
+            # final_answer_block takes lang for the multilingual label
+            # alternation; wrap it so the loop-invoked signature stays uniform.
+            lambda t, tk, wm: self._strategy_final_answer_block(t, tk, wm, lang),
         ):
             result = fn(normalized, tokens, word_map)
             if result is not None:
@@ -469,7 +425,7 @@ class PictureAlgebraParser(ResponseParser):
 
         return ParsedAnswer(
             value=None, raw_response=raw,
-            parse_strategy="failed", confidence=0.1,
+            parse_strategy="fallback", confidence=0.1,
             error="All parsing strategies failed",
         )
 
@@ -576,7 +532,7 @@ class PictureAlgebraParser(ResponseParser):
             if not pair:
                 continue
             token = pair.group(1)
-            val = _try_parse_number(pair.group(2), word_map)
+            val = try_parse_number(pair.group(2), word_map)
             if val is not None:
                 values[token] = val
         if values:
@@ -585,7 +541,7 @@ class PictureAlgebraParser(ResponseParser):
         # ── Path 2: boxed_single_value ──
         bare = inner.strip()
         if re.fullmatch(r"-?\d+(?:\.\d+)?", bare):
-            num = _try_parse_number(bare, word_map)
+            num = try_parse_number(bare, word_map)
             if num is None:
                 return None
             # 2a. Specific scope → assign to queried variable
@@ -635,7 +591,7 @@ class PictureAlgebraParser(ResponseParser):
             )
             last_val: Optional[Number] = None
             for m in re.finditer(numeric_pat, text, flags=re.IGNORECASE):
-                val = _try_parse_number(m.group(1), word_map)
+                val = try_parse_number(m.group(1), word_map)
                 if val is not None:
                     last_val = val
             if last_val is None:
@@ -645,7 +601,7 @@ class PictureAlgebraParser(ResponseParser):
                     rf"{_MD_WRAP}\s*{word_tail}"
                 )
                 for m in re.finditer(word_pat, text, flags=re.IGNORECASE):
-                    val = _try_parse_number(m.group(1), word_map)
+                    val = try_parse_number(m.group(1), word_map)
                     if val is not None:
                         last_val = val
             if last_val is not None:
@@ -671,24 +627,22 @@ class PictureAlgebraParser(ResponseParser):
                 if not pair:
                     continue
                 token = pair.group(1)
-                val = _try_parse_number(pair.group(2), word_map)
+                val = try_parse_number(pair.group(2), word_map)
                 if val is not None:
                     values[token] = val  # Later (end-first) overwrites earlier
         return (values, "bold_assignments") if values else None
 
     @staticmethod
     def _strategy_final_answer_block(
-        text: str, tokens: List[str], word_map: Dict[str, int],
+        text: str, tokens: List[str], word_map: Dict[str, int], lang: str = "en",
     ) -> Optional[Tuple[Dict[str, Number], str]]:
-        """Look for ``answer:`` / ``solution:`` / localized label, extract tail."""
-        labels = (
-            r"final\s+answer|answer|solution|result|conclusion|"
-            r"respuesta|resultado|solución|"
-            r"réponse|résultat|solution|"
-            r"antwort|ergebnis|lösung|"
-            r"答案|解|结果|解答|"
-            r"відповідь|результат|рішення|розв'язок"
-        )
+        """Look for ``answer:`` / ``solution:`` / localized label, extract tail.
+
+        Uses the shared multilingual `build_answer_label_re` plus picture
+        -algebra-specific extras (``conclusion`` / ``розв'язок``) so the
+        supported label set stays in sync with the rest of the benchmark.
+        """
+        labels = _build_label_alt(lang)
         m = re_search_last(
             rf"(?:{labels})\s*[:：=]?\s*(.*)",
             text, flags=re.IGNORECASE | re.DOTALL,
@@ -705,7 +659,7 @@ class PictureAlgebraParser(ResponseParser):
             tail, flags=re.IGNORECASE,
         ):
             token = pair.group(1)
-            val = _try_parse_number(pair.group(2), word_map)
+            val = try_parse_number(pair.group(2), word_map)
             if val is not None:
                 values[token] = val
         return (values, "final_answer_block") if values else None
@@ -734,7 +688,7 @@ class PictureAlgebraParser(ResponseParser):
             label = m.group(1)
             if label.lower() in ours:
                 continue
-            val = _try_parse_number(m.group(2))
+            val = try_parse_number(m.group(2))
             if val is None:
                 continue
             foreign[label] = val
@@ -758,7 +712,7 @@ class PictureAlgebraParser(ResponseParser):
             return None
         values: List[Number] = []
         for n in nums:
-            parsed = _try_parse_number(n)
+            parsed = try_parse_number(n)
             if parsed is None:
                 return None
             values.append(parsed)
