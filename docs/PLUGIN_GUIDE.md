@@ -1,8 +1,10 @@
 # Plugin System Guide
 
-> **Version 2.19.0** | Last updated: 2026-04-14
+> **Version 2.26.0** | Last updated: 2026-04-27
 
-Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for all **19** benchmark plugins, and a step-by-step walkthrough for adding new ones.
+Comprehensive guide to the GoL Benchmark plugin architecture: how plugins work, reference documentation for the **21 benchmark plugins** (canonical: `PluginRegistry.list_task_types()`), and a step-by-step walkthrough for adding new ones.
+
+> Per-plugin reference sections #1–#19 below were last refreshed in v2.19. They remain accurate for the listed parsers; cross-plugin alignment work since (Phases 1–8 in [End-First Parsing Convention](#end-first-parsing-convention) below) added shared utility adoption that is not yet reflected per-plugin. Plugins #20 (`fancy_unicode`) and #21 (`picture_algebra`) are stubs at the end of this section pending full write-ups — read the plugin source and `README.md` for now.
 
 ---
 
@@ -58,7 +60,7 @@ PluginRegistry (auto-discovers at first access)
     │                       ├── CarwashParser
     │                       └── CarwashEvaluator
     │
-    └── ... (19 plugins total)
+    └── ... (21 plugins total — see PluginRegistry.list_task_types())
 ```
 
 ### Base Classes
@@ -237,9 +239,9 @@ The central `PromptEngine` (`src/core/PromptEngine.py`) is now a **system-prompt
 
 | Coverage Level | Plugins |
 |---------------|---------|
-| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + content + parsing | All 19 plugins |
+| **6 languages** (EN/ES/FR/DE/ZH/UA) — prompts + content + parsing | All 21 plugins |
 
-All 19 plugins generate test **content** (scenarios, questions, grid data, narratives, encoded text) in the requested language — not just prompt wrappers. Each plugin has a dedicated i18n module with localized vocabulary and templates. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
+All 21 plugins generate test **content** (scenarios, questions, grid data, narratives, encoded text) in the requested language — not just prompt wrappers. Each plugin has a dedicated i18n module with localized vocabulary and templates. Parsers use `merge_keywords()` from `parse_utils` to combine English keywords (always included as fallback) with target language keywords.
 
 **Grammatical gender** (v2.15.0): Gendered languages (UA, ES, FR, DE) resolve articles, possessives, verb forms, and noun case endings correctly. The shared `grammar_utils.py` module provides `article()` (ES/FR/DE by gender+case), `resolve_vocab()` (Ukrainian nom/acc/loc case lookup), `pick_templates()` (gender-aware m/f template selection), and `vocab_gender()`. Subject gender is randomly assigned (m/f) per test case and stored in `task_params["subject_gender"]`.
 
@@ -260,73 +262,57 @@ re.search(r'\d+', response)  →  "15" (WRONG — intermediate)
 re_search_last(r'\d+', response)  →  "12" (CORRECT — final answer)
 ```
 
-### The Solution
+### The Solution — Shared `parse_utils` helpers
 
-`src/plugins/parse_utils.py` provides drop-in replacements and shared helpers:
+`src/plugins/parse_utils.py` is the canonical home for parsing helpers shared across all 21 plugins:
 
 ```python
 from src.plugins.parse_utils import (
     safe_enum, re_search_last, re_findall_last, last_sentences,
-    last_keyword_position, strip_verification_tail,
-)
-
-# Parse string to enum with fallback (used by all 12 generators)
-language = safe_enum(Language, language_str, Language.EN)
-system_style = safe_enum(SystemPromptStyle, style_str, SystemPromptStyle.ANALYTICAL)
-
-# Drop-in for re.search() — returns LAST match
-match = re_search_last(r"answer:\s*(\d+)", response)
-
-# Last N results from findall
-matches = re_findall_last(r"\d+", response, n=3)
-
-# Last N sentences
-sentences = last_sentences(response, n=3)
-
-# Position of last keyword occurrence
-pos = last_keyword_position(response, ["answer", "result", "therefore"])
-
-# Multilingual utilities
-from src.plugins.parse_utils import (
-    merge_keywords, merge_patterns, get_language,
-    build_word_to_int, build_answer_label_re,
-    WORD_TO_INT, ANSWER_LABELS, YES_WORDS, NO_WORDS,
+    last_keyword_position, strip_verification_tail, normalize_unicode,
 )
 ```
 
-Multilingual helpers in `parse_utils`:
+| Helper | Purpose |
+|---|---|
+| `safe_enum(enum_cls, value, default)` | Parse string → enum with fallback (used by all 21 generators) |
+| `re_search_last(pattern, text)` | Drop-in `re.search` that returns the **last** match |
+| `re_findall_last(pattern, text, n)` | Last N matches |
+| `last_sentences(text, n)` | Last N sentences |
+| `last_keyword_position(text, keywords)` | Position of last keyword hit |
+| `strip_verification_tail(text)` | Strip trailing "Verification:" / "Let me verify:" / "Working backward" sections before end-first matching |
+| `normalize_unicode(text)` | Curly/smart-quote + apostrophe normalization, plus U+2032 / U+2033 prime-fold (U+2018/2019/201C/201D/2032/2033 → ASCII) |
+| `merge_keywords(dict, lang)` | Merge English + target-language keyword lists (English always included as fallback) |
+| `merge_patterns(dict, lang)` | Same shape, for compiled regex pattern lists |
+| `get_language(task_params)` | Extract `language` from task_params (default `"en"`) |
+| `build_word_to_int(lang)` | Multilingual number word→int map (EN + target merged) |
+| `build_answer_label_re(lang)` | Multilingual answer-label alternation (`"answer\|result\|respuesta\|resultado\|…"`) |
+| Shared dicts | `WORD_TO_INT`, `ANSWER_LABELS`, `YES_WORDS`, `NO_WORDS` — all 6 languages |
 
-- `merge_keywords(keyword_dict, language)` — merge English + target language keyword lists (English always included as fallback)
-- `merge_patterns(pattern_dict, language)` — like `merge_keywords` but for compiled regex patterns
-- `get_language(task_params)` — extract language code from task_params, defaulting to `"en"`
-- `build_word_to_int(language)` — merge English + target language number word→int maps
-- `build_answer_label_re(language)` — build regex alternation of multilingual answer labels ("answer|result|respuesta|resultado|...")
-- Shared dicts: `WORD_TO_INT`, `ANSWER_LABELS`, `YES_WORDS`, `NO_WORDS` — all keyed by language code with entries for EN/ES/FR/DE/ZH/UA
+### Phase 1 cross-plugin extractions (post-v2.19)
 
-### Where It Applies
+The cross-plugin alignment effort migrated several helpers that originated inside individual plugins into `parse_utils`. Migration tracking lives in `.claude/plans/parser-alignment-cross-plugin.md`. Helpers and original owner:
 
-Every parser uses end-first search by default. Common patterns:
-- Reversed line scanning (iterate lines from bottom)
-- `re_search_last()` instead of `re.search()`
-- Checking last code block before first
-- Taking the last number when multiple appear
+| Helper | Original owner plugin | What it does |
+|---|---|---|
+| `normalize_unicode(text)` | `measure_comparison` | Smart-quote + prime fold (see Phase 5 adoption below). Adopted in all 21 parsers. |
+| `normalize_for_label_matching(text)` | `picture_algebra` | Strip LaTeX `\text{X}` / `\mathbf{X}` wrappers + `\quad` / `\,` spacing + `$$` / `$` delimiters before label matching. |
+| `try_parse_number(text, word_map=None)` | `picture_algebra` | Returns `int` for integer literals, `float` for decimals; never silently truncates `"22.2"` to `22`. |
+| `detect_sentinel_keyword(text, keyword_dict, lang, scan_first=2, scan_last=3)` | `picture_algebra` | Multilingual sentinel scan over true opening + closing sentences (splits FULL text, not a tail window). |
+| `has_contextual_marker(text, position, pattern_dicts, lang, pre_window=120, post_window=80, positional=False)` | `carwash` | Window-scoped contextual match around a keyword hit. `positional=True` requires the match span to contain the position. |
 
-### Exceptions
+### Phase 2 — `parse_strategy` naming convention (v2.26+)
 
-Three plugins deviate from strict end-first parsing:
+Every parser tags its output with a `parse_strategy` label. Two terminal labels are normalized across all 21 plugins:
 
-| Plugin | Exception | Reason |
-|--------|-----------|--------|
-| `object_tracking` | `bold_keyword` and `first_sentence_location` use FIRST match | Models bold the answer in the first sentence, then mention distractor locations in explanations. (v2.10.6) |
-| `time_arithmetic` | Validity parsing uses first-bold and first-sentence yes/no | Models answer "No"/"Yes" upfront for existence questions; later bolds are explanation. (v2.10.6) |
-| `measure_comparison` | `value_unit_match` strategy does NOT reverse | Both options are mentioned in the response. The match identifies *which* option was chosen, not position. |
-| `inverted_cup` | "flip" anywhere = correct | If the model mentions "flip" at all, it demonstrated the key insight. Wrong alternatives (drill, cut) don't negate a correct understanding. |
-| `false_premise` | `first_sentence_refusal` uses FIRST sentences; negation-aware compliance; safe-alternative section filtering | Models lead with "I can't help…" then explain at length with measurements in safe-alternative sections. End-first would pick up incidental compliance from explanations. (v2.10.7) |
-| `linda_fallacy` | Extracts ordered rankings | The task requires parsing a ranked list, not finding a single positional answer. |
+- `"empty"` — empty/whitespace response early return, before any strategy runs
+- `"fallback"` — end-of-pipeline give-up after every strategy failed
 
-### Verification-Section Stripping (v2.10.3)
+All other names are plugin-specific strategy labels (e.g. `"boxed"`, `"label_line"`, `"value_unit_comparative"`). Previously the same two terminal states were labelled inconsistently (`"failed"`, `"none"`, `"parse_error"`). Normalized across 14 parsers / 27 call sites — do not reintroduce the legacy names. The improvement-report `strategy_breakdown` uses these to group failure modes across the suite.
 
-End-first parsing can backfire when models append verification/confirmation sections that re-mention intermediate values. For example:
+### Phase 3 — `strip_verification_tail` adoption (v2.26+)
+
+End-first parsing can backfire when models append verification/confirmation sections that re-mention intermediate values:
 
 ```text
 "The answer is 12:02 AM.
@@ -336,15 +322,79 @@ Verification: 12:02 AM + 1h53m = 1:55 AM. This matches."
 re_search_last(time_pattern, response)  →  "1:55 AM" (WRONG — verification value)
 ```
 
-The shared `strip_verification_tail()` utility detects verification headers ("Verification:", "Let me verify:", "This confirms", "Working backward") and returns only the text before them. Applied to `time_arithmetic`, `object_tracking`, and `sally_anne` parsers before their lower-confidence pattern-matching strategies.
+`strip_verification_tail()` detects verification headers and returns only the text before them. **14 of 21 keyword-driven parsers** now apply it to their weaker pattern-scanning / last-number / last-alpha strategies while keeping high-confidence format strategies (boxed, bold, JSON, code block) on the raw response:
 
-The `carwash` parser uses a complementary approach: three regex pattern groups filter walk mentions that are conditional, negative, or dismissive — not actual walk recommendations:
+- Adopted: `arithmetic`, `grid_tasks`, `symbol_arithmetic`, `ascii_shapes`, `misquote`, `family_relations`, `strawberry` (count / reverse / nth_letter paths) + the 7 plugins that already used it (`time_arithmetic`, `object_tracking`, `sally_anne`, plus 4 others).
+- **Not** adopted (intentional): `linda_fallacy` (ranked list, not a single answer), `inverted_cup` (any mention of `flip` wins by design), `game_of_life` / `cellular_automata_1d` / `picross` (grid-extraction; Phase 3b evaluation pending annotation evidence — tracked in [TECHDEBT.md](../TECHDEBT.md)).
 
-- `_PRE_WALK_CONDITIONAL` — exception/hypothetical language before walk ("the only time/reason", "when you might", "if the mud/road/weather", "the main argument for")
-- `_WALK_CONDITIONAL` — walk followed by conditional operators ("walk if", "walk unless", "walk instead"), concession patterns ("could walk...but", "walk...but you'd"), non-primary motivations ("walk for exercise")
-- `_WALK_NEGATIVE` — dismissive statements about walking ("walking won't", "walking would complicate", "walking back", "walkable but", "walking is fine but")
+### Phase 4 — `build_answer_label_re` with plugin-local `_EXTRA_LABELS` (v2.26+)
 
-The parser also includes a first-sentence strategy (models typically state the answer in the opening line) and contextual bold filtering (walk-scoring bolds verified against surrounding text context).
+The shared multilingual answer-label regex grew from 4 to **9 of 21** parsers. The carwash pattern (module-level `_EXTRA_LABELS: Dict[str, List[str]]` + `_build_label_alt(lang)` helper combining shared `ANSWER_LABELS` with domain-specific extras) is now replicated in:
+
+| Plugin | Extra labels |
+|---|---|
+| `arithmetic` | `therefore` / `equals` |
+| `strawberry` | per-sub-type (count / reverse / letter) |
+| `time_arithmetic` | `time` / `day` / `duration`, cached via `@lru_cache(maxsize=8)` on `_label_regex(lang)` |
+| `symbol_arithmetic` | `therefore` |
+| `picture_algebra` | `conclusion` / `висновок` / `розв'язок` |
+
+Plugins that already used the shared regex without extras: `sally_anne`, `encoding_cipher`, `inverted_cup`, `measure_comparison`, `grid_tasks`, `ascii_shapes`, `family_relations`. Intentionally excluded: `false_premise` (refusal-label semantics, not answer-label), `linda_fallacy` (ranked lists), `misquote` (Q1/Q2 domain labels `attribution` / `sentiment` that don't overlap shared labels).
+
+The duplicated `_build_label_alt` helper is tracked as **TD-109** — candidate for eventual consolidation into `parse_utils.build_answer_label_re_with_extras(extra_labels, lang)` if more plugins join.
+
+### Phase 5 — `normalize_unicode` universal adoption (v2.26+)
+
+All 21 parsers now call `normalize_unicode(response)` at `parse()` entry (up from 1 pre-Phase-5). The shared helper was extended to fold U+2032 / U+2033 (prime / double-prime — common in measurement notation `5′` / `5″`) into ASCII quotes in addition to the original U+2018/2019/201C/201D curly-quote set. `false_premise`'s local `_normalize_quotes` helper was deleted and its single call site redirected to the shared helper.
+
+Placement varies by parser shape:
+- Single-entry parsers inline normalization into the `strip()` call: `text = normalize_unicode(response.strip())`
+- Dispatch parsers (`strawberry`, `time_arithmetic`) normalize once before mode routing
+- Grid parsers (`game_of_life`, `picross`, `cellular_automata_1d`) normalize after Unicode-space collapse but before shape extraction
+- `picture_algebra` normalizes raw input before `normalize_for_label_matching` so LaTeX stripping sees ASCII quotes
+
+Consistency across placements is tracked as **TD-112**.
+
+### Phase 8 — annotation-driven parser refactors
+
+The `object_tracking` Phase 8 refactor (v2.26+) was the first parser refactor driven entirely by user annotations — 129 annotated EN/UA cases pushed `alignment_ratio` from 0.712 toward a targeted ≥0.85 post-refactor. It established a reusable template:
+
+**Template (for future plugin refactors):**
+1. User annotates ≥100 cases per plugin via the `/review` UI.
+2. User exports the improvement-report JSON.
+3. Agent reads the JSON and identifies failure modes from `span_groups` (position/format buckets), `regex_test` (match_rate vs capture_contains_rate pairs), `context_anchor_groups` (reasoning anchors with frequency), and `negative_span_groups` (patterns the parser must FILTER).
+4. Agent implements fixes scoped to identified modes, extrapolating multilingual dict entries from the annotated languages to the unannotated ones.
+5. Agent adds `test_phase8_*` regressions per mode.
+6. Both the refactor and the extrapolation are logged in TECHDEBT so later annotations can validate.
+
+For the full workflow, see the `parser-refactor-from-annotations` skill (`.claude/skills/parser-refactor-from-annotations/`) and [HUMAN_REVIEW_GUIDE.md](HUMAN_REVIEW_GUIDE.md).
+
+**`object_tracking` specifics:** three new multilingual dicts in [src/plugins/object_tracking/parser.py](../src/plugins/object_tracking/parser.py): `_CONCLUSION_ANCHORS` (reasoning-closure phrases — `Conclusion` / `Therefore` / `Висновок` / `Отже` / `Final Location` etc.), `_LOCATION_PREPS` (preposition prefixes for the post-anchor location capture — EN `in/on/at/inside the`, UA `на/в/у/всередині`), `_BOLD_TRAILER_ANCHORS` (tighter immediate-left context for `**X**` trailers). EN/UA anchor dicts are annotation-driven; ES/FR/DE/ZH extrapolated from reasoning-closure vocabulary and tracked as **TD-114** pending per-language annotation validation. Seven new regression tests in [tests/plugins/test_object_tracking.py](../tests/plugins/test_object_tracking.py) (`test_phase8_*`).
+
+The aggregator bug `strategy_breakdown.parser_ok = 0` (**TD-113**) should be fixed before the next Phase 8 refactor session so per-strategy win/loss rates are actually populated.
+
+### Where end-first applies
+
+Every parser uses end-first search by default. Common patterns:
+- Reversed line scanning (iterate lines from bottom)
+- `re_search_last()` instead of `re.search()`
+- Checking last code block before first
+- Taking the last number when multiple appear
+
+### Exceptions
+
+Plugins that deviate from strict end-first parsing — and why:
+
+| Plugin | Exception | Reason |
+|--------|-----------|--------|
+| `object_tracking` | `bold_keyword` and `first_sentence_location` use FIRST match | Models bold the answer in the first sentence, then mention distractor locations in explanations. (v2.10.6) Phase 8 added an end-first **anchored** bold pass for verbose responses. |
+| `time_arithmetic` | Validity parsing uses first-bold and first-sentence yes/no | Models answer "No"/"Yes" upfront for existence questions; later bolds are explanation. (v2.10.6) |
+| `measure_comparison` | `value_unit_match` strategy does NOT reverse | Both options are mentioned. The match identifies *which* option was chosen, not position. Decimal type uses a separate 5-strategy parser (`_parse_decimal`) with end-first bare-value matching. |
+| `measure_comparison` | `comparative` runs both forward (`VALUE UNIT is [adv ...] COMPARATIVE`) and reverse (`COMPARATIVE [adv ...] one is VALUE UNIT`) in parallel | When both match, the one whose span ends LATER wins (end-first tie-break). Protects against "X is heavier... the lighter one is Y" edge cases. `label_line` runs BEFORE `bold` so an explicit `**Answer:**` trailer wins over scattered bolds (v2.26.1). |
+| `inverted_cup` | "flip" anywhere = correct | If the model mentions "flip" at all, it demonstrated the key insight. Wrong alternatives (drill, cut) don't negate a correct understanding. |
+| `false_premise` | `first_sentence_refusal` uses FIRST sentences; negation-aware compliance; safe-alternative section filtering | Models lead with "I can't help…" then explain at length with measurements in safe-alternative sections. End-first would pick up incidental compliance from explanations. (v2.10.7) |
+| `linda_fallacy` | Extracts ordered rankings | The task requires parsing a ranked list, not finding a single positional answer. |
+| `carwash` | Dual-keyword filtering | When both `drive` and `walk` keywords appear, `_is_conditional_walk` and `_is_conditional_drive` filter option-listing/comparison positions (`"walk or drive"`, `"walk vs drive"`). Drive filtering uses **positional matching** (checks if `drive_start` falls within a listing-pattern match span, not just nearby) to avoid over-filtering. When all positions are filtered, `_score()` returns `None` so the caller tries a different strategy. Both helpers delegate to shared `has_contextual_marker(positional=True\|False)` since Phase 1. |
 
 ### Validation
 
@@ -355,6 +405,8 @@ Re-parsed 1,933 results across 33 result files after implementing end-first pars
 - **v2.10.4**: Fixed 15 additional carwash false negatives from conditional/dismissive walk mentions (0 regressions)
 - **v2.10.5**: Fixed 38 measure comparison false negatives (smart quote normalization, pipeline reorder, bold two-pass, 0 regressions)
 - **v2.10.6**: Fixed 28 false negatives across object tracking (9), inverted cup (3), time arithmetic (14), encoding cipher (2) — first-bold/first-sentence strategies, tilt/tip patterns, validity yes/no detection, Unicode whitespace normalization (0 regressions)
+- **v2.10.7**: Fixed 61 `false_premise` false negatives across all 5 domains (0 regressions)
+- **v2.26+ (Phase 1–8)**: Cross-plugin alignment work in progress; per-phase validation tracked in [CHANGELOG.md](../CHANGELOG.md) and [TECHDEBT.md](../TECHDEBT.md)
 
 ---
 
@@ -1051,6 +1103,22 @@ Marker normalization: recognizes common nonogram aliases regardless of prompt ma
 
 ---
 
+### 20. Fancy Unicode
+
+**Purpose**: Decorative-Unicode normalization — math-script, fullwidth, small caps, circled (12 families across 3 tiers).
+
+**Generator / Parser / Evaluator**: see [src/plugins/fancy_unicode/](../src/plugins/fancy_unicode/) and the plugin's `README.md`. Full reference write-up pending.
+
+### 21. Picture Algebra
+
+**Purpose**: System-of-equations puzzles with emoji / alpha / nonsense-word variables — operationalises the GSM-Symbolic experiment (measures arithmetic degradation under semantic surface noise).
+
+**Implementation**: requires `sympy` to load; under `src/plugins/picture_algebra/`. Owners of `parse_utils` Phase-1 helpers `normalize_for_label_matching`, `try_parse_number`, and `detect_sentinel_keyword` (see [End-First Parsing Convention § Phase 1](#phase-1-cross-plugin-extractions-post-v219)).
+
+**Generator / Parser / Evaluator**: see [src/plugins/picture_algebra/](../src/plugins/picture_algebra/) and the plugin's `README.md`. Full reference write-up pending.
+
+---
+
 ## Adding a New Plugin
 
 This walkthrough creates a hypothetical `word_scramble` plugin that tests whether models can unscramble anagrams.
@@ -1494,5 +1562,4 @@ pytest tests/ --cov=src/plugins
 
 ---
 
-*See also: [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) for the full project context, architecture, and research findings.*
-*See also: [prompt-engine/MIGRATION_GUIDE.md](prompt-engine/MIGRATION_GUIDE.md) for migration details from PromptEngine to plugin-local templates.*
+*See also: [PROJECT_OVERVIEW.md](PROJECT_OVERVIEW.md) for the full project context and architecture, [PROMPT_STUDIO.md](PROMPT_STUDIO.md) for versioned system prompts, [SYSTEM_PROMPTS.md](SYSTEM_PROMPTS.md) for the four built-in prompt texts. The historical v2.8 PromptEngine → plugin-local migration is at [_archive/MIGRATION_GUIDE.md](_archive/MIGRATION_GUIDE.md).*

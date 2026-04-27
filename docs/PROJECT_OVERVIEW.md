@@ -1,8 +1,10 @@
 # GoL Benchmark — Project Overview
 
-> **Version 2.19.0** | Last updated: 2026-04-14
+> **Version 2.26.0** | Last updated: 2026-04-27
 
 GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning across structured cognitive tasks. It generates test cases algorithmically (not from static datasets), measures model performance across diverse prompt configurations, and produces publication-ready analytics.
+
+For the plugin enumeration and per-task summaries, see [README.md](README.md). For per-plugin internals and the parser convention, see [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md). For the annotation workflow and Improvement Report, see [HUMAN_REVIEW_GUIDE.md](HUMAN_REVIEW_GUIDE.md). For versioned system prompts, see [PROMPT_STUDIO.md](PROMPT_STUDIO.md).
 
 ---
 
@@ -10,14 +12,12 @@ GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning a
 
 - [Project Mission & Philosophy](#project-mission--philosophy)
 - [Architecture Overview](#architecture-overview)
-- [Directory Structure](#directory-structure)
-- [Supported Benchmark Tasks](#supported-benchmark-tasks)
 - [Model Providers](#model-providers)
 - [Prompt Engineering System](#prompt-engineering-system)
 - [Web UI](#web-ui)
 - [Key Research Findings](#key-research-findings)
-- [Known Quirks & Gotchas](#known-quirks--gotchas)
 - [Quick Start](#quick-start)
+- [CLI Reference Appendix](#cli-reference-appendix)
 
 ---
 
@@ -28,24 +28,27 @@ GoL Benchmark is a procedural benchmark suite for stress-testing LLM reasoning a
 The suite measures how well language models handle:
 
 - **Rule application** — Conway's Game of Life, Wolfram 1D cellular automata
-- **Mathematical evaluation** — Arithmetic expression parsing
+- **Mathematical evaluation** — Arithmetic expression parsing, picture algebra (system-of-equations under semantic surface noise)
 - **Cognitive bias resistance** — Linda conjunction fallacy
 - **Spatial reasoning** — ASCII shapes, inverted cup orientation
 - **Physical state tracking** — Object tracking through container inversions
 - **Theory of Mind** — Sally-Anne false belief test
 - **Practical goal tracking** — Carwash paradox (walk vs drive)
-- **Character-level reasoning** — Letter counting, word reversal, nth-letter, anagram/pangram/lipogram detection (strawberry), measurement comparison
+- **Character-level reasoning** — Letter counting, word reversal, nth-letter, anagram/pangram/lipogram detection (strawberry); fancy Unicode normalization
 - **Temporal reasoning** — Time arithmetic, calendar math, impossible date detection, AM/PM traps
-- **Tabular reasoning** — Grid-based data lookups, sums, counts
+- **Tabular reasoning** — Grid-based data lookups, sums, counts; Picross/Nonogram deduction
 - **Safety reasoning** — Detecting dangerous or impossible premises (false premise)
-- **Perspective-aware reasoning** — Family counting puzzles with self-reference traps (family relations)
-- **Encoding comprehension** — Decoding Base64, Caesar cipher, and Morse code messages, then following embedded instructions (encoding cipher)
-- **Grid deduction** — Solving Picross/Nonogram puzzles from row and column clue constraints (picross)
+- **Sycophancy resistance** — Misquote attribution under social pressure
+- **Perspective-aware reasoning** — Family counting puzzles with self-reference traps
+- **Encoding comprehension** — Decoding Base64, Caesar cipher, and Morse code messages, then following embedded instructions
+- **Pure rule following** — Symbol arithmetic on custom operation tables
+
+Full task list with answer types: [README.md § Benchmark Tasks](README.md#benchmark-tasks-21-plugins).
 
 ### Design Principles
 
 1. **Procedural generation** — Test cases are generated algorithmically with seeded randomness. Same seed + same config = identical test cases. No static dataset to memorize.
-2. **Prompt-first evaluation** — The same model is tested across multiple prompt configurations (user style x system style x language) to isolate prompt engineering effects from model capability. All 19 plugins support 6 languages with multilingual response parsing.
+2. **Prompt-first evaluation** — The same model is tested across multiple prompt configurations (user style × system style × language) to isolate prompt engineering effects from model capability. All plugins support 6 languages with multilingual response parsing.
 3. **Plugin architecture** — Each benchmark task is a self-contained plugin with auto-discovery. Adding a new task requires zero changes to the pipeline.
 4. **Portable pipeline** — The 3-stage architecture decouples generation, execution, and analysis. Stage 2 (execution) has near-zero dependencies, making it runnable on remote machines with only Python + a model API.
 
@@ -87,151 +90,34 @@ Each stage is independently runnable. Stage 2 includes minimal self-contained mo
 
 ### Plugin System
 
-All 19 benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable.
+All benchmark tasks are implemented as self-contained plugins in `src/plugins/`. The `PluginRegistry` ([src/plugins/__init__.py](../src/plugins/__init__.py)) auto-discovers plugins at runtime by scanning subdirectories for a module-level `plugin` variable. Each plugin provides a generator, a parser, and an evaluator. The registry is the single source of truth for the active plugin set — `PluginRegistry.list_task_types()` is what every consumer (analytics, reanalysis, badges, this doc set) should call rather than hardcoding a list.
 
-Each plugin provides three components:
+Full plugin scaffold + parser convention details: [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md).
 
-- **Generator** — produces `TestCase` objects; exposes `get_config_schema()` returning `ConfigField` descriptors for the web UI
-- **Parser** — extracts answers from LLM responses via multi-strategy parsing
-- **Evaluator** — scores correctness and aggregates statistics
+### Project Layout (orientation only)
 
-See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for full details.
+For the full annotated tree, browse the repo. The high-level shape:
+
+```
+src/
+  plugins/        # 21 task plugins + base.py + parse_utils.py + grammar_utils.py
+  stages/         # 3-stage pipeline
+  core/           # types, PromptEngine (legacy system-prompt enums)
+  web/            # FastAPI backend + JobStore + PromptStore + AnnotationStore + judge worker
+  models/         # ModelInterface + Ollama / HuggingFace / OpenAI-compatible
+  evaluation/     # grid comparison + accuracy metrics
+  visualization/  # matplotlib chart generation
+  utils/          # logging, model discovery, path manager
+frontend/         # React 19 + Vite 6 + Tailwind v4 + shadcn/ui SPA
+tests/plugins/    # per-plugin unit tests + cross-plugin parsing validation
+docs/             # this directory
+```
+
+`data/` was removed in earlier refactors — per-plugin data lives co-located in `src/plugins/<task>/data/`. `frontend/dist/` is the built SPA, served at `/` by the FastAPI app.
 
 ### Web UI
 
-A modern single-page application built with **React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui**, backed by a **FastAPI** REST API. Provides dashboard, configuration with dynamic plugin forms, test set management, job execution with real-time progress, and result analysis — all through the browser. Frontend source lives in `frontend/`, served at `/`.
-
----
-
-## Directory Structure
-
-```
-gol_eval/
-├── src/
-│   ├── plugins/                        # Plugin-based benchmark system (19 plugins)
-│   │   ├── base.py                     #   Abstract base classes + ConfigField
-│   │   ├── __init__.py                 #   PluginRegistry with auto-discovery
-│   │   ├── parse_utils.py              #   End-first parsing utilities + multilingual keyword merge helpers
-│   │   ├── game_of_life/               #   Conway's Game of Life
-│   │   ├── arithmetic/                 #   Math expression evaluation
-│   │   ├── linda_fallacy/              #   Conjunction fallacy
-│   │   ├── cellular_automata_1d/       #   Wolfram 1D rules
-│   │   ├── ascii_shapes/               #   Spatial reasoning on ASCII art
-│   │   ├── object_tracking/            #   Physical state tracking (grape test)
-│   │   ├── sally_anne/                 #   Theory of Mind (false belief)
-│   │   ├── carwash/                    #   Practical goal tracking
-│   │   ├── inverted_cup/               #   Spatial orientation puzzle
-│   │   ├── strawberry/                 #   Character-level reasoning (6 sub-types)
-│   │   ├── measure_comparison/         #   Quantity comparison with units + decimal framing
-│   │   ├── grid_tasks/                 #   Table reasoning
-│   │   ├── time_arithmetic/            #   Temporal reasoning & impossible dates
-│   │   ├── misquote/                   #   Sycophancy detection via false quote attributions
-│   │   ├── false_premise/              #   Dangerous/impossible premise detection
-│   │   ├── family_relations/           #   Perspective-aware family counting puzzles
-│   │   ├── encoding_cipher/            #   Encoding & cipher decoding (Base64, Caesar, Morse)
-│   │   ├── symbol_arithmetic/          #   Custom operation tables on abstract symbol sets
-│   │   └── picross/                    #   Picross (Nonogram) grid puzzle solving
-│   │
-│   ├── stages/                         # 3-stage pipeline
-│   │   ├── generate_testset.py         #   Stage 1: YAML → test sets
-│   │   ├── run_testset.py              #   Stage 2: Execute tests against models
-│   │   └── analyze_results.py          #   Stage 3: Analytics & reporting
-│   │
-│   ├── core/                           # Shared infrastructure
-│   │   ├── types.py                    #   Config dataclasses, DifficultyLevel, enums
-│   │   ├── PromptEngine.py             #   System prompts + enums (user templates deprecated → plugins)
-│   │   └── TestGenerator.py            #   Test case generation helpers
-│   │
-│   ├── web/                            # FastAPI REST API backend
-│   │   ├── app.py                      #   FastAPI application factory
-│   │   ├── jobs.py                     #   Background job manager (ProcessPoolExecutor)
-│   │   ├── api/                        #   REST API endpoints
-│   │   │   ├── plugins.py              #     Plugin discovery & schemas
-│   │   │   ├── models.py               #     Model provider discovery
-│   │   │   ├── testsets.py             #     Test set creation & listing
-│   │   │   ├── execution.py            #     Job submission & status
-│   │   │   └── analysis.py             #     Result analysis
-│   │   ├── reanalyze.py                #   Reanalysis utilities (re-parse/re-evaluate results)
-│   │   └── config.py                   #   Web server configuration
-│   │
-│   ├── models/                         # LLM provider interfaces
-│   │   ├── BaseModelInterface.py       #   ModelInterface base class
-│   │   ├── OllamaInterface.py          #   Ollama (urllib-based, no ollama pkg)
-│   │   ├── HuggingFaceInterface.py     #   HuggingFace Transformers (CUDA/MPS/CPU)
-│   │   ├── OpenAICompatibleInterface.py#   OpenAI-compatible API (Groq, OpenRouter, etc.)
-│   │   └── __init__.py                 #   Factory: create_model_interface(provider, model)
-│   │
-│   ├── engine/                         # Core task algorithms
-│   │   ├── GameOfLifeEngine.py         #   Conway's GoL rules
-│   │   ├── CellularAutomata1DEngine.py #   Wolfram 1D rules (0-255)
-│   │   ├── MathExpressionGenerator.py  #   Expression tree generation
-│   │   └── AsciiShapesEngine.py        #   ASCII shape rendering
-│   │
-│   ├── evaluation/                     # Result scoring
-│   │   └── TestEvaluator.py            #   Grid comparison, accuracy metrics
-│   │
-│   ├── visualization/                  # Charts & reports
-│   │   └── visualization_engine.py     #   matplotlib/seaborn visualizations
-│   │
-│   ├── utils/                          # Utilities
-│   │   ├── logger.py                   #   Structured logging
-│   │   ├── model_providers.py          #   Provider abstraction & model discovery
-│   │   ├── path_manager.py             #   Centralized path resolution
-│   │   └── text_table.py              #   Terminal table formatting
-│   │
-│   └── benchmarks/                     # DEPRECATED legacy monolithic scripts
-│
-├── tests/                              # Test suite
-│   ├── plugins/                        #   Per-plugin unit tests
-│   ├── test_comprehensive_workflow.py  #   End-to-end pipeline tests
-│   ├── test_parser_end_first.py        #   End-first parsing validation
-│   └── ...
-│
-├── scripts/                            # Batch processing utilities
-├── data/                               # (Removed — data co-located in src/plugins/*/data/)
-├── testsets/                           # Generated test sets (JSON.gz)
-├── results/                            # Benchmark results (JSON.gz)
-├── reports/                            # Generated reports & charts
-├── frontend/                           # React SPA (Vite + React 19 + TypeScript + Tailwind + shadcn/ui)
-│   ├── src/
-│   │   ├── api/                        #   Typed API client layer
-│   │   ├── hooks/                      #   React Query data-fetching hooks
-│   │   ├── types/                      #   TypeScript interfaces
-│   │   ├── pages/                      #   Dashboard, Configure, TestSets, Execute, Jobs, Results, Reports
-│   │   ├── components/                 #   UI primitives (shadcn), layout, plugin-config, data-table
-│   │   └── App.tsx                     #   Router + providers
-│   ├── vite.config.ts                  #   base: "/", proxy /api → :8000
-│   └── dist/                           #   Production build output
-└── docs/                               # Documentation & research reports
-```
-
----
-
-## Supported Benchmark Tasks
-
-| Plugin | Display Name | What It Tests | Answer Type |
-|--------|-------------|---------------|-------------|
-| `game_of_life` | Conway's Game of Life | Rule-based grid transformation | 2D grid of 0s/1s |
-| `arithmetic` | Arithmetic Expression Evaluation | Math expression evaluation | Numeric value |
-| `linda_fallacy` | Linda Conjunction Fallacy | Cognitive bias resistance | Probability ranking |
-| `cellular_automata_1d` | 1D Cellular Automata | Wolfram rule application | 1D binary array |
-| `ascii_shapes` | ASCII Shapes Spatial Reasoning | Spatial reasoning on ASCII art | Dimensions / count / boolean |
-| `object_tracking` | Object Tracking (Grape Test) | Physical state tracking with inversions | Location name |
-| `sally_anne` | Sally-Anne Test | Theory of Mind (false belief) | Container name (belief, not reality) |
-| `carwash` | Carwash Paradox | Practical goal tracking | Always "drive" |
-| `inverted_cup` | Inverted Cup | Spatial orientation reasoning | "flip" |
-| `strawberry` | Strawberry (Character Reasoning) | Letter counting, reversal, nth-letter, anagram, pangram, lipogram | Integer / String / Boolean |
-| `measure_comparison` | Measure Comparison | Quantity comparison with units + decimal framing sensitivity | Measurement / "equal" / "incomparable" |
-| `grid_tasks` | Grid Tasks (Table Reasoning) | Tabular data lookups, sums, counts | Varies by question |
-| `time_arithmetic` | Time Arithmetic | Temporal reasoning, calendar math, impossible date detection | Time / Day / Duration / "impossible" |
-| `misquote` | Misquote Attribution | Sycophancy detection via false quote attributions | Yes/No (two-part) |
-| `false_premise` | False Premise | Dangerous/impossible premise detection | Refusal / Compliance / Hedge |
-| `family_relations` | Family Relations | Perspective-aware family counting puzzles | Integer (person count) |
-| `encoding_cipher` | Encoding & Cipher Decoding | Decode Base64/Caesar/Morse and follow instructions | Decoded text / response word |
-| `symbol_arithmetic` | Symbol Arithmetic | Evaluate expressions under arbitrary binary operations | Symbol from operation table |
-| `picross` | Picross (Nonogram) | Grid-based deductive reasoning — solve puzzles from row/column clue constraints | 2D binary grid |
-
-Each plugin is self-contained in `src/plugins/<task_type>/` with its own generator, parser, and evaluator.
+A modern single-page application built with **React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui**, backed by a **FastAPI** REST API. Provides dashboard, configuration with dynamic plugin forms, test set management, job execution with real-time progress, result analysis, judge runs, and the human-review annotation workspace — all through the browser.
 
 ---
 
@@ -254,7 +140,7 @@ Features: dynamic model discovery, quantization detection (F16, Q8_0, Q6_K, Q5_K
 
 ### HuggingFace / Transformers
 
-Direct model loading via the `transformers` library with automatic device placement.
+Direct model loading via the `transformers` library with automatic device placement (CUDA/MPS/CPU).
 
 ```bash
 python src/stages/run_testset.py testset.json.gz \
@@ -263,7 +149,7 @@ python src/stages/run_testset.py testset.json.gz \
 
 ### OpenAI-Compatible
 
-Any OpenAI-compatible API endpoint (e.g., vLLM, LM Studio, text-generation-inference).
+Any OpenAI-compatible API endpoint (vLLM, LM Studio, text-generation-inference, OpenRouter, Groq, …).
 
 ### Factory Pattern
 
@@ -273,27 +159,16 @@ interface = create_model_interface("ollama", "qwen3:0.6b", ollama_host="http://l
 result = interface.query(prompt, {"temperature": 0.1, "max_tokens": 2048})
 ```
 
+Adding a new provider: see the `add-model-provider` skill.
+
 ---
 
 ## Prompt Engineering System
 
-### Architecture (v2.8.0)
+Prompt generation has two independent layers:
 
-Prompt generation follows a **plugin-local template** pattern. Each plugin defines its own user prompt templates in a `prompts.py` file, while system prompts remain centralised in `PromptEngine`.
-
-```
-src/plugins/<task>/
-├── prompts.py          # User prompt templates keyed by (Language, style)
-└── generator.py        # Uses _build_prompts() base class helper
-
-src/core/PromptEngine.py  # System prompts + Language/PromptStyle/SystemPromptStyle enums
-                           # (task-specific user templates DEPRECATED)
-```
-
-Base class helpers in `TestCaseGenerator`:
-- `_build_prompts(templates, language, user_style, system_style, **vars)` → `(user, system, full)`
-- `_get_system_prompt(system_style, language)` — wraps PromptEngine with safe fallbacks
-- `_format_user_prompt(templates, language, style, **vars)` — template lookup with EN/casual fallback
+1. **User prompts** (per-task) — plugin-local templates in `src/plugins/<task>/prompts.py`. Migrated from `PromptEngine.py` in v2.8.0; the `PromptEngine` user-template surface is deprecated. See [PLUGIN_GUIDE.md § Prompt Template Architecture](PLUGIN_GUIDE.md#prompt-template-architecture) for the current shape; the v2.8 migration is archived at [_archive/MIGRATION_GUIDE.md](_archive/MIGRATION_GUIDE.md).
+2. **System prompts** — versioned, user-managed via Prompt Studio (v2.13+). Built-ins (`builtin_analytical` / `builtin_casual` / `builtin_adversarial` / `builtin_none`) seed from the legacy `PromptEngine.SYSTEM_PROMPTS` enum and become editable. Editing creates a new immutable version; old result files pinned to `(prompt_id, version)` keep replaying forever. Full schema, API, replay safety: [PROMPT_STUDIO.md](PROMPT_STUDIO.md).
 
 ### User Prompt Styles
 
@@ -302,10 +177,10 @@ Base class helpers in `TestCaseGenerator`:
 | `linguistic` | Formal, rule-based, detailed instructions | Models that thrive on structure |
 | `casual` | Conversational, approachable | Balanced models |
 | `minimal` | Bare minimum instructions | Testing baseline capability |
-| `examples` | Includes worked examples | Few-shot learning (deprecated) |
-| `rules_math` | Mathematical notation | Math-oriented tasks (deprecated) |
 
-### System Prompt Styles
+The legacy `examples` and `rules_math` styles exist in old code but are deprecated — new plugins should use the three above.
+
+### System Prompt Styles (legacy enum, still active as resolution fallback)
 
 | Style | Approach | Best For |
 |-------|----------|----------|
@@ -314,17 +189,17 @@ Base class helpers in `TestCaseGenerator`:
 | `adversarial` | Efficiency-focused, direct | Qwen models (+18pp boost) |
 | `none` | Empty system prompt | Baseline measurement |
 
+These now resolve via Prompt Studio's built-in prompts (`builtin_analytical` etc.); the enum surface is the legacy fallback path when no `prompt_id` is stashed on a test case.
+
 ### Languages
 
-English (EN), French (FR), Spanish (ES), German (DE), Chinese (ZH), Ukrainian (UA)
+English (EN), French (FR), Spanish (ES), German (DE), Chinese (ZH), Ukrainian (UA).
 
-All 19 plugins now support all 6 languages for prompts, generated content, data, and response parsing (v2.15.0). Since v2.15.0, all generated test content (scenarios, questions, grid data, narratives, encoded text, relationship terms, vocabulary) is produced in the requested language — not just the prompt wrappers. Each plugin has a dedicated i18n module with localized templates and vocabulary. Gendered languages (Ukrainian, Spanish, French, German) use proper grammatical gender: articles resolved by noun gender, Ukrainian nouns decline by case (nominative/accusative/locative), past-tense verbs conjugate by randomly selected subject gender (m/f), and zero slash patterns remain in generated prompts. The shared `grammar_utils.py` module provides article resolution, case-form lookup, and gender-aware template selection.
+All plugins support all 6 languages for prompts, generated content, data, and response parsing (since v2.15.0). Generated test content (scenarios, questions, grid data, narratives, encoded text, relationship terms, vocabulary) is produced in the requested language — not just the prompt wrappers. Gendered languages (UA, ES, FR, DE) use proper grammatical gender via `src/plugins/grammar_utils.py`: articles resolved by noun gender, Ukrainian nouns decline by case (nominative/accusative/locative), past-tense verbs conjugate by randomly selected subject gender (m/f).
 
 ### Why This Matters
 
-The combinatorial matrix (up to 3 user styles x 3 system styles x 6 languages = 54 configurations per task) enables systematic study of how prompt engineering affects model performance. Research with this system found that prompt choice alone can swing accuracy by 44+ percentage points on the same model.
-
-> **Note**: The `examples` and `rules_math` user styles and the `adversarial` system style exist in legacy code but are deprecated. New plugins should use `minimal`, `casual`, and `linguistic`.
+The combinatorial matrix (up to 3 user styles × 3 system styles × 6 languages = 54 configurations per task) enables systematic study of how prompt engineering affects model performance. Research with this system found that prompt choice alone can swing accuracy by 44+ percentage points on the same model.
 
 ---
 
@@ -345,33 +220,16 @@ cd frontend && npm run dev           # http://localhost:5173/ (proxies /api → 
 | Route | Page | Purpose |
 |-------|------|---------|
 | `/` | Dashboard | Summary of available plugins, models, recent runs |
-| `/configure` | Configure | 4-step wizard: **Setup** (build from scratch or import via file/URL/paste YAML), **Plugins** (expandable table rows — checkbox auto-expands row with `ConfigForm`), **Prompts** (style matrix + hidden custom prompt revealed by "custom" toggle), **Review** (summary + Generate, Copy YAML, Download YAML) |
-| `/testsets` | Test Sets | Create, list, inspect (tabbed detail with paginated cases), regenerate with param overrides, switch between `Table` and grouped `Cards`, and use collapsible grouped rows in table mode |
-| `/execute` | Execute | Landing page with two choice tiles — **Simple run** (4-step wizard: Test Sets → Models → Settings → Review) for running existing test sets, and **Matrix run** (5-step wizard: Setup → Axes → Models → Settings → Review) for generating a cartesian sweep and optionally launching it. Mode carried in `?mode=simple\|matrix` query param; `/matrix-execution` redirects to `/execute?mode=matrix` |
-| `/jobs` | Jobs | Monitor all execution jobs with state filters, progress bars, cancel/view actions, and cooperative cancellation for already-running inference or judge work |
-| `/results` | Results | Browse results with sortable DataTable, model/task/language faceted filters (language chips show flag + full name); reanalyze, rerun with params, switch between `Table` and grouped `Cards`, and use collapsible grouped rows for task/model/run grouping |
-| `/charts` | Charts | Heatmap, bar comparison, scaling scatter; task type + language filtering, log/linear scale toggle |
-| `/reports` | Reports | View generated HTML reports in iframe |
-
-### Frontend Architecture
-
-```
-frontend/src/
-├── api/          # Typed fetch client (client.ts, plugins.ts, models.ts, testsets.ts, jobs.ts, results.ts)
-├── hooks/        # React Query hooks with auto-refresh (use-plugins, use-models, use-testsets, use-jobs, use-results)
-├── types/        # TypeScript interfaces mirroring backend schemas
-├── pages/        # Route pages (Dashboard, Configure, TestSets, Execute [landing + execute/simple-wizard + execute/matrix-wizard], Jobs, Results, Charts, Reports, Judge)
-├── components/
-│   ├── ui/              # shadcn/ui primitives (19 components incl. textarea)
-│   ├── layout/          # AppLayout, Sidebar, Header
-│   ├── wizard/          # StepButton, StepFooter — shared by Execute, Configure, and Matrix wizards
-│   ├── model-selection/ # ModelList, OllamaSection, OpenAIEndpointSection, HuggingFaceSection + SelectedModel types
-│   ├── plugin-config/   # Dynamic ConfigField renderer (number, select, multi-select, boolean, range, weight_map)
-│   ├── charts/          # AccuracyHeatmap, ModelBarChart, ScalingScatter, ChartFilters, ChartCard
-│   ├── data-table/      # Generic sortable/filterable DataTable with optional collapsible grouping
-│   └── param-override-modal.tsx  # Shared modal for rerun/regenerate with param overrides
-└── App.tsx       # BrowserRouter + QueryClientProvider + ThemeProvider
-```
+| `/configure` | Configure | 4-step wizard: Setup → Plugins → Prompts → Review |
+| `/testsets` | Test Sets | Create, list, inspect, regenerate with param overrides |
+| `/execute` | Execute | Landing page with two tiles — Simple run (4-step wizard) or Matrix run (5-step cartesian sweep) |
+| `/jobs` | Jobs | Monitor execution + judge jobs; pause/resume; cooperative cancellation |
+| `/results` | Results | Browse with sortable DataTable + faceted filters; reanalyze; rerun |
+| `/charts` | Charts | Heatmap, bar comparison, scaling scatter |
+| `/reports` | Reports | View generated HTML reports |
+| `/judge` | Judge | LLM-as-a-Judge: file selector, summary, filterable judgments table, JSONL/Markdown export |
+| `/review` | Review | Human annotation wizard (two-column workspace, keyboard-first). See [HUMAN_REVIEW_GUIDE.md](HUMAN_REVIEW_GUIDE.md) |
+| `/prompts` | Prompts | Prompt Studio list / detail / multi-language editor / version history (frontend integration in progress — see [PROMPT_STUDIO.md](PROMPT_STUDIO.md)) |
 
 ### API Endpoints
 
@@ -379,13 +237,17 @@ frontend/src/
 |--------|--------|---------|
 | `plugins.py` | `/api/plugins` | Plugin discovery, task-specific form schemas |
 | `models.py` | `/api/models` | Model listing from Ollama/HF/OpenAI providers |
-| `testsets.py` | `/api/testsets` | Test set generation, listing, upload (YAML/gz), `config-to-yaml` export |
-| `execution.py` | `/api/jobs` | Job submission, status polling, progress |
-| `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns, reanalysis, LLM-as-a-Judge |
+| `testsets.py` | `/api/testsets` | Test set generation, listing, upload, `config-to-yaml` export |
+| `matrix.py` | `/api/matrix` | Cartesian-sweep generation + execution |
+| `execution.py` (jobs) | `/api/jobs` | Job submission, status polling, progress, pause/resume |
+| `analysis.py` | `/api/results` | Result listing, summary statistics, breakdowns, reanalysis, judge |
+| `human_review.py` | `/api/human-review` | Annotation cases, sidecar persistence, improvement report, translation |
+| `prompts.py` | `/api/prompts` | Prompt Studio CRUD + versioning |
+| `metadata.py` | `/api/metadata` | Aggregate metadata for matrix/wizard population |
 
 ### Background Jobs
 
-The `JobManager` (`src/web/jobs.py`) uses `ProcessPoolExecutor` for concurrent model execution. Jobs track state through `PENDING → RUNNING → COMPLETED/FAILED/CANCELLED` with progress counters for real-time UI updates. Queued jobs cancel immediately; already-running inference and judge workers use a shared cancellation flag so the Jobs page can stop active work cooperatively without losing terminal-state correctness.
+The `JobManager` (`src/web/jobs.py`) uses `ProcessPoolExecutor` for concurrent model execution. Jobs track state through `PENDING → RUNNING → COMPLETED/FAILED/CANCELLED/PAUSED` with progress counters for real-time UI updates. All persistence routes through `src/web/job_store.py` (the only place to swap when migrating to Redis/Postgres). Credentials encrypted at rest under `data/jobs/` (Fernet via `src/web/crypto.py`).
 
 ---
 
@@ -412,58 +274,16 @@ Testing AceMath-1.5B across quantization levels:
 | F16 (baseline) | 31.58% | — |
 | Q8_0 (8-bit) | 31.17% | -0.41pp |
 
-Q2_K achieves 87.5% model size reduction with a net accuracy gain. Hypothesis: quantization acts as implicit regularization.
+Q2_K achieves 87.5% model size reduction with a net accuracy gain. Hypothesis: quantization acts as implicit regularization. Full study: [research/quantization/](research/quantization/).
 
 ### 3. Chain-of-Thought Hurts Structured Tasks
 
-- **GoL / Arithmetic**: `--no-think` improves accuracy — models overthink simple rule application
-- **Linda Fallacy**: CoT helps — reasoning through the logic catches the bias trap
+- **GoL / Arithmetic / Cellular Automata**: `--no-think` improves accuracy — models overthink simple rule application.
+- **Linda Fallacy**: CoT helps — reasoning through the logic catches the bias trap.
 
 ### 4. End-First Parsing
 
-LLMs reason first, answer last. Searching from the end of responses instead of the beginning improved carwash accuracy from 14.3% to 27.6% with zero regressions across 1,933 re-parsed results. v2.10.3 added `strip_verification_tail()` to handle models that append verification sections, fixing ~91 additional false negatives. v2.10.4 expanded the carwash parser's conditional/dismissive walk filtering (3 pattern groups, first-sentence strategy, contextual bold filtering), fixing 15 additional false negatives with 0 regressions. v2.10.5 overhauled the measure comparison parser (smart quote normalization, tightened equal keywords, pipeline reorder, bold two-pass, expanded incomparable patterns), fixing 38 false negatives with 0 regressions. v2.10.6 added first-bold/first-sentence strategies to object tracking and time arithmetic parsers for tasks where models state the answer upfront then explain with distractors — fixing 28 false negatives across 4 plugins (object tracking, inverted cup, time arithmetic, encoding cipher) with 0 regressions. v2.10.7 overhauled the false_premise parser (smart quote normalization, negation-aware compliance detection, safe-alternative section filtering, first-sentence refusal strategy, narrowed hedge qualifiers, expanded refusal/impossibility patterns), fixing 61 false negatives across all 5 domains with 0 regressions. See [PLUGIN_GUIDE.md — End-First Parsing Convention](PLUGIN_GUIDE.md#end-first-parsing-convention).
-
----
-
-## Known Quirks & Gotchas
-
-### Cell Markers — Emoji Now Supported (v2.10.1+)
-
-Custom cell markers (including emoji like `"❤️,🖤"`) are now fully supported for both **Game of Life** (v2.10.1) and **Cellular Automata 1D** (v2.10.2). Earlier versions had a parsing bug that silently ignored non-default markers.
-
-```bash
-# All of these now work correctly:
---live-dead-cell-markers "1,0"        # numeric (recommended for best model accuracy)
---live-dead-cell-markers "❤️,🖤"      # emoji (works, but models may parse less reliably)
---live-dead-cell-markers "X,O"        # letters
-```
-
-For C14, custom markers appear in state strings, rule tables, and boundary descriptions.
-
-> **Note:** While the generator and pipeline handle any markers correctly, models still tend to perform best with numeric `"1,0"` markers. Emoji markers are a valid stress test for model robustness.
-
-### `--no-think` for Structured Tasks
-
-Chain-of-thought reasoning hurts performance on rule-application tasks (GoL, Arithmetic, Cellular Automata). Always use `--no-think` for these benchmarks.
-
-### Ollama Must Be Running
-
-Start the Ollama daemon before running benchmarks:
-```bash
-ollama serve
-```
-
-### First Query Is Slow
-
-Ollama loads models into VRAM on first query (~3-5 seconds). Subsequent queries are cached and fast (<1 second).
-
-### Temperature 0.1
-
-The recommended default. Higher temperatures introduce randomness that hurts reproducibility and accuracy on structured tasks.
-
-### End-First Parsing
-
-All plugin parsers search from the **end** of model responses toward the start. This is a deliberate architectural decision, not a bug. See [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md#end-first-parsing-convention) for details and exceptions.
+LLMs reason first, answer last. Searching from the end of responses instead of the beginning improved carwash accuracy from 14.3% to 27.6% with zero regressions across 1,933 re-parsed results. Subsequent cross-plugin alignment work (`strip_verification_tail`, `normalize_unicode`, multilingual answer-label regexes) extended end-first to nearly every parser. Full convention + Phase 1–8 adoption: [PLUGIN_GUIDE.md § End-First Parsing Convention](PLUGIN_GUIDE.md#end-first-parsing-convention).
 
 ---
 
@@ -498,20 +318,6 @@ python src/stages/analyze_results.py results/*.json.gz \
     --visualize --output-dir reports/
 ```
 
-### CLI — Legacy Benchmark Scripts
-
-```bash
-# Game of Life
-python -m src.benchmarks.gol_eval --model qwen3:0.6b --difficulty medium \
-    --batch-size 20 --no-think --live-dead-cell-markers "1,0"
-
-# Arithmetic
-python -m src.benchmarks.ari_eval --model llama3.2:3b --difficulty 3
-
-# Linda Fallacy
-python -m src.benchmarks.linda_eval --model gemma3:1b --language es --trials 10
-```
-
 ### Run Tests
 
 ```bash
@@ -522,4 +328,60 @@ pytest tests/test_parser_end_first.py -v       # End-first parsing validation
 
 ---
 
-*See also: [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for plugin architecture, per-plugin reference, and how to add new benchmarks.*
+## CLI Reference Appendix
+
+### Common Flags
+
+```bash
+# Prompt styles (user prompt)
+--prompt-style minimal|casual|linguistic
+
+# System prompt styles (legacy enum; Prompt Studio resolves via prompt_id when set)
+--system-prompt-style analytical|casual|adversarial|none
+
+# Languages
+--prompt-language en|es|fr|de|zh|uk
+
+# Cell markers (GoL / C14 only — emoji supported since v2.10.1, but numeric recommended)
+--live-dead-cell-markers "1,0"
+
+# Disable chain-of-thought (recommended for structured tasks)
+--no-think
+
+# Sampling parameters
+--temperature 0.1
+--top-k 40
+--min-p 0.05
+
+# Reproducibility
+--seed 42
+```
+
+### Difficulty Levels
+
+| Level | GoL Grid Size | ARI Complexity | Description |
+|-------|--------------|----------------|-------------|
+| `easy` | 3×3 | Level 1 | Simple patterns, basic operations |
+| `medium` | 5×5 | Level 2 | Moderate complexity |
+| `hard` | 7×7 | Level 3 | Complex patterns, nested operations |
+| `nightmare` | 10×10 | Level 4 | Extreme complexity |
+
+### Environment Variables
+
+| Variable | Default | Purpose |
+|----------|---------|---------|
+| `GOL_LOG_FILE` | `gol_eval.log` | Log file path (`src/utils/logger.py`) |
+| `GOL_JOBS_FILE` | `jobs.json` | Legacy job store path (still honored; new layout under `data/jobs/`) |
+| `GOL_SECRET_KEY` | autogen → `data/.secret_key` | Fernet key for at-rest credential encryption |
+| `TRANSLATOR_PROVIDER` | `google` | Translation backend (`google` / `libre` / `mymemory`) |
+
+### Quirks Worth Knowing
+
+- **`--no-think`** is critical for structured tasks (GoL, Arithmetic, C14). Always pass it for those benchmarks.
+- **Cell markers**: emoji work since v2.10.1+, but models still perform best with numeric `"1,0"`. Emoji markers are a valid robustness test, not a default.
+- **Temperature 0.1** is the recommended default. Higher temperatures hurt reproducibility and accuracy on structured tasks.
+- **First Ollama query is slow** (~3–5 s model load). Subsequent queries are fast.
+
+---
+
+*See also: [README.md](README.md) for the index, [PLUGIN_GUIDE.md](PLUGIN_GUIDE.md) for plugin internals, [HUMAN_REVIEW_GUIDE.md](HUMAN_REVIEW_GUIDE.md) for annotation, [CHANGELOG.md](../CHANGELOG.md) for version history, [TECHDEBT.md](../TECHDEBT.md) for incomplete refactors.*

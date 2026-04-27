@@ -1,950 +1,148 @@
-# CLAUDE.md - GoL Benchmark Project Guide
+# CLAUDE.md — GoL Benchmark Agent Index
 
-> **Quick Reference for Claude Code Agents**
-> This document provides context, architecture overview, and common tasks for working with the GoL Benchmark repository.
+> **Version 2.26.0** | This is a slim index. Domain knowledge lives in `docs/`; task recipes live in `.claude/skills/`. See pointers below.
 
----
-
-## Project Overview
-
-**GoL Benchmark** is a procedural benchmark suite for testing LLM reasoning capabilities across structured cognitive tasks:
-
-- **Game of Life (GoL)**: Conway's cellular automaton — predict next grid state
-- **Arithmetic (ARI)**: Math expression parsing and evaluation
-- **Linda Fallacy**: Cognitive bias testing (conjunction fallacy)
-- **Cellular Automata (C14)**: Configurable rule-based pattern evolution
-- **ASCII Shapes**: Spatial reasoning on ASCII art (dimensions, counts, positions)
-- **Object Tracking**: Physical state tracking through container inversions (grape test)
-- **Sally-Anne**: Theory of Mind — false belief reasoning
-- **Carwash Paradox**: Practical-goal-tracking test — walk or drive? (answer: always drive)
-- **Inverted Cup**: Spatial-orientation reasoning — sealed top / open bottom cup (answer: flip it)
-- **Strawberry**: Character-level reasoning — letter counting, word reversal, nth-letter, anagram, pangram, lipogram
-- **Measure Comparison**: Quantity comparison with units, conversion traps, and decimal framing sensitivity
-- **Grid Tasks**: Table reasoning — cell lookups, row sums, column counts
-- **Misquote Attribution**: Sycophancy detection — false quote attributions with social-pressure framings
-- **False Premise**: Dangerous/impossible premise detection — 5 domains (chemistry, medicine, food safety, physics, logic)
-- **Family Relations**: Perspective-aware family counting puzzles — sibling count, shared children, generational chains, perspective shifts
-- **Encoding & Cipher Decoding**: Decode-and-respond across encoding schemes (Base64, Caesar/ROT-N, Morse) with hallucination detection
-- **Symbol Arithmetic**: Custom operation tables on abstract symbol sets — pure rule-following with zero semantic anchor
-- **Picross (Nonogram)**: Grid-based deductive reasoning — solve puzzles from row/column clue constraints
-- **Picture Algebra**: System-of-equations puzzles with emoji/alpha/nonsense variables — measures GSM-Symbolic-style semantic interference under visual substitution
-- **Time Arithmetic**: Temporal reasoning — date/time addition, duration, validity checks
-- **Fancy Unicode**: Decorative-Unicode normalization — math-script, fullwidth, small caps, circled (12 families across 3 tiers)
-
-### Key Characteristics
-
-- **Multilingual**: 6 languages supported (EN, FR, ES, DE, ZH, UA)
-- **Multi-provider**: Ollama (local & remote) and HuggingFace integrations
-- **Prompt engineering**: 3 user styles × 3 system styles = 9 configurations
-- **Reproducible**: Seeded random generation for consistent benchmarks
+GoL Benchmark is a procedural benchmark suite for testing LLM reasoning across **21 cognitive-task plugins** (canonical: `PluginRegistry.list_task_types()` in [src/plugins/__init__.py](src/plugins/__init__.py)). Multilingual (6 languages), multi-provider (Ollama / HuggingFace / OpenAI-compatible), seeded for reproducibility.
 
 ---
 
-## Quick Commands
+## Where to find things
+
+| If you need… | Read |
+|---|---|
+| Project mission, design principles, CLI/difficulty reference | [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) |
+| Plugin architecture, **end-first parsing convention (Phases 1–8)**, per-plugin reference, scaffold | [docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md) |
+| Human review workflow, annotation schema (v4), Improvement Report contract (v2.7), Known Issues #1–#10 | [docs/HUMAN_REVIEW_GUIDE.md](docs/HUMAN_REVIEW_GUIDE.md) |
+| Prompt Studio (versioned system prompts, replay safety, `PromptStore`) | [docs/PROMPT_STUDIO.md](docs/PROMPT_STUDIO.md) |
+| Pre-release checklist (versions, plugin counts, footers, CI) | [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) |
+| Doc index, plugin enumeration table | [docs/README.md](docs/README.md) |
+| Per-release "what changed" | [CHANGELOG.md](CHANGELOG.md) — single source of truth, do NOT duplicate here |
+| Incomplete refactors / postponed decisions | [TECHDEBT.md](TECHDEBT.md) |
+| Task recipes (load on demand) | `.claude/skills/{add-plugin,add-model-provider,debug-zero-accuracy,parser-refactor-from-annotations}` |
+
+---
+
+## Quick commands
 
 ```bash
-# ── Web UI (Recommended) ──
-python -m src.web                # http://127.0.0.1:8000/
-python -m src.web --host 0.0.0.0 # LAN-accessible
+# Web UI (recommended)
+python -m src.web                    # http://127.0.0.1:8000/
+python -m src.web --host 0.0.0.0     # LAN-accessible
 
-# Frontend development (hot-reload)
-cd frontend && npm run dev       # http://localhost:5173/ (proxies /api → :8000)
+# Frontend dev (hot-reload, proxies /api → :8000)
+cd frontend && npm run dev           # http://localhost:5173/
 
-# Run on a remote Ollama instance
-python src/stages/run_testset.py testsets/testset_xyz.json.gz \
-    --model qwen3:0.6b --provider ollama \
-    --ollama-host http://192.168.1.50:11434
+# CLI 3-stage pipeline
+python src/stages/generate_testset.py configs/my_config.yaml
+python src/stages/run_testset.py testsets/testset_*.json.gz \
+    --model qwen3:0.6b --provider ollama --no-think
+python src/stages/analyze_results.py results/
 
-# Run full test suite
-pytest tests/
-
-# Generate visualizations from results
-python -m src.visualization.generate_prompt_benchmark_visualizations results/
+# Tests
+pytest tests/                        # full suite
+pytest tests/plugins/ -v             # plugin-specific
 ```
 
 ---
 
-## Directory Structure
+## Project shape (top level)
 
 ```
-gol_eval/
-├── src/                    # All source code
-│   ├── plugins/           # Plugin-based benchmark system (21 plugins)
-│   │   ├── base.py        # Abstract base classes for plugins
-│   │   ├── __init__.py    # Plugin registry with auto-discovery
-│   │   ├── parse_utils.py # End-first parsing utilities + multilingual keyword merge
-│   │   ├── grammar_utils.py # Shared grammar: article(), resolve_vocab(), pick_templates(), vocab_gender()
-│   │   ├── game_of_life/  # GoL plugin (generator, parser, evaluator)
-│   │   ├── arithmetic/    # ARI plugin
-│   │   ├── linda_fallacy/ # Linda plugin
-│   │   ├── cellular_automata_1d/  # C14 plugin
-│   │   ├── ascii_shapes/  # ASCII Shapes plugin
-│   │   ├── object_tracking/ # Object Tracking (Grape Test) plugin
-│   │   ├── sally_anne/    # Sally-Anne false belief test plugin
-│   │   ├── carwash/       # Carwash Paradox plugin (4 annotation-driven optimization rounds)
-│   │   ├── inverted_cup/  # Inverted Cup plugin (v2.2.0)
-│   │   ├── strawberry/    # Character-level reasoning (6 sub-types)
-│   │   ├── measure_comparison/ # Quantity comparison plugin (incl. decimal framing)
-│   │   ├── grid_tasks/    # Table reasoning plugin
-│   │   ├── time_arithmetic/ # Time Arithmetic plugin (temporal reasoning)
-│   │   ├── misquote/      # Misquote Attribution (sycophancy detection)
-│   │   ├── false_premise/ # False Premise (dangerous/impossible premise detection)
-│   │   ├── family_relations/ # Family Relations (perspective-aware counting)
-│   │   ├── encoding_cipher/ # Encoding & Cipher Decoding (Base64, Caesar, Morse)
-│   │   ├── symbol_arithmetic/ # Symbol Arithmetic (custom operation tables)
-│   │   ├── picross/       # Picross (Nonogram) grid puzzle solving
-│   │   └── picture_algebra/ # Picture Algebra (emoji-variable linear systems)
-│   ├── stages/            # 3-stage pipeline (uses plugin system)
-│   │   ├── generate_testset.py  # Stage 1: YAML → test sets
-│   │   ├── run_testset.py       # Stage 2: Execute tests
-│   │   └── analyze_results.py   # Stage 3: Analytics
-│   ├── core/              # Types, prompt engine, test generation
-│   ├── engine/            # Task-specific logic (GoL, Math)
-│   ├── models/            # LLM interfaces (Ollama, HuggingFace)
-│   ├── evaluation/        # Result scoring and metrics
-│   ├── benchmarks/        # Legacy (only linda_eval.py remains — used by linda plugin)
-│   ├── web/               # FastAPI REST API backend (serves React SPA at /)
-│   │   ├── app.py         # FastAPI app factory, SPA routing
-│   │   ├── api/           # REST endpoints (plugins, models, testsets, jobs, analysis, judge, human-review)
-│   │   ├── jobs.py        # Background job manager (ProcessPoolExecutor) — submit() + submit_judge()
-│   │   ├── judge.py       # LLM-as-a-Judge worker (run_judge_worker, default prompts)
-│   │   ├── human_review_aggregator.py # Human-review improvement-report builder (span grouping, auto-regex, ordering hints)
-│   │   ├── translation.py # deep-translator wrapper (Google/LibreTranslate/MyMemory) with LRU cache
-│   │   └── reanalyze.py   # Reanalysis utilities (re-parse/re-evaluate results)
-│   ├── visualization/     # Charts, analysis, reporting
-│   └── utils/             # Logging, model discovery
-│
-├── frontend/              # React SPA (Vite 6 + React 19 + TypeScript + Tailwind CSS v4 + shadcn/ui)
-│   ├── src/
-│   │   ├── api/           # Typed API client layer
-│   │   ├── hooks/         # React Query hooks with auto-refresh
-│   │   ├── types/         # TypeScript interfaces
-│   │   ├── pages/         # Dashboard, Configure, TestSets, Execute (landing + execute/simple-wizard.tsx + execute/matrix-wizard.tsx), Jobs, Results, Charts, Reports, Judge, Review
-│   │   ├── lib/           # Utilities (chart-colors, model-sizes, credential-store, favorite-models, language-flags)
-│   │   └── components/    # UI primitives (shadcn), layout, plugin-config, data-table, charts, wizard (StepButton/StepFooter), model-selection (ModelList/Ollama/OpenAI/HF), review (stimulus/response panels, annotation-dock, classification-bar, case-progress, verdict-pill, translation-panel, improvement-report-dialog), param-override-modal, judge-setup-sheet, language-filter-chip, prompt-style-badge
-│   ├── vite.config.ts     # base: "/", proxy /api → :8000
-│   └── dist/              # Production build output
-│
-├── tests/                 # Test suite
-│   └── plugins/           # Plugin system unit tests
-├── scripts/               # Shell scripts for batch processing
-├── configs/               # Benchmark configuration YAML files
-├── data/                  # (Removed — data co-located in src/plugins/*/data/)
-├── docs/                  # Documentation and research reports
-└── results/               # Benchmark results (kept at root for easy access)
+src/plugins/  21 task plugins + base.py + parse_utils.py + grammar_utils.py
+src/stages/   3-stage pipeline (generate → run → analyze)
+src/web/      FastAPI + JobStore + PromptStore + AnnotationStore + judge
+src/core/     types, PromptEngine (legacy enums)
+src/models/   Ollama / HuggingFace / OpenAI-compatible interfaces
+frontend/     React 19 + Vite 6 + Tailwind v4 + shadcn/ui SPA
+docs/         documentation (this is where you should add reference content)
+tests/        pytest suite
 ```
 
----
-
-## Key Files Reference
-
-| File | Purpose |
-|------|---------|
-| **Plugin System (21 plugins)** | |
-| [src/plugins/base.py](src/plugins/base.py) | Abstract base classes + ConfigField schema system |
-| [src/plugins/\_\_init\_\_.py](src/plugins/__init__.py) | Plugin registry with auto-discovery |
-| [src/plugins/parse\_utils.py](src/plugins/parse_utils.py) | End-first parsing utilities + `safe_enum()` helper |
-| [src/plugins/game_of_life/](src/plugins/game_of_life/) | GoL plugin module |
-| [src/plugins/arithmetic/](src/plugins/arithmetic/) | ARI plugin module |
-| [src/plugins/linda_fallacy/](src/plugins/linda_fallacy/) | Linda Fallacy plugin module |
-| [src/plugins/cellular_automata_1d/](src/plugins/cellular_automata_1d/) | C14 plugin module |
-| [src/plugins/ascii_shapes/](src/plugins/ascii_shapes/) | ASCII Shapes plugin module |
-| [src/plugins/object_tracking/](src/plugins/object_tracking/) | Object Tracking (Grape Test) plugin |
-| [src/plugins/sally_anne/](src/plugins/sally_anne/) | Sally-Anne false belief test plugin |
-| [src/plugins/carwash/](src/plugins/carwash/) | Carwash Paradox plugin |
-| [src/plugins/inverted_cup/](src/plugins/inverted_cup/) | Inverted Cup plugin |
-| [src/plugins/strawberry/](src/plugins/strawberry/) | Character-level reasoning plugin (6 sub-types) |
-| [src/plugins/measure_comparison/](src/plugins/measure_comparison/) | Quantity comparison plugin (incl. decimal framing) |
-| [src/plugins/grid_tasks/](src/plugins/grid_tasks/) | Table reasoning plugin |
-| [src/plugins/time_arithmetic/](src/plugins/time_arithmetic/) | Time Arithmetic plugin (temporal reasoning) |
-| [src/plugins/misquote/](src/plugins/misquote/) | Misquote Attribution plugin (sycophancy detection) |
-| [src/plugins/false_premise/](src/plugins/false_premise/) | False Premise plugin (dangerous/impossible premise detection) |
-| [src/plugins/family_relations/](src/plugins/family_relations/) | Family Relations plugin (perspective-aware counting) |
-| [src/plugins/encoding_cipher/](src/plugins/encoding_cipher/) | Encoding & Cipher Decoding plugin (Base64, Caesar, Morse) |
-| [src/plugins/symbol_arithmetic/](src/plugins/symbol_arithmetic/) | Symbol Arithmetic plugin (custom operation tables) |
-| [src/plugins/picross/](src/plugins/picross/) | Picross (Nonogram) plugin (grid puzzle solving) |
-| [src/plugins/picture_algebra/](src/plugins/picture_algebra/) | Picture Algebra plugin (emoji-variable linear systems) |
-| **3-Stage Pipeline** | |
-| [src/stages/generate_testset.py](src/stages/generate_testset.py) | Stage 1: Test set generation (uses plugins) |
-| [src/stages/run_testset.py](src/stages/run_testset.py) | Stage 2: Test execution (uses plugins) |
-| [src/stages/analyze_results.py](src/stages/analyze_results.py) | Stage 3: Analytics and reporting |
-| **Core Infrastructure** | |
-| [src/core/types.py](src/core/types.py) | All config classes, types, difficulty levels |
-| [src/core/PromptEngine.py](src/core/PromptEngine.py) | System prompts + enums (user templates deprecated → plugins) |
-| [src/core/TestGenerator.py](src/core/TestGenerator.py) | Test case generation with 1,061 real-world patterns + known patterns |
-| [src/models/BaseModelInterface.py](src/models/BaseModelInterface.py) | Abstract base for model providers |
-| [src/models/OllamaInterface.py](src/models/OllamaInterface.py) | Ollama integration with retry logic |
-| [src/models/HuggingFaceInterface.py](src/models/HuggingFaceInterface.py) | HuggingFace/Transformers integration |
-| [src/evaluation/TestEvaluator.py](src/evaluation/TestEvaluator.py) | Grid comparison and accuracy calculation |
-| [src/engine/GameOfLifeEngine.py](src/engine/GameOfLifeEngine.py) | Conway's Game of Life rules |
-| [src/engine/MathExpressionGenerator.py](src/engine/MathExpressionGenerator.py) | Expression tree generation |
-| **Human Review (v2.20.0 → v2.6) + Improvement Report (v2.1–v2.6)** | |
-| [src/web/api/human_review.py](src/web/api/human_review.py) | `/api/human-review/*` router: `GET /cases`, `POST /annotate`, GET + DELETE `/annotations/{id}`, `POST /report`, `POST /translate`. v2.6: `AnnotateRequest` includes `response_hash` + `language`; sidecar key is `case_id::response_hash`. v2.7 (Phase 1): `_migrate_annotation()` folds legacy codes (`gibberish`/`refusal`/`language_error` → `unrecoverable`, drops `verbose`/`verbose_correct`) and migrates `negative_keywords` → `negative_spans` on every read via `_load_annotations_from_store` |
-| [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) | Pure-function improvement-report builder. Key helpers: `_span_analysis` (per-group rollup), `_split_long_tail` (v2.5 rich/long-tail partition), `_context_anchored_regex` + `_merged_label_disjunction` (v2.4 regex generators), `_filter_candidates` (low-support cut), `_parser_span_alignment` (aligned / misaligned / no-output split), `_regex_test_harness` (capture quality + sample captures), `_data_quality` (warnings + suppressed-sections), `_response_class_counts` (v2.5: folded into `summary.response_class_counts`), `_model_answer_stats` (distribution + raw variants). **v2.6**: `_collect_negative_records` + `_negative_span_analysis` (negative span/keyword groups), `_answer_keyword_distribution` (manual keyword signal), `_context_anchor_groups`. `REPORT_FORMAT_VERSION = "2.6"` |
-| [src/web/translation.py](src/web/translation.py) | `deep-translator` wrapper with LRU cache; provider via `TRANSLATOR_PROVIDER` env (google / libre / mymemory) |
-| [frontend/src/pages/review.tsx](frontend/src/pages/review.tsx) | `/review` wizard — two-column workspace with keyboard-first annotation. v2.6: `caseKey()` uses `result_file_id::case_id::response_hash`; `handleFinish` navigates to `/results` after last case |
-| [frontend/src/components/review/improvement-report-dialog.tsx](frontend/src/components/review/improvement-report-dialog.tsx) | Improvement-report modal: 10 tabs (Summary / Spans / Strategy / Languages / Misses / Answers / Ordering / Classes / Notes / **Negatives**), data-quality banner, parser-span alignment callout, expandable span-group cards with structural signals / prefix anchors (type-chipped) / regex test rows (capture quality pill + sample captures) |
-| [frontend/src/components/review/help-dialog.tsx](frontend/src/components/review/help-dialog.tsx) | Keyboard shortcuts & annotation guide modal. Triggered by `?` key or `HelpCircle` button in review header. Two-column layout: nav (Space/Ctrl+Space/←) + classification (2-5 / Q/E/F) on left; 4-row mark-types table (held-modifier + click/drag) on right |
-| [frontend/src/hooks/use-modifier-state.ts](frontend/src/hooks/use-modifier-state.ts) | v4 (Phase 1): tracks A / D / Shift held; returns `activeModifier: "anchor" \| "keyword" \| "negative" \| null`. Precedence A > D > Shift. Clears on `window.blur` / `document.visibilitychange`; suppresses tracking inside text fields |
-| [frontend/src/hooks/use-review-keybindings.ts](frontend/src/hooks/use-review-keybindings.ts) | v4 (Phase 1): consolidates document-level keyboard handler. Handlers: `onClassifyByKey/Letter`, `onSpace`, `onCtrlSpace`, `onPrev`, `onUndo`, `onRedo`, `onToggleHelp` |
-| [frontend/src/hooks/use-undo-stack.ts](frontend/src/hooks/use-undo-stack.ts) | v4 (Phase 1): generic `useUndoStack<T>(current, onRestore, maxDepth)`. Snapshot-based via `structuredClone`; per-case `reset()` so undo never crosses case boundaries |
-| [frontend/src/lib/span-autodetect.ts](frontend/src/lib/span-autodetect.ts) | v4 (Phase 1): `autoPosition` / `autoFormat` moved out of deleted `annotation-dock` so drag-select commits immediately without a human round-trip |
-| [frontend/src/components/review/note-panel.tsx](frontend/src/components/review/note-panel.tsx) | v4 (Phase 1): collapsible annotator-note editor. Replaces the note section of the deleted dock |
+Full annotated layout: [docs/PROJECT_OVERVIEW.md § Project Layout](docs/PROJECT_OVERVIEW.md#project-layout-orientation-only).
 
 ---
 
-## Architecture Patterns
+## Architecture invariants
 
-### 1. Plugin Pattern
-Self-contained benchmark modules with auto-discovery via package scanning.
-```python
-from src.plugins import PluginRegistry
-plugin = PluginRegistry.get('game_of_life')
-generator = plugin.get_generator()
-parser = plugin.get_parser()
-evaluator = plugin.get_evaluator()
-```
+These are the rules every agent turn must respect. Detailed explanations live in the linked docs.
 
-### 2. Factory Pattern
-`create_model_interface(provider, model_name, ...)` creates the right interface from a provider string.
-
-### 3. Strategy Pattern
-Different prompt/system styles are interchangeable via plugin-local `prompts.py` template dicts and base class helpers. Multi-strategy parsing in parsers (6 strategies for ARI, 4 for GoL).
-
-### 4. Template Method
-`ModelInterface` defines the `query(prompt, params)` contract; subclasses implement it.
-
-### 5. Configuration Inheritance
-```
-BaseTestConfig (ABC)
-├── GameOfLifeTestConfig
-├── AriTestConfig
-├── C14TestConfig
-└── (future tasks...)
-```
+1. **Plugin auto-discovery** — `PluginRegistry` ([src/plugins/__init__.py](src/plugins/__init__.py)) scans `src/plugins/*/` for a module-level `plugin = PluginPlugin()` instance. **Do not maintain hardcoded plugin lists** — `_KNOWN_TASK_TYPES` in `src/stages/analyze_results.py` and `_TASK_TYPE_SUFFIXES` in `src/web/reanalyze.py` derive from the registry at import time. `_LEGACY_TASK_TYPES` is the manual exception list for removed plugins.
+2. **End-first parsing** — every parser searches from the END of the response toward the start. Use `re_search_last`, not `re.search`. Shared helpers in [src/plugins/parse_utils.py](src/plugins/parse_utils.py); convention + Phase 1–8 details in [PLUGIN_GUIDE.md § End-First Parsing Convention](docs/PLUGIN_GUIDE.md#end-first-parsing-convention).
+3. **`prompt_metadata` must be merged into `task_params`** before calling plugin parsers/evaluators. `run_testset.py` and `src/web/jobs.py` do this; if you add a new entry point, replicate the merge or parsers will default to English keywords on multilingual responses.
+4. **Replay safety** — Prompt Studio resolves `(prompt_id, version)` at testset-generation time and embeds the resolved TEXT in `TestCase['prompts']['system']`. Re-runs read text directly from the result file; never re-resolve from the store. See [PROMPT_STUDIO.md § Replay safety](docs/PROMPT_STUDIO.md#replay-safety).
+5. **Annotation sidecar key is `case_id::response_hash`** — `response_hash` is the first 16 hex chars of SHA256 over the first 128 chars of `raw_response`. A single result file routinely contains 54 entries sharing one `test_id` (6 langs × 3 user × 3 system); shorter keys overwrite. See [HUMAN_REVIEW_GUIDE.md § 2.2](docs/HUMAN_REVIEW_GUIDE.md#22-the-canonical-key).
+6. **Translation panels must be `select-none`** — annotation char offsets refer to the original response, not the translation. Enforced in `frontend/src/components/review/translation-panel.tsx`. See [HUMAN_REVIEW_GUIDE.md § 2.10 #2](docs/HUMAN_REVIEW_GUIDE.md#210-known-issues--gotchas).
+7. **FastAPI route ordering** — specific routes (e.g. `/judge-results`, `/reports`) must be declared BEFORE `/{filename}` catch-alls in `src/web/api/*.py`, otherwise the catch-all swallows them.
+8. **Job persistence is confined to `src/web/job_store.py`** — that's the only file to touch when migrating to Redis/Postgres. Credentials Fernet-encrypted at rest under `data/jobs/` via `src/web/crypto.py`. Back up `data/.secret_key` (path: `GOL_SECRET_KEY` env override) — losing it makes existing encrypted credentials unrecoverable.
+9. **Version bumps touch multiple files** — see [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md). Single SSOT: `src/__init__.py.__version__`. Doc footers and `frontend/package.json` mirror it.
 
 ---
 
-### 6. End-First Parsing Convention
+## Top runtime gotchas (curated 8 of the historical 18)
 
-All response parsers follow the principle of searching from the **end** of the model response toward the start. LLMs reason through problems first and give final answers at the end — using `re.search()` (which finds the first match) systematically extracts intermediate values instead of final answers.
+The full Known Issues catalogue moved into the relevant doc (HUMAN_REVIEW_GUIDE § 2.10 owns annotation/report invariants; CHANGELOG owns "this was a bug fixed in vX.Y.Z"). Keep these eight in the agent's hot context:
 
-**Shared utilities** in [`src/plugins/parse_utils.py`](src/plugins/parse_utils.py):
-
-- `safe_enum(enum_cls, value, default)` — parse string to enum with fallback (used by all 12 generators)
-- `re_search_last(pattern, text)` — drop-in replacement for `re.search()` that returns the last match
-- `strip_verification_tail(text)` — removes trailing verification/confirmation sections before end-first matching (v2.10.3)
-- `last_sentences(text, n)` — returns the last N sentences
-- `last_keyword_position(text, keywords)` — position of last keyword occurrence
-- `merge_keywords(keyword_dict, language)` — merge English + target language keyword lists (English always included as fallback)
-- `merge_patterns(pattern_dict, language)` — merge compiled regex pattern lists
-- `get_language(task_params)` — extract language from task_params (default `"en"`)
-- `build_word_to_int(language)` — multilingual number word→int map (EN + target language merged)
-- `build_answer_label_re(language)` — multilingual answer label regex alternation (`"answer|result|respuesta|resultado|..."`)
-- Shared multilingual dicts: `WORD_TO_INT`, `ANSWER_LABELS`, `YES_WORDS`, `NO_WORDS` — all 6 languages
-- **Phase 1 cross-plugin extractions (in progress — see [.claude/plans/parser-alignment-cross-plugin.md](../.claude/plans/parser-alignment-cross-plugin.md)):**
-  - `normalize_unicode(text)` — curly/smart quote + apostrophe normalization plus U+2032 / U+2033 prime-fold (U+2018/2019/201C/201D/2032/2033 → ASCII). Owner: measure_comparison; adopted in all 21 parsers as of Phase 5.
-  - `normalize_for_label_matching(text)` — strip LaTeX `\text{X}` / `\mathbf{X}` wrappers + `\quad` / `\,` spacing + `$$` / `$` delimiters. Owner: picture_algebra.
-  - `try_parse_number(text, word_map=None)` — returns `int` for integer literals, `float` for decimals; never silently truncates `"22.2"` to `22`. Owner: picture_algebra.
-  - `detect_sentinel_keyword(text, keyword_dict, lang, scan_first=2, scan_last=3)` — multilingual sentinel scan over the true opening + closing sentences (splits the FULL text, not a tail window). Owner: picture_algebra.
-  - `has_contextual_marker(text, position, pattern_dicts, lang, pre_window=120, post_window=80, positional=False)` — window-scoped contextual match around a keyword hit; `positional=True` requires the match span to contain the position. Owner: carwash.
-
-**Key exceptions where end-first does NOT apply:**
-
-- `object_tracking` bold_keyword and first_sentence_location — uses FIRST match because models bold the answer in the first sentence, then mention distractor locations in explanations
-- `time_arithmetic` validity parsing — uses first-bold and first-sentence yes/no detection because models answer "No"/"Yes" upfront for existence questions
-- `measure_comparison` value+unit matching — both options are mentioned, the answer is identified by which matches, not position
-- `measure_comparison` decimal type — uses a separate 5-strategy parser (`_parse_decimal`) with end-first bare-value matching
-- `inverted_cup` classification — if "flip" is mentioned anywhere, the model understood the key insight (correct answer); "wrong" keywords alongside flip are just creative alternatives
-- `linda_fallacy` — extracts ordered rankings, not single answers
-- `false_premise` first-sentence refusal — uses FIRST sentences because models lead with "I can't help..." then explain at length; also uses negation-aware compliance detection and safe-alternative section filtering
-- `carwash` dual-keyword filtering — when both `drive` and `walk` keywords appear, `_is_conditional_walk` and `_is_conditional_drive` filter option-listing/comparison positions (`"walk or drive"`, `"walk vs drive"`). Drive filtering uses **positional matching** (checks if drive_start falls within a listing pattern match span, not just nearby) to avoid over-filtering. When all positions are filtered, `_score()` returns `None` so the caller tries a different strategy. As of Phase 1 of the cross-plugin alignment work both helpers delegate to the shared `has_contextual_marker(positional=True|False)` in `parse_utils`
-- `measure_comparison` comparative strategy — runs BOTH forward (`VALUE UNIT is [adv ...] COMPARATIVE`) and reverse (`COMPARATIVE [adv ...] one is VALUE UNIT`) patterns in parallel; when both match, the one whose span ends LATER wins (end-first tie-break). Protects against "X is heavier... the lighter one is Y" edge cases. Also: `label_line` runs BEFORE `bold` so an explicit `**Answer:**` trailer wins over bold values scattered in the reasoning (v2.26.1 unreleased)
-
-**`parse_strategy` naming convention** (Phase 2 cross-plugin alignment, v2.26.1 unreleased):
-
-- `"empty"` — empty/whitespace response early return, before any strategy runs
-- `"fallback"` — end-of-pipeline give-up after every strategy failed
-- All other names are plugin-specific strategy labels (e.g. `"boxed"`, `"label_line"`, `"value_unit_comparative"`)
-
-Previously the same two terminal states were labelled inconsistently across plugins (`"failed"`, `"none"`, `"parse_error"`). Normalized across 14 parsers / 27 call sites. Do not reintroduce the legacy names — the improvement-report `strategy_breakdown` uses these to group failure modes across the benchmark suite.
-
-**`strip_verification_tail` adoption** (Phase 3 cross-plugin alignment, v2.26.1 unreleased): 14 of 21 keyword-driven parsers now apply `strip_verification_tail(text)` to their weaker pattern-scanning / last-number / last-alpha strategies while keeping high-confidence format strategies (boxed, bold, JSON, code block) on the raw response. Applied to: arithmetic, grid_tasks, symbol_arithmetic, ascii_shapes, misquote, family_relations, strawberry (count / reverse / nth_letter paths) — plus the 7 plugins that already had it. Intentionally NOT applied to:
-
-- `linda_fallacy` (extracts a 6+ item ranked list — verification tail rarely contains a full list, near-zero benefit)
-- `inverted_cup` (`_classify` uses "any mention of `flip` wins" by design — stripping the tail would delete legitimate flip signals)
-- `game_of_life` / `cellular_automata_1d` / `picross` (grid-extraction plugins — Phase 3b evaluation pending annotation evidence)
-
-**`build_answer_label_re` adoption with plugin-local `_EXTRA_LABELS`** (Phase 4 cross-plugin alignment, v2.26.1 unreleased): 9 of 21 parsers now use the shared multilingual answer-label regex, up from 4 pre-Phase-4. The carwash pattern (module-level `_EXTRA_LABELS: Dict[str, List[str]]` + `_build_label_alt(lang)` helper that combines shared `ANSWER_LABELS` with domain-specific extras) is now replicated in: arithmetic (`therefore` / `equals`), strawberry (count / reverse / letter sub-type extras), time_arithmetic (`time` / `day` / `duration`, cached via `@lru_cache(maxsize=8)` on `_label_regex(lang)`), symbol_arithmetic (`therefore`), picture_algebra (`conclusion` / `висновок` / `розв'язок`). Plugins that already used the shared regex without extras: sally_anne, encoding_cipher, inverted_cup, measure_comparison, grid_tasks, ascii_shapes, family_relations. Plugins intentionally excluded: false_premise (refusal-label semantics, not answer-label), linda_fallacy (ranked lists, not single answers), misquote (Q1/Q2 domain labels `attribution` / `sentiment` that don't overlap with shared `ANSWER_LABELS`). The duplicated `_build_label_alt` helper body is tracked as [TD-109](../TECHDEBT.md) — candidate for eventual consolidation into `parse_utils.build_answer_label_re_with_extras(extra_labels, lang)` if Phase 5+ adds more plugins.
-
-**`normalize_unicode` adoption** (Phase 5 cross-plugin alignment, v2.26.1 unreleased): all 21 parsers now call `normalize_unicode(response)` at `parse()` entry (up from 1 pre-Phase-5). The shared helper was extended in Phase 5 to fold U+2032 / U+2033 (prime / double-prime — common in measurement notation `5′` / `5″`) into ASCII quotes in addition to the original U+2018/2019/201C/201D curly-quote set. `false_premise`'s local `_normalize_quotes` helper was deleted and its single call site redirected to the shared helper; the primes extension preserves its 6-char coverage exactly. Placement varies by parser shape: single-entry parsers inline normalization into the `strip()` call (`text = normalize_unicode(response.strip())`); dispatch parsers (strawberry, time_arithmetic) normalize once before mode routing; grid parsers (game_of_life, picross, cellular_automata_1d) normalize after Unicode-space collapse but before shape extraction; picture_algebra normalizes `raw` before `normalize_for_label_matching` so LaTeX stripping sees ASCII quotes. Consistency across placements is tracked in [TD-112](../TECHDEBT.md).
-
-**object_tracking Phase 8 — annotation-driven parser refactor** (v2.26.1 unreleased): first Phase 8 parser refactor driven by 129 annotated EN/UA cases (alignment_ratio 0.712 → targeted ≥0.85 post-refactor). Three new multilingual dicts in [src/plugins/object_tracking/parser.py](../src/plugins/object_tracking/parser.py): `_CONCLUSION_ANCHORS` (reasoning-closure phrases — `Conclusion` / `Therefore` / `Висновок` / `Отже` / `Final Location` etc.), `_LOCATION_PREPS` (preposition prefixes for the post-anchor location capture — EN `in/on/at/inside the`, UA `на/в/у/всередині`), `_BOLD_TRAILER_ANCHORS` (tighter immediate-left context for `**X**` trailers). Three failure modes were targeted: (1) conclusion-anchored plain trailer `"Therefore, the X is in the Y"` → new `_strategy_anchored_trailer` that walks from the LAST reasoning-anchor position forward, matches preposition + 1-3 word capture, requires intersection with `known_locations`; (2) bold trailer at end of verbose response → two-pass `_strategy_bold_keyword` (existing first-match pass kept for concise answers; new end-first anchored pass added for verbose); (3) `last_word` junk tokens (`"within"`, `"relative"`, `"bottom"`) → tightened to require `known_locations` match or return None. EN/UA anchor dicts are annotation-driven; ES/FR/DE/ZH extrapolated from reasoning-closure vocabulary and tracked as [TD-114](../TECHDEBT.md) pending per-language annotation validation. 7 new regression tests in [tests/plugins/test_object_tracking.py](../tests/plugins/test_object_tracking.py) (`test_phase8_*`) encode the three failure modes with real annotation-sample responses.
-
-**Phase 8 annotation-to-refactor workflow — for future sessions**: The object_tracking refactor established a reusable template. (1) User annotates ≥100 cases per plugin via the `/review` UI. (2) User exports the improvement-report JSON. (3) Agent reads the JSON and identifies failure modes from `span_groups` (position/format buckets), `regex_test` (match_rate vs. capture_contains_rate pairs), `context_anchor_groups` (reasoning anchors with frequency), and `negative_span_groups` (patterns the parser must FILTER). (4) Agent implements fixes scoped to identified modes, extrapolating multilingual dict entries from the annotated languages to the unannotated ones. (5) Agent adds `test_phase8_*` regressions per mode. (6) Both the refactor and the extrapolation are logged in TECHDEBT so later annotations can validate. The `strategy_breakdown.parser_ok = 0` aggregator bug ([TD-113](../TECHDEBT.md)) should be fixed before the next Phase 8 refactor session so per-strategy win/loss rates are actually populated.
-
-**Validated**: Re-parsed 1,933 results across 33 files. Zero true regressions from end-first changes. See [CHANGELOG.md](CHANGELOG.md) for detailed parser fix history (v2.10.3–v2.10.7).
+1. **`--no-think` is critical for structured tasks** (GoL, Arithmetic, C14). Chain-of-thought hurts rule-application; pass `--no-think` for those benchmarks.
+2. **Cell markers**: emoji work since v2.10.1+, but models still perform best with numeric `"1,0"`. Emoji is a robustness test, not a default.
+3. **Ollama must be running** (`ollama serve`) before any benchmark.
+4. **First Ollama query is slow** (~3–5 s model load). Subsequent queries are fast.
+5. **Multilingual evaluators check `expected_answer_localized`** — Object Tracking and Sally-Anne store both English `expected_answer` and `expected_answer_localized` in `task_params`. A Ukrainian "тумбочці" matches localized "тумбочці" via `match_type = "localized_match"`.
+6. **Long testset filenames** — `path_manager.py` truncates the task list at >120 chars and caps the total at 240, since some filesystems reject longer paths.
+7. **Annotation invariant is relaxed (v2.20.0+)**: at least one of `spans` / `response_classes` must be populated — both may coexist (e.g. `false_positive` carries both the evidence span and the diagnosis class). Pre-v2.20 was `XOR`; do not regress.
+8. **Translation panels must be `select-none`** (Architecture invariant #6). Repeated here because it is the easiest invariant to break by accident when adding to the review UI.
 
 ---
 
-### 7. Multilingual Content & Grammar System
-
-All 21 plugins generate test content in 6 languages. Each plugin has:
-- **`prompts.py`** — user prompt templates per language × style
-- **`i18n.py`** or **`*_i18n.py`** — localized vocabulary, question templates, scenario narratives
-- **`data/`** — per-language word lists, data files
-
-**Grammar resolution** for gendered languages (UA, ES, FR, DE) via `src/plugins/grammar_utils.py`:
-- `article(lang, gender, definite, case)` — returns correct article (el/la, le/la, der/die/das)
-- `resolve_vocab(en_key, vocab_dict, lang, case)` — returns case-inflected form (Ukrainian nom/acc/loc)
-- `pick_templates(template_dict, lang, gender)` — selects m/f template variants
-- `vocab_gender(en_key, vocab_dict, lang)` — gets grammatical gender of a noun
-
-**Subject gender** is randomly assigned (m/f) per test case and stored in `task_params["subject_gender"]`.
-
-### 8. LLM-as-a-Judge
-
-Audit incorrect model responses via a judge LLM:
-- **Backend**: `src/web/judge.py` — `run_judge_worker()` + default system/user prompts
-- **API**: `POST /api/results/judge`, `GET /api/results/judge-results`, `GET /api/results/judge-results/{filename}`
-- **Frontend**: `/judge` page with file selector, summary dashboard, filterable judgments table, JSONL/Markdown export
-- **Verdicts**: `true_incorrect`, `false_negative`, `parser_failure` (with issue sub-types)
-- **Export**: Markdown report structured for agent consumption — grouped by task type, with language, response samples, and actionable summary
-
-### 9. Version Management
-
-- **Single source of truth**: `src/__init__.py` — `__version__` field
-- `src/web/app.py` imports `__version__` automatically; no separate hardcoding needed
-- `frontend/package.json` is the npm source of truth — kept in sync manually when cutting releases
-- **All locations to update when bumping version**: `src/__init__.py`, `frontend/package.json` (+`package-lock.json`), `.github/copilot-instructions.md`, CHANGELOG.md, CLAUDE.md footer
-
-### 10. Human Review & Annotation
-
-Human annotation workflow for parser diagnosis and improvement. Every labelled response becomes a parser test case in waiting. The **Improvement Report** aggregates annotations into a JSON artifact whose explicit purpose is to seed a coding-agent task refactoring plugin parsers — so its shape is agent-facing and has iterated fast.
-
-**Workspace + sidecars (stable since v2.20.0):**
-
-- Backend router [src/web/api/human_review.py](src/web/api/human_review.py) (`/api/human-review/*`): `GET /cases`, `POST /annotate`, `GET|DELETE /annotations/{id}`, `POST /report`, `POST /translate`
-- Aggregator module [src/web/human_review_aggregator.py](src/web/human_review_aggregator.py) — pure-function, no I/O — computes the full report shape from sidecar payloads (+ optional source-result-payload backfill for legacy sidecars)
-- Translation [src/web/translation.py](src/web/translation.py) — `deep-translator` wrapper, `TRANSLATOR_PROVIDER` env (`google` default, `libre`, `mymemory`), LRU-cached
-- Sidecars: gzipped JSON at `{result_stem}_annotations.json.gz`, atomic `temp + os.replace`; `has_annotations` flag surfaces on `/api/results` summaries
-- **Sidecar key (v2.6+): `case_id::response_hash`** — SHA256 first 16 hex chars of first 128 chars of raw_response (post-TD-096 rehash). Unique across all testset dimensions (language × user_style × system_style). Falls back to `case_id::language` → bare `case_id` when loading legacy sidecars. See Known Issue #17.
-- **Response classes (v4, 4):** `truncated`, `unrecoverable`, `false_positive`, `hedge` — multi-select `response_classes: list[str]`. v4 (Phase 1) collapsed `gibberish` / `refusal` / `language_error` → `unrecoverable` and dropped `verbose` / `verbose_correct` entirely (Extractable is implicit when a span exists). v3 renames still honored (`verbose_correct` → dropped, `parser_false_positive` → `false_positive`); `parser_ok` is auto-inferred at aggregation time. Old sidecars auto-migrated by `_migrate_annotation()` on every read (invoked from `_load_annotations_from_store`, so all API paths converge).
-- **Phase 3 — auto-toggled `truncated` chip.** Every newly-written result entry carries `output.was_truncated: bool` computed at inference time from `finish_reason == "length"` OR `tokens_generated >= max_tokens_used`. `ReviewCase.was_truncated` flows through `_project_case` to the frontend; `emptyDraft` in `review.tsx` seeds `response_classes: ["truncated"]` on case load when the flag is set AND the existing annotation is empty. Visual is identical to a manual toggle. The flag lives only in the result file's `output` dict — the annotation sidecar reflects annotator judgment (un-toggling doesn't persist).
-- Annotation invariant (v3): ≥1 of `spans` / `response_classes` / mark-type arrays; any may coexist
-- Format: `bold` / `italic` / `strikethrough` / `header` / `boxed` / `label` / `plain` / `other` (italic/strike/header added in v2.2)
-- **v4 Mark Types (4 levels, hold-to-modify keyboard + click or drag):**
-  - Plain click/drag → Answer span (blue solid) — `spans[]`
-  - Hold **A** + click/drag → Context anchor (indigo dashed) — `context_anchors[]`
-  - Hold **D** + click/drag → Answer keyword (violet dotted) — `answer_keywords[]`
-  - Hold **Shift** + click/drag → Negative span (rose solid) — `negative_spans[]` with `source: "manual"`
-  - **Phase 2:** Shift+click INSIDE the amber parser-highlight region toggles `false_positive` instead of creating a negative — Shift+drag across the region still creates a negative (drag-wins-over-click).
-  - **Phase 2 auto-inferred negatives:** when the annotator marks an answer span while the parser extracted a different region, the UI auto-synthesises a dotted-rose negative at the parser region, tagged `source: "auto_inferred"`. Folded inside the same `updateDraft` setter as the answer span so Ctrl+Z undoes both atomically. Sticky per-draft flag (`auto_negative_inferred`) prevents re-creation after dismissal within the same case.
-  - `negative_keywords[]` is gone as an author surface (legacy entries auto-folded into `negative_spans` by `_migrate_annotation`). DB column kept for now — cleanup tracked as TD-115.
-  - Adjacent marks of the same type auto-merge. Auto-inferred negatives SKIP merge and are replaced (not merged) when a manual drag overlaps. `onMouseDown` still suppresses browser selection-extension when Shift is held.
-- Frontend `/review` ([pages/review.tsx](frontend/src/pages/review.tsx)): two-column editorial workspace with `useModifierState` + `useUndoStack` hooks. **Keyboard (v4):** `Space` save-or-skip + advance · `Ctrl/Meta+Space` discard draft + advance · `←` previous · `Ctrl/Meta+Z` / `Ctrl/Meta+Shift+Z` undo/redo (per-case, 10-step) · `1-5` + `E/Q/F` classification · `?` help. Removed: `S` (skip) and `ArrowRight` — Space subsumes both. The annotation dock is deleted; drag-select commits IMMEDIATELY with auto-detected position/format. Held-modifier visual feedback via `data-modifier` attribute + Tailwind tint on the response panel.
-
-**Improvement Report schema (current `format_version` = `"2.7"`):** rolls forward additively — older sidecars continue to produce older report shapes. Top-level sections: `summary`, `span_groups`, `long_tail_groups`, `negative_span_groups`, `context_anchor_groups`, `parser_span_alignment`, `ordering_hints`, `language_breakdown` / `config_breakdown` / `user_style_breakdown`, `strategy_breakdown`, `answer_when_missed`, `manual_keyword_distribution`, `model_answer_distribution` / `model_answer_variants`, `data_quality.warnings[]` + `suppressed_sections[]`, `annotator_notes`, `source_files[]`. v2.7 specifics: `negative_span_groups[]` no longer carries `mark_type` (collapsed); `response_class_counts` only reports the four v4 canonical codes. Per-span-group: `structural_ratios`, `prefix_anchors` (`type`: label / format / phrase), `label_taxonomy`, `regex_test` harness (`match_rate`, `capture_exact_rate`, `capture_contains_rate`, `sample_captures`), candidates carry weighted `kind` (`merged_label_disjunction` > `context_anchor` > `format_only` > `text_pattern`) with `support` + post-harness low-support filtering. Per-version add history lives in [CHANGELOG.md](../CHANGELOG.md).
-
-**Key agent-facing distinctions (future-you, read this):**
-
-- **`match_rate` vs `capture_contains_rate`** — "regex fires" is *not* "regex extracts the right answer." A pattern like `(?i)recommendation:\s*([^.\n]+?)(?:[.\n]|$)` can match 100% and capture `Definitively walk to the carwash` — agent-useful only if `capture_contains_rate` is also high.
-- **Parser alignment ≠ parser correctness** — v2.3 split. `aligned_with_parser` means `parser_extracted` matches the annotated span (even when model was wrong). `parser_missed_extractable` alone is misleading; always pair with `parser_span_alignment`.
-- **Markdown-stripped buckets collapse case + wrappers but NOT stems** — `walk` and `walking` are separate buckets on purpose; surfacing that difference is the agent's signal to add stemming.
-- **Single-bucket axes auto-suppress** — if every annotated case shares one language/style/expected answer, `language_breakdown` etc. are omitted (reported in `data_quality.suppressed_sections`). Don't assume a missing field means a bug.
-- **Negative spans drive parser work differently from positive spans** — positive spans say "the answer IS here"; negative spans say "the parser should NOT match here." In v2.7, all negative marks are a single type; the aggregator groups them by normalized text without distinguishing "option-listing phrases" (e.g. `"or drive"`) from "bare distractor words" (e.g. `"drive"`) — both surface in `negative_span_groups`. Use `context_anchor_groups` alongside negative spans to cross-reference which labels precede correct extractions vs. which keyword contexts produce false positives. Legacy v2.6 reports still carry a `mark_type` field; new reports omit it.
-
-**One-click word marking** + drag-select (immediate commit, no dock) + parser-match highlight (amber dashed underline, Phase 2 — driven by backend-emitted `parsed_char_start` / `parsed_char_end` with client-side substring fallback for legacy result files) + parser-click semantics (plain click confirms, Shift+click toggles false_positive) + auto-inferred negative on parser disagreement (dotted-rose, `source: "auto_inferred"`) + persistent parser-disagreement callout + 🌐 translation panels (`select-none` — translated text is never an annotation target).
-
-### 11. Plugin Task Type List — Single Source of Truth
-
-`PluginRegistry.list_task_types()` is the canonical list of active plugin task types — **do not maintain separate hardcoded lists**.
-
-- `src/stages/analyze_results.py` — `_KNOWN_TASK_TYPES` is derived from the registry at import time
-- `src/web/reanalyze.py` — `_TASK_TYPE_SUFFIXES` is derived from the registry at import time
-- Adding a new plugin in `src/plugins/` automatically propagates to all task-type inference and badge detection with no other changes required
-- `_LEGACY_TASK_TYPES` — manually maintained list for task types that have been removed from the plugin system but may still appear in old result files. Currently contains `"fancy_unicode"` as a historical artifact — the plugin is still actively registered, so the entry is a no-op and safe to drop if it ever causes confusion.
-
-### 12. Job Persistence & Pause/Resume
-
-All job I/O is confined to **`src/web/job_store.py`** (`JobStore` class) — the single place to swap when upgrading to NoSQL/Redis. To change the backend, only `job_store.py` changes.
-
-- **Storage**: `jobs.json` at project root (path configurable via `GOL_JOBS_FILE` env var)
-- **Lifespan**: `src/web/app.py` lifespan context manager calls `job_manager.load_from_store()` on startup and `save_to_store()` on shutdown; each terminal transition also persists immediately
-- **Startup recovery**: PENDING/RUNNING jobs found in store → set to FAILED ("Interrupted by server restart"); PAUSED jobs survive and remain resumable
-- **Pause**: `POST /api/jobs/{id}/pause` — sets `pause_requested` flag in shared dict; worker finishes current test case, saves `partial_<job_id>.json.gz`, returns `"paused"` status with checkpoint index
-- **Resume**: `POST /api/jobs/{id}/resume` — paused job → CANCELLED (superseded), new job submitted from `paused_at_index`; inherits all execution params; merges partial + new results into final file, deletes partial on completion
-- **Job states**: `pending` → `running` → `completed` / `failed` / `cancelled` / **`paused`** (PAUSED is not terminal — it can be resumed)
-- **Judge jobs**: support cancel only — multi-file batching makes checkpointing significantly more complex
-- **Credentials caveat**: `api_key` / `api_base` are stored in `jobs.json` — see TECHDEBT TD-085
-
----
-
-## Adding New Features
-
-### New Benchmark Task (Plugin System)
-
-**Modern approach using the plugin system:**
-
-1. **Create plugin directory** `src/plugins/new_task/`:
-   ```bash
-   mkdir src/plugins/new_task
-   cd src/plugins/new_task
-   ```
-
-2. **Create `__init__.py`** with plugin instance:
-   ```python
-   from src.plugins.base import BenchmarkPlugin
-   from src.plugins.new_task.generator import NewTaskGenerator
-   from src.plugins.new_task.parser import NewTaskParser
-   from src.plugins.new_task.evaluator import NewTaskEvaluator
-
-   class NewTaskPlugin(BenchmarkPlugin):
-       @property
-       def task_type(self) -> str:
-           return "new_task"
-
-       @property
-       def display_name(self) -> str:
-           return "New Task Display Name"
-
-       def get_generator(self):
-           return NewTaskGenerator()
-
-       def get_parser(self):
-           return NewTaskParser()
-
-       def get_evaluator(self):
-           return NewTaskEvaluator()
-
-   plugin = NewTaskPlugin()  # Auto-discovered!
-   ```
-
-3. **Create `prompts.py`** (plugin-local user prompt templates — nested dict, NOT tuple keys):
-   ```python
-   USER_PROMPT_TEMPLATES = {
-       "en": {"minimal": "...", "casual": "...", "linguistic": "..."},
-       "es": {"minimal": "...", "casual": "...", "linguistic": "..."},
-       # ... all 6 languages
-   }
-   ```
-
-4. **Create `generator.py`** (test case generation):
-   ```python
-   from src.plugins.base import TestCaseGenerator, TestCase, ConfigField
-   from .prompts import TEMPLATES
-
-   class NewTaskGenerator(TestCaseGenerator):
-       def generate_batch(self, config, prompt_config, count, seed):
-           user_prompt, system_prompt, full_prompt = self._build_prompts(
-               TEMPLATES, language, user_style, system_style, **vars
-           )
-           return [TestCase(...), ...]
-
-       def get_config_schema(self) -> list[ConfigField]:
-           return [
-               ConfigField(name='count', label='Number of cases', field_type='number',
-                           default=10, min_value=1, max_value=200),
-           ]
-   ```
-
-5. **Create `parser.py`** (response parsing with multi-strategy):
-   ```python
-   from src.plugins.base import ResponseParser, ParsedAnswer
-
-   class NewTaskParser(ResponseParser):
-       def parse(self, response: str, task_params: Dict) -> ParsedAnswer:
-           # Try multiple parsing strategies
-           return ParsedAnswer(value=..., raw_response=response, parse_strategy='...')
-   ```
-
-6. **Create `evaluator.py`** (result evaluation):
-   ```python
-   from src.plugins.base import ResultEvaluator, EvaluationResult
-
-   class NewTaskEvaluator(ResultEvaluator):
-       def evaluate(self, parsed_answer, expected_answer, task_params) -> EvaluationResult:
-           # Evaluate correctness
-           return EvaluationResult(correct=..., match_type='...', accuracy=...)
-   ```
-
-7. **Done!** No changes to `PromptEngine.py` needed. Plugin auto-discovered by registry.
-
-### New Model Provider
-
-1. **Create interface** in `src/models/NewProviderInterface.py`:
-   ```python
-   from src.models.BaseModelInterface import ModelInterface
-
-   class NewProviderInterface(ModelInterface):
-       def __init__(self, model_name: str, **kwargs):
-           self.model_name = model_name
-
-       def query(self, prompt: str, params: dict) -> dict:
-           # Must return {"response": str, "duration": float, "model_info": {...}}
-           ...
-   ```
-
-2. **Register in factory** in [src/models/\_\_init\_\_.py](src/models/__init__.py):
-   ```python
-   # Add to create_model_interface():
-   elif provider == "new_provider":
-       return NewProviderInterface(model_name, **kwargs)
-   ```
-
-### New Visualization
-
-1. Add to [src/visualization/](src/visualization/) following patterns in [visualization_engine.py](src/visualization/visualization_engine.py)
-2. Use matplotlib/seaborn for charts
-3. Save to `docs/images/` with descriptive names
-
----
-
-## Common Configuration
-
-### Command-Line Arguments
-
-```bash
-# Prompt styles (user prompt)
---prompt-style minimal|casual|linguistic
-
-# System prompt styles
---system-prompt-style analytical|casual|adversarial
-
-# Languages
---prompt-language en|es|fr|de|zh|uk
-
-# Cell markers (GoL only — emoji supported since v2.10.1, but numeric recommended)
---live-dead-cell-markers "1,0"
-
-# Disable chain-of-thought (recommended for structured tasks)
---no-think
-
-# Sampling parameters
---temperature 0.1
---top-k 40
---min-p 0.05
-
-# Reproducibility
---seed 42
-```
-
-### Environment Variables
-
-- **`GOL_LOG_FILE`** — log file path (default: `gol_eval.log`); configured in `src/utils/logger.py`
-- **`GOL_JOBS_FILE`** — job history JSON path (default: `jobs.json` at project root); configured in `src/web/app.py`
-
-### Difficulty Levels
-
-| Level | GoL Grid Size | ARI Complexity | Description |
-|-------|--------------|----------------|-------------|
-| `easy` | 3×3 | Level 1 | Simple patterns, basic operations |
-| `medium` | 5×5 | Level 2 | Moderate complexity |
-| `hard` | 7×7 | Level 3 | Complex patterns, nested operations |
-| `nightmare` | 10×10 | Level 4 | Extreme complexity |
-
----
-
-## Known Issues & Gotchas
-
-### Critical Issues
-
-1. **Emoji markers now work but reduce accuracy**
-   - Custom cell markers (including emoji) are supported for GoL (v2.10.1) and C14 (v2.10.2)
-   - `--live-dead-cell-markers "1,0"` remains recommended for best model accuracy
-   - Emoji markers are a valid robustness test but expect lower scores
-
-2. **`--no-think` is critical for structured tasks**
-   - Chain-of-thought hurts performance on GoL/ARI
-   - Can improve Linda fallacy reasoning
-
-3. **Ollama must be running**
-   - Start with `ollama serve` before benchmarks
-   - Connection errors if daemon not running
-
-4. **Model preloading**
-   - First query is slow (model loading time)
-   - Subsequent queries are cached and faster
-
-5. **Reanalyze must pass language to parser**
-   - `reanalyze.py` merges `prompt_metadata` (language, user_style) into `task_params` before re-parsing
-   - Without this, parser defaults to English keywords and misses multilingual responses
-   - Bug was: `task_params` doesn't contain `language` — it's in `input.prompt_metadata`
-
-6. **FastAPI route ordering matters**
-   - Specific routes (`/judge-results`, `/reports`) MUST be declared before `/{filename}` catch-all
-   - Otherwise `/{filename}` catches everything — e.g. `/judge-results` matches as `filename="judge-results"`
-
-7. **Testset count = per prompt config**
-   - `generate_testset.py` passes `count=total_count` to each `generate_batch()` call
-   - Total cases = count × len(prompt_configs)
-   - e.g. count=100 with 72 prompt combos → 7,200 total cases
-
-8. **Multilingual evaluators need `expected_answer_localized`**
-   - Object Tracking and Sally-Anne store both `expected_answer` (English) and `expected_answer_localized` in task_params
-   - Evaluator checks both — if model responds in Ukrainian "тумбочці", it matches localized "тумбочці" even though expected is "nightstand"
-   - Match type: `localized_match`
-
-9. **prompt_metadata must be merged into task_params for parsers**
-   - `run_testset.py` and `src/web/jobs.py` now merge `prompt_metadata` (language, user_style, system_style) into `task_params` before calling plugin parsers/evaluators
-   - Without this, parsers default to English keywords and miss multilingual responses
-   - Fixed in v2.16.1 for both CLI and Web UI execution paths
-
-10. **Long testset filenames can exceed filesystem limits**
-    - `path_manager.py` truncates task list if >120 chars → `N_tasks`, total filename capped at 240 chars
-    - Without truncation, configs with many test types could produce filenames too long for some filesystems
-
-11. **Job records are encrypted-at-rest under `data/jobs/` — preserve the key**
-    - `data/jobs/<id>.json` is created per-job and survives restarts
-    - `api_key` / `api_base` are Fernet-encrypted at rest (`api_key_enc` / `api_base_enc`) using the key from `GOL_SECRET_KEY` env var (if set) or auto-generated `data/.secret_key` (0600) on first run — see [src/web/crypto.py](src/web/crypto.py) (TD-085 resolved)
-    - **Back up `data/.secret_key` alongside `data/jobs/`** — losing the key means existing encrypted credentials become unrecoverable (jobs still load, credentials decrypt to `""` with a WARNING, user re-enters to resume). Both are in `.gitignore`
-    - `partial_<job_id>.json.gz` files under `data/jobs/partial/` are intermediate pause checkpoints (no credentials); orphaned if server crashes between pause signal and worker exit (see TECHDEBT TD-087)
-    - If a job file becomes corrupt the server starts cleanly — `JobStore.load_all()` skips the record and logs a warning
-    - Legacy plaintext records (pre-v2 schema) still load and auto-upgrade to encrypted on next persist
-
-12. **Annotation invariant is relaxed** (v2.20.0)
-    - Pre-v2.20.0 rule was `spans XOR response_class`; that was too strict
-    - Current rule: at least one of `spans` / `response_class` must be populated — **both may coexist**
-    - Load-bearing case: `parser_false_positive` carries both the evidence (span) and the diagnosis (class). `verbose_correct` + span also makes sense (parser grabbed the wrong occurrence of a correct answer buried in verbose reasoning)
-    - Backend enforces this in `POST /api/human-review/annotate`; frontend classification buttons no longer wipe spans
-
-13. **Translation panels must be `select-none`** (v2.20.0)
-    - Annotation spans refer to char offsets in the *original* response string
-    - If the translated text were selectable, annotators could mark offsets that refer to the translation — span coordinates would then be meaningless when the annotation is re-read
-    - Enforced in `components/review/translation-panel.tsx` — do not remove
-
-14. **Improvement report: `match_rate` ≠ capture quality** (Improvement Report v2.3+)
-    - `regex_test[].match_rate` means "this regex fires on the example context," NOT "this regex captures the right token"
-    - Always pair with `capture_exact_rate` / `capture_contains_rate` — a pattern with match_rate 1.0 and capture_contains_rate 0.3 fires correctly but grabs the wrong substring (classic case: `(?i)recommendation:\s*([^.\n]+?)(?:[.\n]|$)` matches but captures `Definitively walk to the carwash` instead of `walk`)
-    - Frontend `CaptureQualityPill` tones on `capture_contains_rate`; backend sorts harness rows by `match_rate` first but the agent should read both. Green-pill (≥0.8) on both is a drop-in regex; anything else needs post-processing or anchor refinement
-
-15. **Improvement report: uniform-axis breakdowns are suppressed, not missing** (Improvement Report v2.3+)
-    - When every annotated case shares one language / system_style / user_style / expected answer, the corresponding `language_breakdown` / `config_breakdown` / `user_style_breakdown` / `answer_when_missed.by_expected` is **omitted from the JSON** (not emitted as empty)
-    - v2.5 extends the pattern to `strategy_breakdown` when `no_parse_strategy` fires (≥90% cases carry `parse_strategy='unknown'`) and to `answer_when_missed.by_expected` when `uniform_expected` fires (all cases share one expected value)
-    - The absence is reported in `data_quality.suppressed_sections` + a `uniform_*` or `no_parse_strategy` warning code
-    - Frontend `DataQualityBanner` surfaces this; downstream consumers should check `data_quality.warnings` before assuming a missing section is a bug
-    - Related: `parser_missed_extractable: 100` can be misleading — always pair with top-level `parser_span_alignment` (a fully aligned `parser_extracted` still lands in `parser_missed_extractable` when the annotator used spans-only workflow instead of marking `parser_ok`)
-
-16. **Improvement report: long-tail groups require a rich head** (Improvement Report v2.5+)
-    - `span_groups` with `count < 4` collapse into `long_tail_groups` (compact `{position, format, count, example}` stubs — no structural_ratios / prefix_anchors / regex_test since n ≤ 3 carries no signal)
-    - **Guarded**: collapse only applies when at least one group has `count ≥ 4`. When every group is below threshold (small sessions, focused testsets) those small groups ARE the signal and are left intact in `span_groups`
-    - Deleted in v2.5: top-level `confusion_matrix` (duplicated `summary`), top-level `anchor_frequency` (subsumed by per-group `prefix_anchors`), top-level `response_classes` (folded into `summary.response_class_counts`, non-zero only)
-    - Empty `ordering_hints` / `annotator_notes` are omitted entirely from output (not emitted as `[]`). Feature-detect in the frontend; downstream agents should treat absence as "nothing to report" rather than an error
-
-17. **Annotation sidecar key must be `case_id::response_hash`** (v2.6+)
-    - A single result file regularly contains multiple variants of the same `test_id` — e.g. 6 languages × 3 user styles × 3 system styles = 54 entries sharing the same `test_id`. Keys based on `case_id` or `case_id::language` alone overwrite each other during save.
-    - The canonical key is `f"{case_id}::{_response_hash(raw_response)}"` where `_response_hash` is an 8-hex-char MD5 of the first 128 chars of `raw_response`. Any two distinct result entries will have different first-128-char prefixes with overwhelmingly high probability.
-    - `AnnotateRequest` carries `response_hash` (sent from the frontend `ReviewCase.response_hash`). The backend iterates all results to find the one whose computed hash matches before writing to the sidecar.
-    - Frontend `caseKey()` = `result_file_id::case_id::response_hash` — prevents draft leakage between variants shown in the same review session.
-    - Backwards compat: `get_review_cases` falls back through `case_id::language` → bare `case_id` when loading old sidecars without a hash-keyed entry.
-
-18. **Review-cases React Query cache must be busted on annotation delete** (v2.6+)
-    - `useReviewCases` has `staleTime: Infinity` — the case list is a snapshot and must not background-refetch during an active annotation session.
-    - `DELETE /annotations/{id}` removes the sidecar file server-side, but if the user returns to the review page in the same browser session the old cached `existing_annotation` values are still served by React Query.
-    - `useDeleteAnnotations.onSuccess` invalidates `["review-cases"]` (prefix match) as well as `["results"]` and `["annotations", filename]`. Do not remove this invalidation.
-
-### Import Patterns
-
-After reorganization, use these import patterns:
+## Common imports
 
 ```python
-# Plugin System
+# Plugins
 from src.plugins import PluginRegistry, ConfigField
 from src.plugins.base import (
     BenchmarkPlugin, TestCaseGenerator, ResponseParser, ResultEvaluator,
-    TestCase, ParsedAnswer, EvaluationResult, ConfigField
+    TestCase, ParsedAnswer, EvaluationResult,
 )
-from src.plugins.parse_utils import safe_enum, re_search_last, strip_verification_tail, merge_keywords, get_language, build_word_to_int
-
-# Grammar utilities (gendered languages)
+from src.plugins.parse_utils import (
+    safe_enum, re_search_last, strip_verification_tail, normalize_unicode,
+    merge_keywords, get_language, build_word_to_int, build_answer_label_re,
+)
 from src.plugins.grammar_utils import article, resolve_vocab, pick_templates, vocab_gender
 
-# Plugin-local prompt templates (inside each plugin's generator.py)
-from .prompts import USER_PROMPT_TEMPLATES  # Each plugin defines its own (nested dict: lang → style → template)
-
-# Core (PromptEngine: system prompts + enums are active; user templates are legacy)
+# Core (PromptEngine system prompts + enums; user templates are deprecated → plugins)
 from src.core.types import GameOfLifeTestConfig, DifficultyLevel
-from src.core.PromptEngine import Language, PromptStyle, SystemPromptStyle  # Active enums
-# Legacy (still used by generate_testset.py — not yet removed): TaskType, PromptContext, PromptResult, create_*_context()
-from src.core.TestGenerator import TestGenerator
+from src.core.PromptEngine import Language, PromptStyle, SystemPromptStyle
 
 # Models
 from src.models import create_model_interface, ModelInterface
-from src.models import OllamaInterface, HuggingFaceInterface, OpenAICompatibleInterface
 
-# Evaluation
-from src.evaluation.TestEvaluator import TestEvaluator
-
-# Engines
-from src.engine.GameOfLifeEngine import GameOfLifeEngine
-from src.engine.MathExpressionGenerator import MathExpressionGenerator
-
-# Utils
-from src.utils.logger import get_logger
-from src.utils.model_providers import ModelProvider
+# Web (when adding API surface — DO NOT import these from CLI code)
+from src.web.prompt_store import get_store as get_prompt_store
+from src.web.annotation_store import get_store as get_annotation_store
+from src.web.job_store import JobStore
 ```
 
 ---
 
-## Research Findings
+## Common troubleshooting
 
-### Key Discoveries from Benchmark Studies
-
-1. **Prompt engineering dominates model selection**
-   - 44+ percentage point swings from prompt choice alone
-   - Same model, different prompts → 0% to 44% accuracy
-
-2. **System prompts are reasoning switches**
-   - Analytical: Step-by-step, methodical
-   - Casual: Intuitive, conversational
-   - Adversarial: Direct, efficient
-
-3. **Model personalities matter**
-   - Qwen = pragmatist (adversarial prompts work best)
-   - Gemma = analyst (analytical prompts work best)
-   - Llama = generalist (balanced across styles)
-
-4. **Q2_K quantization beats F16**
-   - 2-bit extreme quantization outperforms full precision (+6.18%)
-   - Likely due to noise reduction in attention heads
-
-5. **Chain-of-thought hurts structured tasks**
-   - GoL/ARI: --no-think improves accuracy
-   - Linda: thinking helps detect fallacy
-
-See [docs/PROMPT_BENCHMARK_NOVEMBER_2025_REPORT.md](docs/PROMPT_BENCHMARK_NOVEMBER_2025_REPORT.md) for full analysis.
+| Symptom | Likely fix |
+|---|---|
+| `ModuleNotFoundError: No module named 'src.types'` | Use `from src.core.types import ...` (post-reorg path) |
+| `connection refused` on Ollama | `ollama serve` in another shell |
+| 0% accuracy on a structured task | Check `--no-think` and `--live-dead-cell-markers "1,0"`; see `debug-zero-accuracy` skill |
+| Parser returns English keywords on Ukrainian response | `prompt_metadata` not merged into `task_params` (invariant #3) |
+| Annotation appears to overwrite a sibling case | Sidecar key is `case_id::response_hash`, not `case_id` (invariant #5) |
+| FastAPI catch-all swallowing a specific route | Re-order route declarations (invariant #7) |
 
 ---
 
-## Testing
+## Self-discipline reminders
 
-### Run Tests
-
-```bash
-# Run all tests
-pytest tests/
-
-# Run specific test file
-pytest tests/plugins/ -v
-
-# Run with coverage
-pytest tests/ --cov=src --cov-report=html
-```
-
-### Manual Testing
-
-Use the Web UI (`python -m src.web`) or the 3-stage pipeline directly:
-
-```bash
-# Generate a test set, run it, then analyze
-python src/stages/generate_testset.py configs/my_config.yaml
-python src/stages/run_testset.py testsets/testset_xyz.json.gz --model qwen3:0.6b --provider ollama
-python src/stages/analyze_results.py results/
-```
+- **CHANGELOG owns version history.** Do not paste release notes into this file.
+- **TECHDEBT owns incomplete refactors.** Phase 3b grid plugins, TD-109 (label-regex consolidation), TD-112 (normalize_unicode placement), TD-113 (`strategy_breakdown.parser_ok=0` aggregator bug), TD-114 (extrapolated multilingual anchors awaiting validation), TD-115 (`negative_keywords` column cleanup), TD-118 (doc-freshness CI), TD-119 / TD-120 (Prompt Studio frontend) — all live in TECHDEBT, not here.
+- **Per-plugin parser refactor narratives** belong in PLUGIN_GUIDE § End-First Parsing Convention (architectural reference) or TECHDEBT (if incomplete). Not in this index.
+- **The `add-plugin`, `add-model-provider`, `debug-zero-accuracy`, and `parser-refactor-from-annotations` skills** carry the full code-template recipes. When the user asks "how do I add a new plugin?" invoke the skill rather than answering from memory.
 
 ---
 
-## Batch Processing
-
-### Run Multi-Model Benchmark
-
-```bash
-# Edit scripts/run_multi_model_benchmark.sh to configure:
-# - MODELS array
-# - USER_STYLES and SYSTEM_STYLES
-# - DIFFICULTY, BATCH_SIZE, etc.
-
-bash scripts/run_multi_model_benchmark.sh
-```
-
-### Monitor Progress
-
-```bash
-# Watch benchmark progress
-bash scripts/monitor_benchmark.sh
-
-# Or use watch command
-watch -n 5 'ls -1 results/multi_model_*/  *.json | wc -l'
-```
-
----
-
-## Troubleshooting
-
-### Import Errors
-
-**Error**: `ModuleNotFoundError: No module named 'src.types'`
-**Fix**: Use new import paths:
-```python
-# Old (broken)
-from src.types import GameOfLifeTestConfig
-
-# New (correct)
-from src.core.types import GameOfLifeTestConfig
-```
-
-### Model Connection Issues
-
-**Error**: `ollama.ResponseError: connection refused`
-**Fix**: Start Ollama daemon:
-```bash
-ollama serve
-```
-
-### Pattern File Not Found
-
-**Error**: `FileNotFoundError: [Errno 2] No such file or directory: 'conways_life/...'`
-**Fix**: Update path reference:
-```python
-# Old
-from conways_life.parser import parse_rle
-
-# New
-from data.conways_life.parser import parse_rle
-```
-
-### 0% Accuracy with Emoji Markers
-
-**Error**: All tests return 0% accuracy
-**Fix**: Always use numeric markers:
-```bash
-# Wrong
---live-dead-cell-markers "⚪⚫"
-
-# Correct
---live-dead-cell-markers "1,0"
-```
-
----
-
-## Q&A for Claude Code Agents
-
-### Q: How do I run a quick GoL benchmark?
-
-Use the Web UI (`python -m src.web`) — select Game of Life, configure parameters, and run.
-Or use the 3-stage pipeline with a YAML config.
-
-### Q: How do I add a new difficulty level?
-
-1. Edit `src/core/types.py`:
-   ```python
-   class DifficultyLevel(Enum):
-       EASY = "easy"
-       MEDIUM = "medium"
-       HARD = "hard"
-       NIGHTMARE = "nightmare"
-       ULTRA = "ultra"  # New
-   ```
-
-2. Update `GameOfLifeTestConfig._get_grid_size()`:
-   ```python
-   def _get_grid_size(self, difficulty: DifficultyLevel) -> int:
-       sizes = {
-           DifficultyLevel.EASY: 3,
-           DifficultyLevel.MEDIUM: 5,
-           DifficultyLevel.HARD: 7,
-           DifficultyLevel.NIGHTMARE: 10,
-           DifficultyLevel.ULTRA: 15,  # New
-       }
-       return sizes[difficulty]
-   ```
-
-### Q: How do I debug why a model is scoring 0%?
-
-1. **Check cell markers**: `"1,0"` recommended (emoji now supported but models perform worse with them)
-2. **Inspect raw output**: Add `print(response)` before `parse_response()`
-3. **Check prompt**: Ensure format matches expected output
-4. **Try simpler test**: Use `--difficulty easy --batch-size 1`
-
-### Q: How do I add support for a new LLM API?
-
-See "New Model Provider" section above. Key steps:
-1. Create interface extending `ModelInterface`
-2. Implement `query(prompt, params)` method
-3. Register in `create_model_interface()` factory in `src/models/__init__.py`
-
-### Q: Where are benchmark results stored?
-
-- **Default**: `results/` at repository root
-- **Multi-model runs**: `results/multi_model_TIMESTAMP/`
-- **Custom**: Use `--results-dir` flag
-
-### Q: How do I reproduce exact benchmark results?
-
-Use the `seed` parameter in your YAML config or the Web UI. Same seed + same config = identical test cases.
-
----
-
-## Dependencies
-
-### Required
-
-- Python 3.8+
-- Ollama running locally (`ollama serve`)
-- PyTorch, Transformers, NumPy, Pandas
-
-### Installation
-
-```bash
-# Install requirements
-pip install -r requirements.txt
-
-# Optional: Install with dev dependencies
-pip install -r requirements.txt pytest pytest-cov black ruff
-```
-
-### Verify Installation
-
-```bash
-# Check Python version
-python --version
-
-# Check Ollama connection
-ollama list
-
-# Run quick test via web UI
-python -m src.web
-# Open http://127.0.0.1:8000/
-```
-
----
-
-## Contributing
-
-### Code Style
-
-- Use type hints for all functions
-- Follow PEP 8 naming conventions
-- Add docstrings to public methods
-- Keep functions < 50 lines when possible
-
-### Before Committing
-
-```bash
-# Format code
-black src/ tests/
-
-# Lint
-ruff check src/ tests/
-
-# Run tests
-pytest tests/
-```
-
----
-
-## Additional Resources
-
-- **Project Overview**: [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md) — Architecture, tasks, research findings, quick start
-- **Plugin Guide**: [docs/PLUGIN_GUIDE.md](docs/PLUGIN_GUIDE.md) — Plugin reference, end-first parsing, adding new plugins
-- **Architecture**: [docs/PROJECT_OVERVIEW.md](docs/PROJECT_OVERVIEW.md)
-- **Research — Quantization**: [docs/research/quantization/EXECUTIVE_SUMMARY.md](docs/research/quantization/EXECUTIVE_SUMMARY.md)
-- **Research — Prompt Analysis**: [docs/research/prompt-analysis/RESULTS_REPORT.md](docs/research/prompt-analysis/RESULTS_REPORT.md)
-- **Changelog**: [CHANGELOG.md](CHANGELOG.md)
-
----
-
-*Last updated: 2026-04-20*
-*Version: 2.26.0*
-
-*For per-release history see [CHANGELOG.md](../CHANGELOG.md). For questions or issues: check [README.md](../README.md) or open an issue.*
+*Last updated: 2026-04-27 · See [docs/RELEASE_CHECKLIST.md](docs/RELEASE_CHECKLIST.md) for the bump procedure.*

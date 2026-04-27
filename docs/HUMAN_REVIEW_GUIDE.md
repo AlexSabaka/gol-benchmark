@@ -1,6 +1,10 @@
 # Human Review & Annotation Guide
 
-> Comprehensive overview of the GoL Benchmark human-annotation subsystem — UI workflow, backend logic, persistence, and the Improvement Report contract that drives parser refactors.
+**Version 2.26.0** | Last updated: 2026-04-27
+
+Comprehensive overview of the GoL Benchmark human-annotation subsystem — UI workflow, backend logic, persistence, and the Improvement Report contract that drives parser refactors.
+
+> This guide is the **authoritative source** for human-review behaviour and the Improvement Report contract. The lightweight pointer in `.claude/CLAUDE.md` references back to here, not the other way around.
 
 ---
 
@@ -40,8 +44,8 @@ Every labelled response becomes a parser test case in waiting. The mark types an
 | **Sidecar** | Historical name for the per-result-file annotation payload. Now stored in SQLite; the term survives because the in-memory shape (`{meta, cases}`) is unchanged for the aggregator. |
 | **Mark** | Generic name for any annotation primitive. v4: four author types — `spans`, `context_anchors`, `answer_keywords`, `negative_spans`. Differ in semantic role (positive vs negative) and verbosity (full span with `position`/`format` vs lightweight word). The legacy `negative_keywords[]` array is retained on the wire for back-compat; its entries fold into `negative_spans` on read. |
 | **Span** | A specific mark type with extra metadata (`position`, `format`, `confidence`). Carries "this *is* the answer." |
-| **Response class / classification / verdict** | One of seven multi-select tags describing the response as a whole — `hedge`, `truncated`, `gibberish`, `refusal`, `language_error`, `verbose`, `false_positive`. |
-| **Improvement Report** | Aggregated JSON produced by [`build_report()`](../src/web/human_review_aggregator.py#L1942) over all annotations in selected files. Format version `"2.6"`. Consumed by parser-refactor agents. See [§2.7](#27-improvement-report-v26--the-contract). |
+| **Response class / classification / verdict** | One of **four** multi-select tags describing the response as a whole (v4 canonical, post-Phase-1 collapse) — `truncated`, `unrecoverable`, `false_positive`, `hedge`. Legacy v3 codes `gibberish` / `refusal` / `language_error` auto-fold into `unrecoverable`; `verbose` / `verbose_correct` are dropped (extractability is implicit when a span exists). Migration runs on every read via `_migrate_annotation()`. |
+| **Improvement Report** | Aggregated JSON produced by [`build_report()`](../src/web/human_review_aggregator.py) over all annotations in selected files. Current format version `"2.7"` (was `"2.6"` pre-v4). Consumed by parser-refactor agents. See [§2.7](#27-improvement-report-v26--the-contract). |
 | **Phase 8** | The annotation-driven parser-refactor workflow established for `object_tracking` and now generalised. See [§2.9](#29-phase-8--annotation-to-refactor-workflow). |
 
 ---
@@ -1010,19 +1014,22 @@ The canonical loop, established by the `object_tracking` plugin refactor and now
 
 The goal of each Phase 8 cycle is to push `parser_was_correct` and `alignment_ratio` upward without regressions in any plugin.
 
-## 2.10 Known issues & gotchas (cross-references)
+## 2.10 Known issues & gotchas
 
-These are documented authoritatively in [.claude/CLAUDE.md](../.claude/CLAUDE.md) "Known Issues & Gotchas" §12-18; this section is a cross-ref index.
+This section is the **authoritative source** for human-review invariants and gotchas. CLAUDE.md carries one-line pointers back to here; do not duplicate detail in the agent index file.
 
-| # | Topic | Source of truth |
+| # | Invariant | Where it lives in code |
 |---|---|---|
-| 12 | Annotation invariant: ≥1 of `spans` / `response_classes` / mark-arrays. Both span and class may coexist. | CLAUDE.md §12, validated [human_review.py:438-441](../src/web/api/human_review.py#L438-L441) |
-| 13 | Translation panel must be `select-none` — prevents char-offset contamination. | CLAUDE.md §13, enforced [translation-panel.tsx:79](../frontend/src/components/review/translation-panel.tsx#L79) |
-| 14 | `match_rate` ≠ capture quality. Always pair with `capture_contains_rate`. | CLAUDE.md §14, see [§2.7.2](#272-match_rate--capture-quality-load-bearing) |
-| 15 | Suppressed sections vs missing sections — `data_quality.warnings[]` is the source of truth. | CLAUDE.md §15, see [§2.7.4](#274-suppressed-sections-vs-missing-sections) |
-| 16 | Long-tail collapse is guarded — small focused sessions keep all groups intact. | CLAUDE.md §16, see [§2.7.3](#273-the-long-tail-collapse-rule-v25) |
-| 17 | Annotation sidecar key is `case_id::response_hash`, not `case_id` alone. | CLAUDE.md §17, see [§2.2](#22-the-canonical-key) |
-| 18 | `useDeleteAnnotations` MUST invalidate `["review-cases"]` (the otherwise infinite-stale cache). | CLAUDE.md §18, see [§2.6](#26-frontend-internals) |
+| 1 | **Annotation invariant** — ≥1 of `spans` / `response_classes` / mark-arrays must be set; spans and classes may coexist (e.g. `false_positive` carries both the evidence span and the diagnosis class). | Validated [human_review.py:438-441](../src/web/api/human_review.py#L438-L441). See [§2.5](#25-the-full-annotation-data-model). |
+| 2 | **Translation panel must be `select-none`** — annotation char offsets refer to the *original* response. If the translated text is selectable, annotators can pick offsets that mean something different in the original. | Enforced [translation-panel.tsx:79](../frontend/src/components/review/translation-panel.tsx#L79). See [§1.7](#17-translation-panel). |
+| 3 | **`match_rate` ≠ capture quality.** A regex with `match_rate=1.0` can still capture the wrong substring (e.g. `(?i)recommendation:\s*([^.\n]+?)(?:[.\n]\|$)` matches but captures `Definitively walk to the carwash` instead of `walk`). Always pair with `capture_contains_rate`. Frontend `CaptureQualityPill` tones on `capture_contains_rate`. | See [§2.7.2](#272-match_rate--capture-quality-load-bearing). |
+| 4 | **Suppressed sections vs missing sections.** When every annotated case shares one language / system_style / user_style / expected answer, the corresponding breakdown section is **omitted from the JSON** (not emitted as empty). v2.5 extended the pattern to `strategy_breakdown` and `answer_when_missed.by_expected`. The absence is reported in `data_quality.suppressed_sections` + a `uniform_*` or `no_parse_strategy` warning code. Feature-detect; don't treat absence as a bug. | See [§2.7.4](#274-suppressed-sections-vs-missing-sections). |
+| 5 | **Long-tail collapse is guarded.** `span_groups` with `count < 4` collapse into `long_tail_groups` ONLY when at least one group has `count ≥ 4`. Small focused sessions keep all groups intact. Empty `ordering_hints` / `annotator_notes` are omitted entirely (not emitted as `[]`). | See [§2.7.3](#273-the-long-tail-collapse-rule-v25). |
+| 6 | **Sidecar key must be `case_id::response_hash`.** A single result file regularly contains 6 languages × 3 user styles × 3 system styles = 54 entries sharing one `test_id`. `response_hash` = first 16 hex chars of SHA256 over first 128 chars of `raw_response`. Backwards compat: `get_review_cases` falls back through `case_id::language` → bare `case_id` for legacy sidecars. | See [§2.2](#22-the-canonical-key). |
+| 7 | **Review-cases React Query cache must be busted on annotation delete.** `useReviewCases` has `staleTime: Infinity` (snapshot for an active session). `useDeleteAnnotations.onSuccess` MUST invalidate `["review-cases"]` (prefix match) as well as `["results"]` and `["annotations", filename]`. | See [§2.6](#26-frontend-internals). |
+| 8 | **Negative spans drive parser work differently from positive spans.** Positive spans say "the answer IS here"; negative spans say "the parser should NOT match here." In v2.7, all negative marks are a single type; the aggregator groups them by normalized text without distinguishing "option-listing phrases" (e.g. `"or drive"`) from "bare distractor words" (e.g. `"drive"`) — both surface in `negative_span_groups`. Use `context_anchor_groups` alongside negative spans to cross-reference correct vs incorrect extraction contexts. Legacy v2.6 reports still carry a `mark_type` field; new reports omit it. | See [§2.7.5](#275-negative-mark-semantics). |
+| 9 | **Markdown-stripped buckets collapse case + wrappers but NOT stems.** `walk` and `walking` are separate buckets on purpose; surfacing that difference is the agent's signal to add stemming. | See [§2.7.6](#276-per-helper-aggregator-map). |
+| 10 | **Parser alignment ≠ parser correctness.** v2.3 split. `aligned_with_parser` means `parser_extracted` matches the annotated span (even when model was wrong). `parser_missed_extractable` alone is misleading; always pair with `parser_span_alignment`. | See [§2.7](#27-improvement-report-v26--the-contract). |
 
 ---
 
@@ -1031,35 +1038,45 @@ These are documented authoritatively in [.claude/CLAUDE.md](../.claude/CLAUDE.md
 ## A.1 Quick reference card
 
 ```
-┌───────────────────────── KEYBOARD ─────────────────────────┐
+┌───────────────────────── KEYBOARD (v4) ────────────────────┐
 │                                                            │
-│  ←/→     Prev / Next case (saves draft on Next)            │
-│  S       Skip — advance without saving                     │
-│  1–7     Toggle classification chip                        │
-│  Space   Commit pending drag-selection                     │
-│  Enter   ↑ alias                                           │
-│  ?       Toggle help dialog                                │
+│  Space          Save draft (or skip if empty) + advance    │
+│  Ctrl/Cmd+Space Discard draft + advance                    │
+│  ←              Previous case                              │
+│  Ctrl/Cmd+Z     Undo (per-case, 10-step)                   │
+│  Ctrl/Cmd+⇧+Z   Redo                                       │
+│  2–5 / Q E F    Toggle classification chip                 │
+│  ?              Toggle help dialog                         │
 │                                                            │
-├──────────────────────── MARK TYPES ────────────────────────┤
+│  (Removed in v4: S = Skip and ArrowRight — Space subsumes  │
+│  both. Annotation dock deleted; drag-select commits        │
+│  immediately with auto-detected position/format.)          │
 │                                                            │
-│  LMB                Answer span        (blue solid)        │
-│  Ctrl/Cmd+LMB       Context anchor     (indigo dashed)     │
-│  Alt/Opt+LMB        Answer keyword     (violet dotted)     │
-│  Shift+LMB          Negative span      (rose solid)        │
-│  Shift+Alt/Ctrl+LMB Negative keyword   (dark rose dotted)  │
+├─────────────────── MARK TYPES (v4 — 4 only) ───────────────┤
 │                                                            │
-│  All combos work for one-click and drag-select.            │
-│  Adjacent same-type marks auto-merge.                      │
+│  Click / drag       Answer span        (blue solid)        │
+│  Hold A + click/drag  Context anchor   (indigo dashed)     │
+│  Hold D + click/drag  Answer keyword   (violet dotted)     │
+│  Hold ⇧ + click/drag  Negative span    (rose solid)        │
+│                                                            │
+│  Modifier precedence: A > D > Shift.                       │
+│  Adjacent same-type marks auto-merge (except auto-         │
+│  inferred negatives, which are replaced by manual drag).   │
+│  Shift+click INSIDE the parser-highlight region toggles    │
+│  false_positive instead of creating a negative.            │
 │  Click an existing mark to remove it.                      │
 │                                                            │
-├────────────────────── RESPONSE CLASSES ────────────────────┤
+├──────────── RESPONSE CLASSES (v4 — 4 canonical) ───────────┤
 │                                                            │
-│  1 Hedge          5 Lang. error                            │
-│  2 Truncated      6 Verbose                                │
-│  3 Gibberish      7 False-pos.                             │
-│  4 Refusal                                                 │
+│  2 Truncated     (auto-toggled when output.was_truncated)  │
+│  3 Unrecoverable (was: gibberish + refusal + lang_error)   │
+│  4 False-positive                                          │
+│  5 Hedge                                                   │
 │                                                            │
-│  Multi-select. Coexists with spans (often required).       │
+│  Multi-select. Coexists with spans (e.g. false_positive    │
+│  carries both the evidence span and the diagnosis class).  │
+│  Legacy v3 codes auto-fold on read via _migrate_annotation │
+│  (see Glossary).                                           │
 │                                                            │
 └────────────────────────────────────────────────────────────┘
 ```

@@ -173,14 +173,19 @@ Full register of technical debt and known limitations: [`TECHDEBT.md`](TECHDEBT.
 
 ## Documentation
 
-| Document                                                                       | Purpose                                                           |
-| ------------------------------------------------------------------------------ | ----------------------------------------------------------------- |
-| [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md)                         | Architecture, pipeline, directory layout, quick reference         |
-| [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md)                                 | Plugin contract, adding new plugins, end-first parsing convention |
-| [`docs/architecture/MODEL_PROVIDERS.md`](docs/architecture/MODEL_PROVIDERS.md) | Ollama / HuggingFace / OpenAI-compatible provider reference       |
-| [`docs/prompt-engine/SYSTEM_PROMPTS.md`](docs/prompt-engine/SYSTEM_PROMPTS.md) | System prompt styles (analytical / casual / adversarial)          |
-| [`CHANGELOG.md`](CHANGELOG.md)                                                 | Version history                                                   |
-| [`TECHDEBT.md`](TECHDEBT.md)                                                   | Open technical debt, incomplete refactors, god-module candidates  |
+| Document                                                       | Purpose                                                                                |
+| -------------------------------------------------------------- | -------------------------------------------------------------------------------------- |
+| [`docs/README.md`](docs/README.md)                             | Documentation index — start here                                                       |
+| [`docs/PROJECT_OVERVIEW.md`](docs/PROJECT_OVERVIEW.md)         | Architecture, pipeline, directory layout, quick reference                              |
+| [`docs/PLUGIN_GUIDE.md`](docs/PLUGIN_GUIDE.md)                 | Plugin contract, adding new plugins, end-first parsing convention (Phases 1–8)         |
+| [`docs/HUMAN_REVIEW_GUIDE.md`](docs/HUMAN_REVIEW_GUIDE.md)     | Annotation workflow, v4 mark types, Improvement Report (v2.7) contract                 |
+| [`docs/FRONTEND_GUIDE.md`](docs/FRONTEND_GUIDE.md)             | React SPA conventions — React Query, Tailwind v4 tokens, design system                 |
+| [`docs/MODEL_PROVIDERS.md`](docs/MODEL_PROVIDERS.md)           | Ollama / HuggingFace / OpenAI-compatible provider reference                            |
+| [`docs/PROMPT_STUDIO.md`](docs/PROMPT_STUDIO.md)               | Versioned system prompts (v2.13+), `PromptStore` API, replay safety                    |
+| [`docs/SYSTEM_PROMPTS.md`](docs/SYSTEM_PROMPTS.md)             | Reference text for the four built-in system prompts                                    |
+| [`docs/RELEASE_CHECKLIST.md`](docs/RELEASE_CHECKLIST.md)       | Pre-release checklist (versions, plugin counts, footers, frontend gates)               |
+| [`CHANGELOG.md`](CHANGELOG.md)                                 | Version history                                                                        |
+| [`TECHDEBT.md`](TECHDEBT.md)                                   | Open technical debt, incomplete refactors, god-module candidates                       |
 
 ---
 
