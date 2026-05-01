@@ -266,13 +266,22 @@ class TestCaseGenerator(ABC):
         return []
 
     def _stash_prompt_config(self, prompt_config: Dict[str, Any]) -> None:
-        """Store custom_system_prompt so ``_get_system_prompt`` can find it.
+        """Store custom_system_prompt + Prompt Studio (id, version) so
+        ``_get_system_prompt`` can find them without changing call sites.
 
         Called by the pipeline before ``generate_batch()`` so that generators
         that call ``_get_system_prompt(style, lang)`` without explicitly
-        passing a custom prompt still pick it up.
+        passing a custom prompt still pick up the override hierarchy.
+
+        TD-026: this is the documented "smuggle via instance attribute"
+        seam — the alternative is to thread ``prompt_config`` through every
+        ``generate_batch`` signature in 21 plugins. Phase 4 of the Prompt
+        Studio rollout reuses the same seam to thread ``prompt_id`` /
+        ``prompt_version``.
         """
         self._custom_system_prompt = prompt_config.get("custom_system_prompt", "")
+        self._stashed_prompt_id = prompt_config.get("prompt_id") or ""
+        self._stashed_prompt_version = prompt_config.get("prompt_version")
 
     # ------------------------------------------------------------------
     # Prompt helpers (shared across all generators)
@@ -289,17 +298,38 @@ class TestCaseGenerator(ABC):
                            custom_system_prompt: str = "") -> str:
         """Return the system prompt for *system_style* and *language*.
 
-        If *custom_system_prompt* is provided (or stashed via
-        ``_stash_prompt_config()``), it is returned directly, bypassing the
-        enum-based lookup.  Otherwise wraps
-        ``PromptEngine.get_system_prompt_by_enum()`` with safe enum parsing
-        so callers can pass plain strings.
+        Resolution order:
+
+        1. ``custom_system_prompt`` (parameter or stashed) — explicit free-text
+           override, highest priority. Bypasses everything else.
+        2. Stashed Prompt Studio ``(prompt_id, prompt_version)`` — looked up
+           via :func:`src.web.prompt_store.get_store`. Returns ``""`` for
+           ``builtin_none`` (intentional). Falls through to (3) only if the
+           store is unavailable (no app context — e.g. CLI / pure tests).
+        3. ``system_style`` enum → :meth:`PromptEngine.get_system_prompt_by_enum`
+           — the legacy fallback, kept verbatim for backwards compatibility.
         """
         custom = custom_system_prompt or getattr(
             self, "_custom_system_prompt", ""
         )
         if custom:
             return custom
+
+        prompt_id = getattr(self, "_stashed_prompt_id", "") or ""
+        prompt_version = getattr(self, "_stashed_prompt_version", None)
+        if prompt_id and prompt_version is not None:
+            try:
+                from src.web import prompt_store as _prompt_store_module
+
+                store = _prompt_store_module.get_store()
+                return store.resolve_text(
+                    prompt_id, int(prompt_version), language
+                )
+            except RuntimeError:
+                # Store not initialised — fall through to PromptEngine. This
+                # path triggers in CLI / test contexts that don't spin the
+                # web app lifespan.
+                pass
 
         from src.core.PromptEngine import SystemPromptStyle, Language
         from src.plugins.parse_utils import safe_enum

@@ -5,6 +5,13 @@ export interface MatrixPromptAxes {
   user_styles: string[]
   system_styles: string[]
   languages: string[]
+  /**
+   * Prompt Studio refs in "<id>" or "<id>@<version>" form. When non-empty,
+   * the matrix axis becomes ``user_style × prompt × language`` and
+   * ``system_styles`` is ignored for resolution (it's still surfaced as a
+   * derived back-compat tag in result files).
+   */
+  prompt_ids?: string[]
 }
 
 export interface MatrixFieldAxis {

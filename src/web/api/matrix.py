@@ -8,7 +8,7 @@ from itertools import product
 from typing import Any, Dict, List, Tuple
 
 from fastapi import APIRouter, HTTPException
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.plugins import PluginRegistry
 from src.plugins.base import ConfigField
@@ -23,8 +23,26 @@ _FIELD_TYPE_ALIASES = {"checkbox": "boolean"}
 
 class MatrixPromptAxes(BaseModel):
     user_styles: List[str] = Field(default_factory=lambda: ["minimal"], min_length=1)
-    system_styles: List[str] = Field(default_factory=lambda: ["analytical"], min_length=1)
+    # ``system_styles`` is required only on the legacy code path; when
+    # ``prompt_ids`` is non-empty the back-compat tag is derived per-cell
+    # from the prompt_id so callers may send an empty list. Validation
+    # below enforces "at least one of system_styles / prompt_ids".
+    system_styles: List[str] = Field(default_factory=list)
     languages: List[str] = Field(default_factory=lambda: ["en"], min_length=1)
+    # Prompt Studio axis. Empty list means "use the legacy system_style
+    # enum"; populated list multiplies the cartesian product by
+    # ``len(prompt_ids)``. Each entry is ``"<id>"`` (latest version) or
+    # ``"<id>@<version>"`` (pinned).
+    prompt_ids: List[str] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _at_least_one_prompt_axis(self) -> "MatrixPromptAxes":
+        if not self.system_styles and not self.prompt_ids:
+            raise ValueError(
+                "Specify at least one entry in either ``system_styles`` "
+                "or ``prompt_ids``."
+            )
+        return self
 
 
 class MatrixFieldAxis(BaseModel):
@@ -137,8 +155,95 @@ def _validate_axis_values(field: ConfigField, values: List[Any]) -> List[Any]:
     return _unique_values(validated)
 
 
+_BUILTIN_PREFIX = "builtin_"
+
+
+def _system_style_for(prompt_id: str) -> str:
+    """Derive a back-compat ``system_style`` enum tag from a prompt_id.
+
+    Built-in prompts map to the canonical four enum values
+    (``builtin_analytical`` → ``"analytical"``); user-authored prompts get
+    the catch-all ``"custom"`` tag. Charts and aggregators that group by
+    ``system_style`` still get a sensible bucket per cell without forcing
+    the frontend to compute it.
+    """
+    if prompt_id.startswith(_BUILTIN_PREFIX):
+        return prompt_id[len(_BUILTIN_PREFIX):]
+    return "custom"
+
+
+def _parse_prompt_ref(ref: str) -> Tuple[str, int | None]:
+    """Split ``"id"`` or ``"id@version"`` into ``(id, version_or_None)``."""
+    if "@" not in ref:
+        return ref, None
+    pid, _, raw = ref.rpartition("@")
+    try:
+        return pid, int(raw)
+    except ValueError:
+        raise HTTPException(400, f"Invalid prompt ref: {ref!r}")
+
+
+def _resolve_prompt_refs(refs: List[str]) -> List[Tuple[str, int]]:
+    """Look up prompt versions in the store; pin every ref to a concrete int.
+
+    Empty list returns empty (caller falls back to system_style addressing).
+    """
+    if not refs:
+        return []
+
+    from src.web import prompt_store as prompt_store_module
+
+    try:
+        store = prompt_store_module.get_store()
+    except RuntimeError:
+        raise HTTPException(503, "Prompt Studio store is not initialised")
+
+    out: List[Tuple[str, int]] = []
+    for ref in refs:
+        prompt_id, version = _parse_prompt_ref(ref)
+        detail = store.get_prompt(prompt_id)
+        if detail is None:
+            raise HTTPException(404, f"Unknown prompt_id: {prompt_id!r}")
+        if version is None:
+            version = detail["latest_version"]
+            if version is None:
+                raise HTTPException(
+                    400, f"Prompt {prompt_id!r} has no published version"
+                )
+        elif store.get_version(prompt_id, version) is None:
+            raise HTTPException(
+                404, f"Prompt {prompt_id!r} has no version {version}"
+            )
+        out.append((prompt_id, int(version)))
+    return out
+
+
 def _build_prompt_combinations(prompt_axes: MatrixPromptAxes) -> List[PromptConfig]:
     combos: List[PromptConfig] = []
+    prompt_pairs = _resolve_prompt_refs(prompt_axes.prompt_ids)
+    # Two regimes: legacy (system_style enum cartesian) and Prompt Studio
+    # (prompt_ids cartesian — system_style retained for back-compat tagging
+    # but does not drive resolution).
+    if prompt_pairs:
+        for user_style, language, (prompt_id, prompt_version) in product(
+            prompt_axes.user_styles,
+            prompt_axes.languages,
+            prompt_pairs,
+        ):
+            # ``system_style`` is derived per-cell from the prompt_id so
+            # back-compat charts get the right bucket regardless of which
+            # legacy enum the frontend happened to ship in this request.
+            combos.append(
+                PromptConfig(
+                    user_style=user_style,
+                    system_style=_system_style_for(prompt_id),
+                    language=language,
+                    prompt_id=prompt_id,
+                    prompt_version=prompt_version,
+                )
+            )
+        return combos
+
     for user_style, system_style, language in product(
         prompt_axes.user_styles,
         prompt_axes.system_styles,
@@ -226,6 +331,16 @@ async def run_matrix(req: MatrixRunRequest):
             f"system-{_slugify(prompt_config.system_style, max_length=16)}",
             f"lang-{_slugify(prompt_config.language, max_length=8)}",
         ]
+        if prompt_config.prompt_id:
+            ref_label = (
+                f"{prompt_config.prompt_id}@v{prompt_config.prompt_version}"
+                if prompt_config.prompt_version is not None
+                else prompt_config.prompt_id
+            )
+            prompt_labels.append(f"prompt={ref_label}")
+            prompt_slugs.append(
+                f"prompt-{_slugify(ref_label, max_length=24)}"
+            )
         cell_id = f"{batch_id}_cell_{index:03d}"
         cell_label = " | ".join(prompt_labels + field_labels)
         cell_slug = "__".join(prompt_slugs + field_slugs) if field_slugs else "__".join(prompt_slugs)
@@ -233,17 +348,21 @@ async def run_matrix(req: MatrixRunRequest):
         generation = dict(req.base_generation)
         generation.update(field_values)
 
+        matrix_axes: Dict[str, Any] = {
+            "user_style": prompt_config.user_style,
+            "system_style": prompt_config.system_style,
+            "language": prompt_config.language,
+            **field_values,
+        }
+        if prompt_config.prompt_id:
+            matrix_axes["prompt_id"] = prompt_config.prompt_id
+            matrix_axes["prompt_version"] = prompt_config.prompt_version
         metadata_extra = {
             "matrix_batch_id": batch_id,
             "matrix_cell_id": cell_id,
             "matrix_label": cell_label,
             "matrix_plugin": req.plugin_type,
-            "matrix_axes": {
-                "user_style": prompt_config.user_style,
-                "system_style": prompt_config.system_style,
-                "language": prompt_config.language,
-                **field_values,
-            },
+            "matrix_axes": matrix_axes,
         }
         description = req.description.strip()
         if description:

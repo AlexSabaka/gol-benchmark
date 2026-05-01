@@ -1,5 +1,9 @@
 import { lazy, Suspense } from "react"
-import { BrowserRouter, Routes, Route, Navigate } from "react-router"
+import {
+  createBrowserRouter,
+  Navigate,
+  RouterProvider,
+} from "react-router"
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query"
 import { Toaster } from "@/components/ui/sonner"
 import { TooltipProvider } from "@/components/ui/tooltip"
@@ -20,6 +24,10 @@ const ChartsPage = lazy(() => import("@/pages/charts"))
 const ReportsPage = lazy(() => import("@/pages/reports"))
 const JudgePage = lazy(() => import("@/pages/judge"))
 const ReviewPage = lazy(() => import("@/pages/review"))
+const PromptsPage = lazy(() => import("@/pages/prompts"))
+const PromptNewPage = lazy(() => import("@/pages/prompts/new"))
+const PromptDetailPage = lazy(() => import("@/pages/prompts/[id]"))
+const PromptEditPage = lazy(() => import("@/pages/prompts/[id].edit"))
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -38,41 +46,57 @@ function PageLoader() {
   )
 }
 
-export default function App() {
-  return (
-    <ThemeProvider>
-      <QueryClientProvider client={queryClient}>
-        <TooltipProvider>
-          <BrowserRouter>
-            <Routes>
-              <Route element={<AppShell />}>
-                <Route index element={<DashboardPage />} />
-                <Route path="configure" element={<Suspense fallback={<PageLoader />}><ConfigurePage /></Suspense>} />
-                <Route path="testsets" element={<Suspense fallback={<PageLoader />}><TestSetsPage /></Suspense>} />
-                <Route path="execute" element={<Suspense fallback={<PageLoader />}><ExecutePage /></Suspense>} />
-                <Route path="matrix-execution" element={<Navigate to="/execute?mode=matrix" replace />} />
-                <Route path="jobs" element={<Suspense fallback={<PageLoader />}><JobsPage /></Suspense>} />
-                <Route path="results" element={<Suspense fallback={<PageLoader />}><ResultsPage /></Suspense>} />
-                <Route path="charts" element={<Suspense fallback={<PageLoader />}><ChartsPage /></Suspense>} />
-                <Route path="reports" element={<Suspense fallback={<PageLoader />}><ReportsPage /></Suspense>} />
-                <Route path="judge" element={<Suspense fallback={<PageLoader />}><JudgePage /></Suspense>} />
-                <Route path="review" element={<Suspense fallback={<PageLoader />}><ReviewPage /></Suspense>} />
-                <Route path="*" element={<NotFound />} />
-              </Route>
-            </Routes>
-          </BrowserRouter>
-          <Toaster richColors position="top-right" />
-        </TooltipProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
-  )
-}
-
 function NotFound() {
   return (
     <div className="flex flex-col items-center justify-center py-20">
       <h1 className="text-4xl font-bold">404</h1>
       <p className="text-muted-foreground mt-2">Page not found</p>
     </div>
+  )
+}
+
+const wrap = (Page: React.ComponentType) => (
+  <Suspense fallback={<PageLoader />}>
+    <Page />
+  </Suspense>
+)
+
+// Data router enables features like ``useBlocker`` (used by the prompt
+// editor for unsaved-changes guards). Conceptually equivalent to the prior
+// ``<BrowserRouter><Routes>`` tree — same layout shell, same nested routes.
+const router = createBrowserRouter([
+  {
+    element: <AppShell />,
+    children: [
+      { index: true, element: <DashboardPage /> },
+      { path: "configure", element: wrap(ConfigurePage) },
+      { path: "testsets", element: wrap(TestSetsPage) },
+      { path: "execute", element: wrap(ExecutePage) },
+      { path: "matrix-execution", element: <Navigate to="/execute?mode=matrix" replace /> },
+      { path: "jobs", element: wrap(JobsPage) },
+      { path: "results", element: wrap(ResultsPage) },
+      { path: "charts", element: wrap(ChartsPage) },
+      { path: "reports", element: wrap(ReportsPage) },
+      { path: "judge", element: wrap(JudgePage) },
+      { path: "review", element: wrap(ReviewPage) },
+      { path: "prompts", element: wrap(PromptsPage) },
+      { path: "prompts/new", element: wrap(PromptNewPage) },
+      { path: "prompts/:id", element: wrap(PromptDetailPage) },
+      { path: "prompts/:id/edit", element: wrap(PromptEditPage) },
+      { path: "*", element: <NotFound /> },
+    ],
+  },
+])
+
+export default function App() {
+  return (
+    <ThemeProvider>
+      <QueryClientProvider client={queryClient}>
+        <TooltipProvider>
+          <RouterProvider router={router} />
+          <Toaster richColors position="top-right" />
+        </TooltipProvider>
+      </QueryClientProvider>
+    </ThemeProvider>
   )
 }

@@ -51,6 +51,47 @@ def _normalize_cell_markers(raw) -> List[str]:
         return [str(raw[0]), str(raw[1])]
     return ['1', '0']
 
+
+_BUILTIN_PROMPT_PREFIX = "builtin_"
+
+
+def _system_style_for(prompt_id: str) -> str:
+    """Derive a back-compat ``system_style`` enum tag from a prompt_id.
+
+    Mirrors the helper of the same name in ``src.web.api.matrix``: built-in
+    prompts (``builtin_analytical`` / ``builtin_casual`` / ``builtin_adversarial``
+    / ``builtin_none``) collapse to their canonical enum value; user-authored
+    prompts get the catch-all ``"custom"`` tag so charts grouping by
+    ``system_style`` still get a sensible bucket.
+    """
+    if isinstance(prompt_id, str) and prompt_id.startswith(_BUILTIN_PROMPT_PREFIX):
+        return prompt_id[len(_BUILTIN_PROMPT_PREFIX):]
+    return "custom"
+
+
+def _resolve_latest_prompt_version(prompt_id: str) -> Optional[int]:
+    """Return the latest version of ``prompt_id`` from the PromptStore, or None.
+
+    Resolves the ``prompt_version=None`` ("latest") sentinel to a concrete int
+    at testset-generation time. Embedding a concrete version into the testset
+    is required by the replay-safety invariant — re-runs read the resolved
+    TEXT from the result file and must not non-deterministically pull a NEWER
+    prompt next time. Returns None if the store is unavailable (CLI / pure
+    test contexts that don't spin the FastAPI lifespan) or the prompt is
+    unknown — callers should fall back to the legacy enum path.
+    """
+    try:
+        from src.web.prompt_store import get_store as _get_prompt_store
+        row = _get_prompt_store().get_prompt(prompt_id)
+        if row and row.get('latest_version') is not None:
+            return int(row['latest_version'])
+    except Exception as exc:
+        print(
+            f"Warning: Could not resolve latest version for "
+            f"{prompt_id}: {exc}"
+        )
+    return None
+
 # Plugin system integration (optional - falls back to built-in generators if unavailable)
 try:
     from src.plugins import PluginRegistry
@@ -170,6 +211,19 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
                 'language': prompt_config.get('language', config['execution'].get('prompt_language', 'en')),
                 'custom_system_prompt': config.get('custom_system_prompt', ''),
             }
+            # Prompt Studio addressing — only forwarded when explicitly set so
+            # legacy YAML configs keep behaving exactly as before. When
+            # ``prompt_version`` is missing we resolve "latest" to a concrete
+            # int now, before the resolved TEXT is embedded into the testset
+            # (replay-safety invariant) and before the runtime guard at
+            # base.py:_get_system_prompt that requires both id+version.
+            if prompt_config.get('prompt_id'):
+                prompt_conf['prompt_id'] = prompt_config['prompt_id']
+                pv = prompt_config.get('prompt_version')
+                if pv is None:
+                    pv = _resolve_latest_prompt_version(prompt_config['prompt_id'])
+                if pv is not None:
+                    prompt_conf['prompt_version'] = pv
 
             # Stash custom system prompt so _get_system_prompt picks it up
             generator._stash_prompt_config(prompt_conf)
@@ -182,9 +236,26 @@ def generate_tests_via_plugin(config: Dict, task_type: str) -> Optional[List[Dic
                 seed=seed
             )
 
-            # Convert TestCase objects to dicts
+            # Convert TestCase objects to dicts. When Prompt Studio addressing
+            # is in use, stamp every test case's ``prompt_metadata`` with the
+            # (prompt_id, prompt_version) pair so analytics + replay can group
+            # by it later. Plugins themselves don't need to know this exists.
             for tc in batch:
-                test_cases.append(tc.to_dict() if hasattr(tc, 'to_dict') else tc)
+                tc_dict = tc.to_dict() if hasattr(tc, 'to_dict') else tc
+                if prompt_conf.get('prompt_id'):
+                    pm = tc_dict.setdefault('prompt_metadata', {})
+                    pm['prompt_id'] = prompt_conf['prompt_id']
+                    if prompt_conf.get('prompt_version') is not None:
+                        pm['prompt_version'] = prompt_conf['prompt_version']
+                    # Derive a back-compat ``system_style`` tag from the
+                    # prompt_id when the inbound prompt_config left it
+                    # blank (the frontend now always blanks it; YAML
+                    # configs may still set it explicitly).
+                    if not pm.get('system_style'):
+                        pm['system_style'] = _system_style_for(
+                            prompt_conf['prompt_id']
+                        )
+                test_cases.append(tc_dict)
 
         return test_cases if test_cases else None
 

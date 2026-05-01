@@ -2,6 +2,77 @@
 
 All notable changes to the GoL Benchmark project.
 
+## [Unreleased] — Prompt Studio (backend foundations)
+
+Promotes the system prompt from a 4-value enum hardcoded in `src/core/PromptEngine.py` to a SQLite-backed, **versioned, user-managed entity**. `(prompt_id, version)` becomes a first-class evaluation axis, so the matrix wizard can compare e.g. "Analytical v1 vs Analytical v2" or a custom user-authored prompt against a built-in. Editing a prompt creates a new immutable version — old result files stay replayable forever.
+
+This is the backend half of the rollout. Frontend pages (`/prompts` list/edit, matrix-wizard prompt-axis chip, charts grouping) come in a follow-up PR. See [TD-119](TECHDEBT.md#TD-119) and [TD-120](TECHDEBT.md#TD-120).
+
+### Schema + store
+
+New migration [src/web/db_migrations/003_prompts.sql](src/web/db_migrations/003_prompts.sql) creates two tables: `prompts` (parent metadata) + `prompt_versions` (immutable per-version content). Multi-language text lives as a single `content_json` map keyed by language code (`{"en": "...", "es": "..."}`); missing languages fall back to English at resolve time.
+
+[src/web/prompt_store.py](src/web/prompt_store.py) — `PromptStore` follows the AnnotationStore / JobStore pattern: constructor takes a live `sqlite3.Connection`, runs migrations on init, exposes `list_prompts` / `get_prompt` / `list_versions` / `get_version` / `resolve_text` / `create_prompt` / `create_version` / `update_metadata` / `archive` / `restore` / `seed_builtins`. Module-level `set_store` / `get_store` singletons wired by the lifespan.
+
+### Built-in seeding (idempotent)
+
+[src/web/app.py](src/web/app.py) lifespan calls `seed_builtins()` on startup. The four canonical prompts (`builtin_analytical`, `builtin_casual`, `builtin_adversarial`, `builtin_none`) get seeded as v1 immutable records on first boot from `PromptEngine.SYSTEM_PROMPTS`. Subsequent boots are no-ops. Users may create v2+ on top — old testsets/results stay pinned to v1.
+
+### REST API
+
+New router [src/web/api/prompts.py](src/web/api/prompts.py) registered under `/api/prompts`:
+
+- `GET    /api/prompts` (`?include_archived=true`)
+- `POST   /api/prompts`
+- `GET    /api/prompts/{id}` (latest version + content)
+- `PATCH  /api/prompts/{id}` (metadata only — name / description / tags; never bumps version)
+- `POST   /api/prompts/{id}/archive` / `POST .../restore`
+- `GET    /api/prompts/{id}/versions`
+- `GET    /api/prompts/{id}/versions/{n}`
+- `POST   /api/prompts/{id}/versions` (creates v(n+1))
+
+Validation: `content` must include non-empty `"en"`; size caps on name / tags / per-language text; 404 on unknown ID, 409 on slug collision.
+
+[src/web/api/metadata.py](src/web/api/metadata.py) extended with a `prompts: [{id, name, latest_version, is_builtin, language_codes}]` key so the matrix wizard can build the prompt-axis multi-select without a second request.
+
+### Plugin base resolver
+
+[src/plugins/base.py](src/plugins/base.py) `_get_system_prompt` resolution chain extended:
+
+1. Explicit override (`custom_system_prompt`) — already supported.
+2. Stashed `(prompt_id, prompt_version)` → `PromptStore.resolve_text(...)` — new.
+3. `system_style` enum → `PromptEngine.get_system_prompt_by_enum` — legacy fallback.
+
+`_stash_prompt_config` now stashes `prompt_id` / `prompt_version` from the prompt config dict alongside the existing `custom_system_prompt`. All 21 plugin generators automatically pick up the new addressing scheme without per-plugin edits.
+
+### Pipeline threading
+
+[src/web/api/testsets.py](src/web/api/testsets.py) — `PromptConfig` Pydantic model gains optional `prompt_id` + `prompt_version` fields. YAML round-trip preserves them.
+
+[src/web/api/matrix.py](src/web/api/matrix.py) — `MatrixPromptAxes` gains a `prompt_ids: List[str]` field. Each entry is `"<id>"` (latest version) or `"<id>@<version>"` (pinned). Populated list multiplies the cartesian product by `len(prompt_ids)` and switches resolution from system_style enum to (prompt_id, version). Empty list keeps legacy behaviour exactly.
+
+[src/stages/generate_testset.py](src/stages/generate_testset.py) — plugin path threads `prompt_id` / `prompt_version` into `prompt_conf` and stamps them onto every test case's `prompt_metadata` so analytics + replay can group by prompt later.
+
+[src/stages/run_testset.py](src/stages/run_testset.py) — both result write paths (success + error) now copy `prompt_metadata` into `input.prompt_metadata`. The web `jobs.py` path already did this.
+
+### Analytics
+
+[src/web/api/analysis.py](src/web/api/analysis.py) `dimension_breakdowns` extended with `prompt_id` + `prompt_version` keys. Cases lacking the new fields (legacy, unmigrated) are silently skipped by those dimensions but still contribute to the existing `system_style` breakdown.
+
+### Legacy result migration
+
+New CLI [scripts/migrate_legacy_prompt_metadata.py](scripts/migrate_legacy_prompt_metadata.py) walks `results/**/*.json.gz` and stamps `prompt_id = "builtin_<system_style>"`, `prompt_version = 1` onto every entry whose `prompt_metadata` lacks `prompt_id`. Idempotent; atomic write (temp + `os.replace`); preserves `system_style` untouched. Operator should `cp -R results results.bak` before running.
+
+### Tests
+
+- `tests/test_prompt_store.py` — 24 tests: CRUD round-trip, monotonic versioning, immutability, archive/restore, resolve_text fallback chain, `seed_builtins` idempotence, `seed_builtins` content matches PromptEngine byte-for-byte, NONE resolves to empty, tag round-trip + validation.
+- `tests/test_api_prompts.py` — 13 tests: REST CRUD, validation errors, version monotonic, PATCH does not bump version, archive flag round-trip, metadata endpoint surfaces prompts.
+- `tests/test_legacy_prompt_metadata_migration.py` — 6 tests: backfill, idempotence, dry-run, mixed legacy + migrated, skip-when-missing-system_style, recursive directory walk.
+
+Total: 43 new tests, 0 regressions in adjacent suites (job store, annotation store, human review, plugins).
+
+---
+
 ## [Unreleased] — Annotation UI Ergonomics Redesign, Phase 3
 
 Phase 3 closes the last outstanding item from the original [Annotation UI Redesign spec](ANNOTATION_UI_REDESIGN.md) (§5.2): an inference-time `was_truncated` boolean on every new result entry, pre-toggled as the Truncated response-class chip in `/review` so the annotator doesn't manually scan for token-limit hits. Resolves [TD-117](TECHDEBT.md#TD-117).

@@ -1446,7 +1446,8 @@ def run_testset(
                 "input": {
                     "user_prompt": user_prompt,
                     "system_prompt": system_prompt,
-                    "task_params": test_case['task_params']
+                    "task_params": test_case['task_params'],
+                    "prompt_metadata": test_case.get('prompt_metadata', {}),
                 },
                 "tokens": {
                     "input_tokens": input_tokens,
@@ -1544,7 +1545,8 @@ def run_testset(
                 "input": {
                     "user_prompt": user_prompt,
                     "system_prompt": system_prompt,
-                    "task_params": test_case['task_params']
+                    "task_params": test_case['task_params'],
+                    "prompt_metadata": test_case.get('prompt_metadata', {}),
                 },
                 "output": {
                     "raw_response": raw_response,

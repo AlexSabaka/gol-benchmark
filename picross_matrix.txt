@@ -1,0 +1,335 @@
+
+PICROSS BENCHMARK — (model × config) coverage matrix
+Cells show mean accuracy%; · = not run yet
+
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  user=minimal  system=analytical
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Model             │ min_ana/en/i/3x3 │ min_ana/en/i/5x5 │ min_ana/en/g/3x3 │ min_ana/en/g/5x5 │ min_ana/zh/i/3x3 │ min_ana/zh/i/5x5 │ min_ana/zh/g/3x3 │ min_ana/zh/g/5x5 │ min_ana/ua/i/3x3 │ min_ana/ua/i/5x5 │ min_ana/ua/g/3x3 │ min_ana/ua/g/5x5
+──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼─────────────────
+claude-3.5-haiku  │              57% │              13% │              52% │               1% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+claude-haiku-4.5  │        ·         │        ·         │        ·         │        ·         │              90% │              47% │              51% │              33% │             100% │              49% │              78% │              33%
+claude-sonnet-4.5 │             100% │              66% │        ·         │        ·         │             100% │              62% │              84% │              54% │             100% │              65% │              82% │              22%
+gemma3-12b        │              47% │              25% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gemma3-1b         │              10% │              -8% │               5% │               4% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gemma3-27b        │              70% │              40% │        ·         │        ·         │              56% │              17% │              24% │               8% │              73% │              26% │              29% │               0%
+gemma3-4b         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gemma4-26b-a4b    │             100% │              79% │        ·         │        ·         │             100% │              93% │              44% │              48% │              93% │              86% │              21% │               2%
+gemma4-31b        │        ·         │        ·         │              79% │              27% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gpt-5-mini        │              85% │              35% │        ·         │        ·         │              63% │              25% │              50% │              30% │              97% │              39% │              70% │              38%
+gpt-5-nano        │              96% │              42% │              13% │               3% │              91% │              21% │              32% │               5% │              91% │              39% │              39% │               1%
+gpt-oss-20b       │              91% │              70% │              82% │              46% │              44% │              61% │              36% │               6% │              51% │              59% │              12% │               0%
+grok-4.20         │              79% │              31% │              63% │              23% │              85% │              38% │              76% │              16% │              66% │              31% │              21% │              39%
+qwen2.5-72b       │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              78% │              51% │        ·         │        ·        
+qwen2.5-vl-72b    │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              33% │              27% │        ·         │        ·        
+qwen3-0.6b        │              -2% │               4% │              -4% │               5% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+qwen3-30b-a3b     │        ·         │        ·         │        ·         │        ·         │              64% │              20% │               8% │               0% │             100% │              33% │        ·         │        ·        
+qwen3-8b          │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              13% │              -2%
+qwen3-vl-8b       │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              13% │              -3%
+qwen3.5-35b-a3b   │        ·         │        ·         │        ·         │        ·         │             100% │              48% │              78% │              19% │             100% │              65% │        ·         │        ·        
+──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼─────────────────
+  coverage: 120/240  missing: 120
+
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+  user=minimal  system=adversarial
+═══════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════════
+Model             │ min_adv/en/i/3x3 │ min_adv/en/i/5x5 │ min_adv/en/g/3x3 │ min_adv/en/g/5x5 │ min_adv/zh/i/3x3 │ min_adv/zh/i/5x5 │ min_adv/zh/g/3x3 │ min_adv/zh/g/5x5 │ min_adv/ua/i/3x3 │ min_adv/ua/i/5x5 │ min_adv/ua/g/3x3 │ min_adv/ua/g/5x5
+──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼─────────────────
+claude-3.5-haiku  │              57% │              22% │              41% │               3% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+claude-haiku-4.5  │        ·         │        ·         │        ·         │        ·         │              87% │              42% │              67% │              33% │              75% │              27% │              63% │              34%
+claude-sonnet-4.5 │             100% │              59% │              70% │              42% │              85% │              52% │              73% │              46% │              91% │              58% │              87% │              48%
+gemma3-12b        │              23% │              17% │              -1% │              10% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gemma3-1b         │               6% │              -3% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gemma3-27b        │              28% │              31% │        ·         │        ·         │              -0% │               2% │              -9% │               6% │              30% │              23% │              19% │              10%
+gemma3-4b         │        ·         │        ·         │              11% │              -8% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gemma4-26b-a4b    │              87% │              62% │              60% │              48% │              90% │              55% │              55% │              36% │              79% │              50% │              42% │              23%
+gemma4-31b        │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+gpt-5-mini        │              61% │              33% │              31% │              25% │              66% │              38% │              33% │              25% │              61% │              55% │              45% │              21%
+gpt-5-nano        │              97% │              46% │              59% │               0% │              96% │              27% │              47% │               4% │              85% │              21% │              58% │               5%
+gpt-oss-20b       │              64% │              61% │              73% │              26% │              76% │              87% │              32% │              15% │              67% │              59% │              47% │              12%
+grok-4.20         │              72% │              23% │              29% │              23% │              66% │              23% │              21% │              29% │              61% │              19% │              36% │              27%
+qwen2.5-72b       │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              66% │              47% │        ·         │        ·        
+qwen2.5-vl-72b    │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              64% │              35% │        ·         │        ·        
+qwen3-0.6b        │              19% │              -1% │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·        
+qwen3-30b-a3b     │        ·         │        ·         │        ·         │        ·         │              91% │               8% │              23% │              -5% │             100% │              27% │        ·         │        ·        
+qwen3-8b          │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              38% │              31%
+qwen3-vl-8b       │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │        ·         │              13% │              -0%
+qwen3.5-35b-a3b   │        ·         │        ·         │        ·         │        ·         │              93% │              74% │              77% │              35% │             100% │              87% │        ·         │        ·        
+──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼──────────────────┼─────────────────
+  coverage: 124/240  missing: 116
+
+════════════════════════════════════════════════════════════
+MISSING COMBINATIONS (model × config not yet run)
+════════════════════════════════════════════════════════════
+
+  claude-3.5-haiku
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  claude-haiku-4.5
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+
+  claude-sonnet-4.5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+
+  gemma3-12b
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  gemma3-1b
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  gemma3-27b
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+
+  gemma3-4b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  gemma4-26b-a4b
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+
+  gemma4-31b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  gpt-5-mini
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+
+  qwen2.5-72b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  qwen2.5-vl-72b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  qwen3-0.6b
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  qwen3-30b-a3b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+
+  qwen3-8b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+
+  qwen3-vl-8b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=zh  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=inline      grid=5x5
+
+  qwen3.5-35b-a3b
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=analytical  lang=ua  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=inline      grid=5x5
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=en  fmt=grid_header grid=5x5
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=3x3
+    user=minimal    sys=adversarial lang=ua  fmt=grid_header grid=5x5
+

@@ -9,6 +9,7 @@ from src.web.api.execution import router as execution_router
 from src.web.api.analysis import router as analysis_router
 from src.web.api.matrix import router as matrix_router
 from src.web.api.human_review import router as human_review_router
+from src.web.api.prompts import router as prompts_router
 
 api_router = APIRouter()
 api_router.include_router(metadata_router, prefix="/metadata", tags=["metadata"])
@@ -19,3 +20,4 @@ api_router.include_router(execution_router, prefix="/jobs", tags=["jobs"])
 api_router.include_router(matrix_router, prefix="/matrix", tags=["matrix"])
 api_router.include_router(analysis_router, prefix="/results", tags=["results"])
 api_router.include_router(human_review_router, prefix="/human-review", tags=["human-review"])
+api_router.include_router(prompts_router, prefix="/prompts", tags=["prompts"])

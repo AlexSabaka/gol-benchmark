@@ -29,6 +29,12 @@ class PromptConfig(BaseModel):
     user_style: str = "minimal"
     system_style: str = "analytical"
     language: str = "en"
+    # Prompt Studio addressing — when both are set, the resolver looks up
+    # text from the SQLite store (src/web/prompt_store.py). Falls back to
+    # the system_style enum when missing. Legacy YAML configs / clients keep
+    # working unchanged because both fields are optional.
+    prompt_id: Optional[str] = None
+    prompt_version: Optional[int] = None
 
 
 class TaskConfig(BaseModel):
@@ -87,13 +93,23 @@ def _build_yaml_config(req: "GenerateRequest") -> dict:
         for key in ("target_values", "complexity", "difficulties"):
             if key in gen and isinstance(gen[key], str):
                 gen[key] = [int(x.strip()) for x in gen[key].split(",") if x.strip()]
+        prompt_configs_yaml = []
+        for pc in t.prompt_configs:
+            entry: Dict[str, Any] = {
+                "name": f"{pc.user_style}_{pc.system_style}",
+                "user_style": pc.user_style,
+                "system_style": pc.system_style,
+                "language": pc.language,
+            }
+            if pc.prompt_id:
+                entry["prompt_id"] = pc.prompt_id
+                if pc.prompt_version is not None:
+                    entry["prompt_version"] = pc.prompt_version
+            prompt_configs_yaml.append(entry)
         tasks_yaml.append({
             "type": t.type,
             "generation": gen,
-            "prompt_configs": [
-                {"name": f"{pc.user_style}_{pc.system_style}", "user_style": pc.user_style, "system_style": pc.system_style, "language": pc.language}
-                for pc in t.prompt_configs
-            ],
+            "prompt_configs": prompt_configs_yaml,
         })
 
     if len(tasks_yaml) == 1:

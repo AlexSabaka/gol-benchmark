@@ -35,6 +35,10 @@ import { Textarea } from "@/components/ui/textarea"
 import { PageHeader } from "@/components/layout/page-header"
 import { StepButton, StepFooter } from "@/components/wizard"
 import { ConfigForm } from "@/components/plugin-config/config-form"
+import {
+  PromptPicker,
+  type PromptRef,
+} from "@/components/prompts/prompt-picker"
 import { fetchPromptFromUrl, configToYaml } from "@/api/testsets"
 import { usePlugins } from "@/hooks/use-plugins"
 import { useGenerateTestset } from "@/hooks/use-testsets"
@@ -69,7 +73,6 @@ export default function ConfigurePage() {
 
   // ── Derived from metadata ──
   const userStylesList = meta?.user_styles ?? []
-  const systemStylesList = meta?.system_styles ?? []
   const languagesList = (meta?.languages ?? []).map((code) => ({
     code,
     flag: LANGUAGE_META[code]?.flag ?? code,
@@ -100,7 +103,11 @@ export default function ConfigurePage() {
 
   // ── Step 3 — Prompts ──
   const [userStyles, setUserStyles] = useState<Set<string>>(new Set())
-  const [systemStyles, setSystemStyles] = useState<Set<string>>(new Set())
+  // Default to the built-in Analytical prompt — matches the prior default
+  // of system_style="analytical" so first-time users see something sensible.
+  const [selectedPrompts, setSelectedPrompts] = useState<PromptRef[]>([
+    { id: "builtin_analytical", version: null },
+  ])
   const [languages, setLanguages] = useState<Set<string>>(new Set())
   const [useCustomPrompt, setUseCustomPrompt] = useState(false)
   const [customSystemPrompt, setCustomSystemPrompt] = useState("")
@@ -113,8 +120,8 @@ export default function ConfigurePage() {
 
   // ── Derived ──
   const combos =
-    userStyles.size > 0 && systemStyles.size > 0 && languages.size > 0
-      ? userStyles.size * systemStyles.size * languages.size
+    userStyles.size > 0 && selectedPrompts.length > 0 && languages.size > 0
+      ? userStyles.size * selectedPrompts.length * languages.size
       : 0
 
   const stepIndex = CONFIGURE_STEPS.findIndex((s) => s.id === activeStep)
@@ -188,9 +195,18 @@ export default function ConfigurePage() {
   const buildRequest = useCallback((): GenerateRequest => {
     const promptConfigs: PromptConfig[] = []
     for (const us of userStyles) {
-      for (const ss of systemStyles) {
+      for (const ref of selectedPrompts) {
         for (const lang of languages) {
-          promptConfigs.push({ user_style: us, system_style: ss, language: lang })
+          promptConfigs.push({
+            user_style: us,
+            // Backend derives ``system_style`` from prompt_id (builtin_<x>
+            // → "<x>", user prompts → "custom"). Empty string here signals
+            // "let the backend resolve it".
+            system_style: "",
+            language: lang,
+            prompt_id: ref.id,
+            ...(ref.version != null ? { prompt_version: ref.version } : {}),
+          })
         }
       }
     }
@@ -215,7 +231,7 @@ export default function ConfigurePage() {
     selectedTasks,
     taskConfigs,
     userStyles,
-    systemStyles,
+    selectedPrompts,
     languages,
     useCustomPrompt,
     customSystemPrompt,
@@ -476,32 +492,25 @@ export default function ConfigurePage() {
                   </div>
                 </div>
 
-                {/* System Styles */}
+                {/* Prompts (Prompt Studio) */}
                 <div className="space-y-2">
-                  <Label className="text-xs">System Styles</Label>
-                  <div className="space-y-1.5">
-                    {systemStylesList.map((s) => (
-                      <label
-                        key={s}
-                        className="flex items-center gap-2 text-xs cursor-pointer"
-                      >
-                        <Checkbox
-                          checked={systemStyles.has(s)}
-                          onCheckedChange={() => toggleCheckboxSet(s, setSystemStyles)}
-                        />
-                        {s}
-                      </label>
-                    ))}
-                    <Separator className="my-1" />
-                    {/* Custom prompt toggle */}
-                    <label className="flex items-center gap-2 text-xs cursor-pointer">
-                      <Checkbox
-                        checked={useCustomPrompt}
-                        onCheckedChange={(c) => setUseCustomPrompt(!!c)}
-                      />
-                      <span className="font-medium">custom</span>
-                    </label>
-                  </div>
+                  <Label className="text-xs">Prompts</Label>
+                  <PromptPicker
+                    mode="multi"
+                    value={selectedPrompts}
+                    onChange={setSelectedPrompts}
+                  />
+                  <Separator className="my-1" />
+                  <label className="flex items-center gap-2 text-xs cursor-pointer">
+                    <Checkbox
+                      checked={useCustomPrompt}
+                      onCheckedChange={(c) => setUseCustomPrompt(!!c)}
+                    />
+                    <span className="font-medium">custom one-off</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      global override
+                    </span>
+                  </label>
                 </div>
 
                 {/* Languages */}
@@ -642,7 +651,7 @@ export default function ConfigurePage() {
             <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-700 dark:text-amber-400">
               <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
               <p className="text-sm">
-                No prompt combinations selected — choose at least one option from each column (User Style, System Style, Language).
+                No prompt combinations selected — pick at least one User Style, one Prompt, and one Language.
               </p>
             </div>
           )}
@@ -764,17 +773,43 @@ export default function ConfigurePage() {
                 </div>
                 <div className="space-y-1">
                   <p className="text-[10px] uppercase tracking-wide text-muted-foreground">
-                    System
+                    Prompts
                   </p>
                   <div className="flex flex-wrap gap-1">
-                    {Array.from(systemStyles).map((s) => (
-                      <Badge key={s} variant="outline" className="text-[10px]">
-                        {s}
-                      </Badge>
-                    ))}
+                    {selectedPrompts.length === 0 ? (
+                      <span className="text-[10px] italic text-muted-foreground">
+                        none
+                      </span>
+                    ) : (
+                      selectedPrompts.map((ref) => {
+                        const entry = meta?.prompts?.find((p) => p.id === ref.id)
+                        const label = entry?.name ?? ref.id
+                        const ver =
+                          ref.version != null
+                            ? `v${ref.version}`
+                            : entry?.latest_version != null
+                              ? `v${entry.latest_version}`
+                              : ""
+                        return (
+                          <Badge
+                            key={ref.id}
+                            variant="outline"
+                            className="text-[10px]"
+                          >
+                            {label}
+                            {ver && (
+                              <span className="ml-1 font-mono text-muted-foreground">
+                                {ver}
+                                {ref.version != null && " 🔒"}
+                              </span>
+                            )}
+                          </Badge>
+                        )
+                      })
+                    )}
                     {useCustomPrompt && (
                       <Badge variant="secondary" className="text-[10px]">
-                        custom prompt set
+                        custom one-off
                       </Badge>
                     )}
                   </div>
@@ -824,7 +859,7 @@ export default function ConfigurePage() {
                     >
                       Prompts
                     </button>{" "}
-                    and select at least one User Style, System Style, and Language.
+                    and pick at least one User Style, one Prompt, and one Language.
                   </p>
                 </div>
               )}

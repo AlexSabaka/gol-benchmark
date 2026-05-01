@@ -12,11 +12,13 @@ import {
   FileText,
   Scale,
   Dna,
+  BookOpenText,
 } from "lucide-react"
 
 const NAV_ITEMS = [
   { to: "/", icon: LayoutDashboard, label: "Dashboard" },
   { to: "/configure", icon: Settings2, label: "Configure" },
+  { to: "/prompts", icon: BookOpenText, label: "Prompt Studio" },
   { to: "/testsets", icon: Database, label: "Test Sets" },
   { to: "/execute", icon: Play, label: "Execute" },
   { to: "/jobs", icon: Activity, label: "Jobs" },

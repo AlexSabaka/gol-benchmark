@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 
 from src import __version__
 from src.web import annotation_store as annotation_store_module
+from src.web import prompt_store as prompt_store_module
 from src.web.annotation_store import AnnotationStore
 from src.web.annotation_store_migrator import migrate_sidecar_files_to_db
 from src.web.api import api_router
@@ -18,6 +19,7 @@ from src.web.db import connect
 from src.web.job_store import JobStore
 from src.web.job_store_migrator import migrate_json_jobs_to_db
 from src.web.jobs import job_manager
+from src.web.prompt_store import PromptStore
 
 _WEB_DIR = Path(__file__).resolve().parent
 _PROJECT_ROOT = _WEB_DIR.resolve().parent.parent
@@ -31,19 +33,31 @@ _logger = logging.getLogger(__name__)
 _db_conn = None
 _job_store: JobStore | None = None
 _annotation_store: AnnotationStore | None = None
+_prompt_store: PromptStore | None = None
 
 
 def _startup() -> None:
     """Open the DB connection, run migrations, and ingest any legacy files."""
-    global _db_conn, _job_store, _annotation_store
+    global _db_conn, _job_store, _annotation_store, _prompt_store
 
     _db_conn = connect(web_config.db_path)
     _job_store = JobStore(_db_conn)
     _annotation_store = AnnotationStore(_db_conn)
+    _prompt_store = PromptStore(_db_conn)
 
     # Wire singletons.
     job_manager._store = _job_store
     annotation_store_module.set_store(_annotation_store)
+    prompt_store_module.set_store(_prompt_store)
+
+    # Built-in system prompts are seeded idempotently — first boot inserts the
+    # four canonical entries; subsequent boots are no-ops.
+    try:
+        seeded = _prompt_store.seed_builtins()
+        if seeded:
+            _logger.info("Seeded %d built-in system prompts", seeded)
+    except Exception as exc:
+        _logger.warning("Built-in prompt seeding failed: %s", exc)
 
     # ── Legacy-file migrators (one-shot, idempotent) ─────────────────────────
 
@@ -92,8 +106,9 @@ def _shutdown() -> None:
     """Persist job state, drop singletons, close the connection."""
     job_manager.save_to_store()
     annotation_store_module.set_store(None)
+    prompt_store_module.set_store(None)
     job_manager._store = None
-    global _db_conn, _job_store, _annotation_store
+    global _db_conn, _job_store, _annotation_store, _prompt_store
     if _db_conn is not None:
         try:
             _db_conn.close()
@@ -102,6 +117,7 @@ def _shutdown() -> None:
     _db_conn = None
     _job_store = None
     _annotation_store = None
+    _prompt_store = None
 
 
 @asynccontextmanager

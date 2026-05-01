@@ -378,19 +378,34 @@ async def analyze_results(req: AnalyzeRequest):
             for tb in entry["task_breakdown"].values():
                 tb["accuracy"] = tb["correct"] / tb["total"] if tb["total"] > 0 else 0
 
-        # Build dimension breakdowns (language, user_style, system_style)
-        dimension_breakdowns: dict = {"language": {}, "user_style": {}, "system_style": {}}
+        # Build dimension breakdowns. Prompt Studio adds prompt_id +
+        # prompt_version as additional axes alongside the legacy
+        # language/user_style/system_style breakdown. Result files written
+        # before Prompt Studio (or not yet run through
+        # ``scripts/migrate_legacy_prompt_metadata.py``) lack the new fields
+        # and are silently skipped by the prompt_id/version dimensions.
+        dimension_breakdowns: dict = {
+            "language": {},
+            "user_style": {},
+            "system_style": {},
+            "prompt_id": {},
+            "prompt_version": {},
+        }
         for data in loaded:
             for r in data.get("results", []):
                 if r.get("status") != "success":
                     continue
                 pm = r.get("input", {}).get("prompt_metadata", {})
                 correct = r.get("evaluation", {}).get("correct", False)
-                for dim in ("language", "user_style", "system_style"):
-                    val = pm.get(dim, "")
-                    if not val:
+                for dim in ("language", "user_style", "system_style",
+                            "prompt_id", "prompt_version"):
+                    raw = pm.get(dim, "")
+                    if raw in (None, ""):
                         continue
-                    bucket = dimension_breakdowns[dim].setdefault(val, {"total": 0, "correct": 0})
+                    val = str(raw)
+                    bucket = dimension_breakdowns[dim].setdefault(
+                        val, {"total": 0, "correct": 0}
+                    )
                     bucket["total"] += 1
                     if correct:
                         bucket["correct"] += 1

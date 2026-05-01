@@ -40,6 +40,14 @@ export function postFormData<T>(path: string, formData: FormData): Promise<T> {
   }).then(r => handleResponse<T>(r))
 }
 
+export function patch<T>(path: string, body?: unknown): Promise<T> {
+  return fetch(`${BASE}${path}`, {
+    method: "PATCH",
+    headers: { "Content-Type": "application/json" },
+    body: body ? JSON.stringify(body) : undefined,
+  }).then(r => handleResponse<T>(r))
+}
+
 export function del<T>(path: string): Promise<T> {
   return fetch(`${BASE}${path}`, { method: "DELETE" }).then(r => handleResponse<T>(r))
 }

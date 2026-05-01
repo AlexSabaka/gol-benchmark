@@ -1,4 +1,4 @@
-import { useState } from "react"
+import { useMemo, useState } from "react"
 import { useNavigate } from "react-router"
 import { toast } from "sonner"
 import { Loader2 } from "lucide-react"
@@ -21,11 +21,20 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 import { Textarea } from "@/components/ui/textarea"
+import {
+  PromptPicker,
+  type PromptRef,
+} from "@/components/prompts/prompt-picker"
 import { useTestset } from "@/hooks/use-testsets"
 import { useGenerateTestset } from "@/hooks/use-testsets"
 import { useMetadata } from "@/hooks/use-metadata"
 import { LANGUAGE_META } from "@/lib/constants"
-import type { ParamOverrides } from "@/types"
+import type {
+  GenerateRequest,
+  ParamOverrides,
+  PromptConfig,
+  TaskConfig,
+} from "@/types"
 
 interface ParamOverrideModalProps {
   open: boolean
@@ -42,88 +51,162 @@ export function ParamOverrideModal({
   mode,
 }: ParamOverrideModalProps) {
   const nav = useNavigate()
-  const { data: detail, isLoading: detailLoading } = useTestset(open ? testsetFilename : null)
+  const { data: detail, isLoading: detailLoading } = useTestset(
+    open ? testsetFilename : null,
+  )
   const generateMutation = useGenerateTestset()
   const { data: meta } = useMetadata()
 
   const userStylesList = meta?.user_styles ?? []
-  const systemStylesList = meta?.system_styles ?? []
   const languagesList = (meta?.languages ?? []).map((code) => ({
     code,
     label: `${LANGUAGE_META[code]?.flag ?? ""} ${LANGUAGE_META[code]?.label ?? code}`.trim(),
   }))
 
   const [overrides, setOverrides] = useState<ParamOverrides>({})
+  const [promptOverride, setPromptOverride] = useState<PromptRef[]>([])
   const [customPrompt, setCustomPrompt] = useState("")
   const [useCustomPrompt, setUseCustomPrompt] = useState(false)
 
-  const handleConfirm = async () => {
-    if (mode === "rerun") {
-      // Navigate to Execute page with the testset filename
-      nav(`/execute?testset=${encodeURIComponent(testsetFilename)}`)
-      onOpenChange(false)
+  // ── Dirty detection — when ANY prompt-related field is touched, the
+  // rerun path forks into "regenerate-then-run" (one new testset on the
+  // fly) instead of just navigating. Sampling-only changes flow through
+  // the existing /execute wizard untouched.
+  const isPromptDirty = useMemo(
+    () =>
+      overrides.user_style != null ||
+      overrides.language != null ||
+      promptOverride.length > 0 ||
+      useCustomPrompt,
+    [overrides, promptOverride, useCustomPrompt],
+  )
+
+  const buildModifiedRequest = (): GenerateRequest | null => {
+    if (!detail) return null
+
+    const genParams = detail.generation_params
+    let rawTasks: Array<Record<string, unknown>>
+    if (Array.isArray(genParams)) {
+      rawTasks = genParams as Array<Record<string, unknown>>
     } else {
-      // Regenerate: build a new testset with modified params
-      if (!detail) { toast.error("Test set details not loaded yet"); return }
-
-      // generation_params is either a list of task configs or a dict with task/tasks
-      const genParams = detail.generation_params
-      let rawTasks: Array<Record<string, unknown>>
-
-      if (Array.isArray(genParams)) {
-        // generation_params IS the tasks array
-        rawTasks = genParams as Array<Record<string, unknown>>
+      const gp = genParams as Record<string, unknown>
+      if (Array.isArray(gp.tasks)) {
+        rawTasks = gp.tasks as Array<Record<string, unknown>>
+      } else if (gp.task) {
+        rawTasks = [gp.task as Record<string, unknown>]
       } else {
-        // generation_params is a dict — may have .tasks or .task
-        const gp = genParams as Record<string, unknown>
-        if (Array.isArray(gp.tasks)) {
-          rawTasks = gp.tasks as Array<Record<string, unknown>>
-        } else if (gp.task) {
-          rawTasks = [gp.task as Record<string, unknown>]
-        } else {
-          // Fallback: construct from detail.task_types
-          rawTasks = detail.task_types.map((t) => ({
-            type: t,
-            generation: {},
-            prompt_configs: [{ user_style: "minimal", system_style: "analytical", language: "en" }],
-          }))
-        }
-      }
-
-      const modifiedTasks = rawTasks.map((t) => {
-        const origConfigs = (t.prompt_configs ?? [{ user_style: "minimal", system_style: "analytical", language: "en" }]) as Array<{
-          user_style: string; system_style: string; language: string
-        }>
-
-        return {
-          type: (t.type as string) ?? "unknown",
-          generation: (t.generation ?? {}) as Record<string, unknown>,
-          prompt_configs: origConfigs.map((pc) => ({
-            user_style: overrides.user_style ?? pc.user_style,
-            system_style: useCustomPrompt ? "none" : (overrides.system_style ?? pc.system_style),
-            language: overrides.language ?? pc.language,
-          })),
-        }
-      })
-
-      const metaName = (detail.metadata as Record<string, string>)?.name ?? "regen"
-
-      try {
-        const res = await generateMutation.mutateAsync({
-          name: `${metaName}_variant`,
-          description: "Regenerated with parameter overrides",
-          tasks: modifiedTasks,
-          cell_markers: ["1", "0"],
-          seed: 42,
-          custom_system_prompt: useCustomPrompt ? customPrompt : undefined,
-        })
-        toast.success(`Test set regenerated: ${res.filename}`)
-        onOpenChange(false)
-      } catch (err) {
-        toast.error(`Regeneration failed: ${err instanceof Error ? err.message : "Unknown error"}`)
+        rawTasks = detail.task_types.map((t) => ({
+          type: t,
+          generation: {},
+          prompt_configs: [
+            { user_style: "minimal", system_style: "analytical", language: "en" },
+          ],
+        }))
       }
     }
+
+    const overrideRef = promptOverride[0] ?? null
+
+    const modifiedTasks: TaskConfig[] = rawTasks.map((t) => {
+      const origConfigs = (t.prompt_configs ?? [
+        { user_style: "minimal", system_style: "analytical", language: "en" },
+      ]) as PromptConfig[]
+
+      return {
+        type: (t.type as string) ?? "unknown",
+        generation: (t.generation ?? {}) as Record<string, unknown>,
+        prompt_configs: origConfigs.map((pc): PromptConfig => {
+          const base: PromptConfig = {
+            user_style: overrides.user_style ?? pc.user_style,
+            system_style: useCustomPrompt
+              ? "none"
+              : overrideRef
+                ? "" // backend derives from prompt_id
+                : pc.system_style,
+            language: overrides.language ?? pc.language,
+          }
+          if (useCustomPrompt) return base
+          if (overrideRef) {
+            base.prompt_id = overrideRef.id
+            if (overrideRef.version != null)
+              base.prompt_version = overrideRef.version
+            return base
+          }
+          if (pc.prompt_id) {
+            base.prompt_id = pc.prompt_id
+            if (pc.prompt_version != null) base.prompt_version = pc.prompt_version
+          }
+          return base
+        }),
+      }
+    })
+
+    const metaName = (detail.metadata as Record<string, string>)?.name ?? "regen"
+    return {
+      name: `${metaName}_variant`,
+      description: `Regenerated with parameter overrides (${mode})`,
+      tasks: modifiedTasks,
+      cell_markers: ["1", "0"],
+      seed: 42,
+      ...(useCustomPrompt && customPrompt
+        ? { custom_system_prompt: customPrompt }
+        : {}),
+    }
   }
+
+  const handleConfirm = async () => {
+    if (mode === "rerun") {
+      // Clean path — no prompt fields touched. Just open Execute pointed
+      // at the existing testset. Sampling overrides happen on that page.
+      if (!isPromptDirty) {
+        nav(`/execute?testset=${encodeURIComponent(testsetFilename)}`)
+        onOpenChange(false)
+        return
+      }
+      // Dirty path — regenerate first, then point Execute at the new file.
+      if (!detail) {
+        toast.error("Test set details not loaded yet")
+        return
+      }
+      const req = buildModifiedRequest()
+      if (!req) return
+      try {
+        const res = await generateMutation.mutateAsync(req)
+        toast.success(`Generated ${res.filename} — opening Execute…`)
+        nav(`/execute?testset=${encodeURIComponent(res.filename)}`)
+        onOpenChange(false)
+      } catch (err) {
+        toast.error(
+          `Regenerate-and-run failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+        )
+      }
+      return
+    }
+
+    // ── Regenerate ──
+    if (!detail) {
+      toast.error("Test set details not loaded yet")
+      return
+    }
+    const req = buildModifiedRequest()
+    if (!req) return
+    try {
+      const res = await generateMutation.mutateAsync(req)
+      toast.success(`Test set regenerated: ${res.filename}`)
+      onOpenChange(false)
+    } catch (err) {
+      toast.error(
+        `Regeneration failed: ${err instanceof Error ? err.message : "Unknown error"}`,
+      )
+    }
+  }
+
+  const primaryLabel =
+    mode === "rerun"
+      ? isPromptDirty
+        ? "Regenerate & open Execute"
+        : "Go to Execute"
+      : "Regenerate"
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
@@ -140,12 +223,18 @@ export function ParamOverrideModal({
           </DialogDescription>
         </DialogHeader>
 
-        {detailLoading && mode === "regenerate" ? (
+        {detailLoading ? (
           <div className="flex items-center justify-center py-8 text-muted-foreground">
             <Loader2 className="mr-2 h-4 w-4 animate-spin" /> Loading test set details...
           </div>
         ) : (
           <div className="space-y-4 py-2">
+            {mode === "rerun" && isPromptDirty && (
+              <div className="rounded-md border border-amber-500/40 bg-amber-500/10 px-3 py-2 text-xs text-amber-800 dark:text-amber-300">
+                Changing prompts creates a new testset before opening Execute.
+              </div>
+            )}
+
             {/* User style */}
             <div className="space-y-1.5">
               <Label className="text-xs">User Prompt Style</Label>
@@ -172,54 +261,45 @@ export function ParamOverrideModal({
               </Select>
             </div>
 
-            {/* System style */}
+            {/* Prompt (Prompt Studio) */}
             <div className="space-y-1.5">
-              <Label className="text-xs">System Prompt Style</Label>
-              <Select
-                value={useCustomPrompt ? "__custom__" : (overrides.system_style ?? "__default__")}
-                onValueChange={(v) => {
-                  if (v === "__custom__") {
-                    setUseCustomPrompt(true)
-                    setOverrides((o) => ({ ...o, system_style: undefined }))
-                  } else {
-                    setUseCustomPrompt(false)
-                    setOverrides((o) => ({
-                      ...o,
-                      system_style: v === "__default__" ? undefined : v,
-                    }))
-                  }
-                }}
-              >
-                <SelectTrigger className="h-8">
-                  <SelectValue placeholder="Keep original" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="__default__">Keep original</SelectItem>
-                  {systemStylesList.map((s) => (
-                    <SelectItem key={s} value={s}>
-                      {s}
-                    </SelectItem>
-                  ))}
-                  <SelectItem value="__custom__">Custom prompt...</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
-
-            {/* Custom system prompt textarea */}
-            {useCustomPrompt && (
-              <div className="space-y-1.5">
-                <Label className="text-xs">Custom System Prompt</Label>
-                <Textarea
-                  value={customPrompt}
-                  onChange={(e) => setCustomPrompt(e.target.value)}
-                  placeholder="Enter a custom system prompt..."
-                  className="min-h-20 text-xs"
-                />
-                <p className="text-[10px] text-muted-foreground">
-                  {customPrompt.length} characters
-                </p>
+              <div className="flex items-center justify-between">
+                <Label className="text-xs">System Prompt</Label>
+                <button
+                  type="button"
+                  onClick={() => setUseCustomPrompt((v) => !v)}
+                  className="text-[10px] text-muted-foreground underline-offset-2 hover:underline"
+                >
+                  {useCustomPrompt ? "Use catalog" : "Use one-off textarea"}
+                </button>
               </div>
-            )}
+              {useCustomPrompt ? (
+                <>
+                  <Textarea
+                    value={customPrompt}
+                    onChange={(e) => setCustomPrompt(e.target.value)}
+                    placeholder="Enter a custom system prompt..."
+                    className="min-h-20 text-xs"
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {customPrompt.length} characters · bypasses the prompt catalog
+                  </p>
+                </>
+              ) : (
+                <>
+                  <PromptPicker
+                    mode="single"
+                    value={promptOverride}
+                    onChange={setPromptOverride}
+                  />
+                  <p className="text-[10px] text-muted-foreground">
+                    {promptOverride.length === 0
+                      ? "No override — every cell keeps its original prompt."
+                      : "Override applied to every cell on regeneration."}
+                  </p>
+                </>
+              )}
+            </div>
 
             {/* Language */}
             <div className="space-y-1.5">
@@ -255,10 +335,12 @@ export function ParamOverrideModal({
           </Button>
           <Button
             onClick={handleConfirm}
-            disabled={generateMutation.isPending || (mode === "regenerate" && detailLoading)}
+            disabled={generateMutation.isPending || detailLoading}
           >
-            {generateMutation.isPending && <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />}
-            {mode === "rerun" ? "Go to Execute" : "Regenerate"}
+            {generateMutation.isPending && (
+              <Loader2 className="mr-1.5 h-3.5 w-3.5 animate-spin" />
+            )}
+            {primaryLabel}
           </Button>
         </DialogFooter>
       </DialogContent>

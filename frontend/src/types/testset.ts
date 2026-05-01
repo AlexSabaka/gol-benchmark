@@ -40,6 +40,10 @@ export interface PromptConfig {
   user_style: string
   system_style: string
   language: string
+  /** Prompt Studio addressing — when set, takes precedence over system_style. */
+  prompt_id?: string | null
+  /** Pinned version. Omit for "latest at gen time". */
+  prompt_version?: number | null
 }
 
 export interface TaskConfig {

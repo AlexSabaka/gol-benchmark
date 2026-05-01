@@ -39,6 +39,11 @@ import { loadCredentials } from "@/lib/credential-store"
 import { favoriteKey, getFavorites, toggleFavorite } from "@/lib/favorite-models"
 import { useLocalStorageState } from "@/lib/local-storage"
 import { LANGUAGE_META } from "@/lib/constants"
+import {
+  PromptPicker,
+  promptRefToWire,
+  type PromptRef,
+} from "@/components/prompts/prompt-picker"
 import type { ConfigField, MatrixFieldAxis, MatrixModelGroup, MatrixRunRequest } from "@/types"
 
 // ── Constants ──────────────────────────────────────────────────────────────────
@@ -155,7 +160,6 @@ export default function MatrixExecutionPage() {
   const runMutation = useRunMatrixExecution()
 
   const userStylesList = meta?.user_styles ?? []
-  const systemStylesList = meta?.system_styles ?? []
   const languagesList = (meta?.languages ?? []).map((code) => ({
     code,
     flag: LANGUAGE_META[code]?.flag ?? code,
@@ -184,7 +188,9 @@ export default function MatrixExecutionPage() {
 
   // Step 2 — Axes
   const [userStyles, setUserStyles] = useState<Set<string>>(new Set())
-  const [systemStyles, setSystemStyles] = useState<Set<string>>(new Set())
+  const [selectedPrompts, setSelectedPrompts] = useState<PromptRef[]>([
+    { id: "builtin_analytical", version: null },
+  ])
   const [languages, setLanguages] = useState<Set<string>>(new Set())
   const [fieldAxes, setFieldAxes] = useState<Record<string, FieldAxisState>>({})
   const [useCustomPrompt, setUseCustomPrompt] = useState(false)
@@ -231,8 +237,8 @@ export default function MatrixExecutionPage() {
   const activeFieldAxes = useMemo(() => Object.entries(fieldAxes), [fieldAxes])
 
   const promptCombos =
-    userStyles.size > 0 && systemStyles.size > 0 && languages.size > 0
-      ? userStyles.size * systemStyles.size * languages.size
+    userStyles.size > 0 && selectedPrompts.length > 0 && languages.size > 0
+      ? userStyles.size * selectedPrompts.length * languages.size
       : 0
   const fieldCombos =
     activeFieldAxes.length === 0
@@ -245,7 +251,7 @@ export default function MatrixExecutionPage() {
   const invalidFieldAxes = activeFieldAxes.filter(([, axis]) => axis.values.length === 0).map(([n]) => n)
   const axesReady =
     userStyles.size > 0 &&
-    systemStyles.size > 0 &&
+    selectedPrompts.length > 0 &&
     languages.size > 0 &&
     invalidFieldAxes.length === 0
 
@@ -510,8 +516,12 @@ export default function MatrixExecutionPage() {
       base_generation: baseConfig,
       prompt_axes: {
         user_styles: Array.from(userStyles),
-        system_styles: Array.from(systemStyles),
+        // Prompt Studio drives resolution; the backend derives a back-compat
+        // ``system_style`` tag per-cell from the prompt_id (builtin_<x>
+        // → "<x>", user prompts → "custom"), so we don't send styles here.
+        system_styles: [],
         languages: Array.from(languages),
+        prompt_ids: selectedPrompts.map(promptRefToWire),
       },
       field_axes: fieldAxisPayload,
       model_groups: Array.from(groupedModels.values()),
@@ -677,26 +687,23 @@ export default function MatrixExecutionPage() {
                   </div>
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-xs">System Styles</Label>
-                  <div className="space-y-1.5">
-                    {systemStylesList.map((style) => (
-                      <label key={style} className="flex cursor-pointer items-center gap-2 text-xs">
-                        <Checkbox
-                          checked={systemStyles.has(style)}
-                          onCheckedChange={() => togglePromptAxis(style, setSystemStyles)}
-                        />
-                        <span>{style}</span>
-                      </label>
-                    ))}
-                    <Separator className="my-1" />
-                    <label className="flex cursor-pointer items-center gap-2 text-xs">
-                      <Checkbox
-                        checked={useCustomPrompt}
-                        onCheckedChange={(c) => setUseCustomPrompt(!!c)}
-                      />
-                      <span className="font-medium">custom</span>
-                    </label>
-                  </div>
+                  <Label className="text-xs">Prompts</Label>
+                  <PromptPicker
+                    mode="multi"
+                    value={selectedPrompts}
+                    onChange={setSelectedPrompts}
+                  />
+                  <Separator className="my-1" />
+                  <label className="flex cursor-pointer items-center gap-2 text-xs">
+                    <Checkbox
+                      checked={useCustomPrompt}
+                      onCheckedChange={(c) => setUseCustomPrompt(!!c)}
+                    />
+                    <span className="font-medium">custom one-off</span>
+                    <span className="text-[10px] text-muted-foreground">
+                      global override
+                    </span>
+                  </label>
                 </div>
                 <div className="space-y-2">
                   <Label className="text-xs">Languages</Label>
@@ -824,7 +831,7 @@ export default function MatrixExecutionPage() {
                 <div className="flex items-start gap-3 rounded-lg border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-amber-700 dark:text-amber-400">
                   <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0" />
                   <p className="text-sm">
-                    No prompt combinations selected — choose at least one option from each of User Styles, System Styles, and Languages.
+                    No prompt combinations selected — pick at least one User Style, one Prompt, and one Language.
                   </p>
                 </div>
               )}
@@ -1203,16 +1210,42 @@ export default function MatrixExecutionPage() {
                   </div>
                 </div>
                 <div className="space-y-1">
-                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">System</p>
+                  <p className="text-[10px] uppercase tracking-wide text-muted-foreground">Prompts</p>
                   <div className="flex flex-wrap gap-1">
-                    {Array.from(systemStyles).map((s) => (
-                      <Badge key={s} variant="outline" className="text-[10px]">
-                        {s}
-                      </Badge>
-                    ))}
+                    {selectedPrompts.length === 0 ? (
+                      <span className="text-[10px] italic text-muted-foreground">
+                        none
+                      </span>
+                    ) : (
+                      selectedPrompts.map((ref) => {
+                        const entry = meta?.prompts?.find((p) => p.id === ref.id)
+                        const label = entry?.name ?? ref.id
+                        const ver =
+                          ref.version != null
+                            ? `v${ref.version}`
+                            : entry?.latest_version != null
+                              ? `v${entry.latest_version}`
+                              : ""
+                        return (
+                          <Badge
+                            key={ref.id}
+                            variant="outline"
+                            className="text-[10px]"
+                          >
+                            {label}
+                            {ver && (
+                              <span className="ml-1 font-mono text-muted-foreground">
+                                {ver}
+                                {ref.version != null && " 🔒"}
+                              </span>
+                            )}
+                          </Badge>
+                        )
+                      })
+                    )}
                     {useCustomPrompt && (
                       <Badge variant="secondary" className="text-[10px]">
-                        custom prompt
+                        custom one-off
                       </Badge>
                     )}
                   </div>
@@ -1319,7 +1352,7 @@ export default function MatrixExecutionPage() {
                     >
                       Axes
                     </button>{" "}
-                    and pick at least one user style, system style, and language.
+                    and pick at least one user style, one prompt, and one language.
                   </p>
                 </div>
               )}
